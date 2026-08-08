@@ -7,7 +7,32 @@
 > See [NOTES.md](NOTES.md) for implementation details (Japanese).
 
 Thingino 化した Wyze Cam v3 から、中継マシンなしで YouTube Live へ直接配信するための
-minimal FFmpeg バイナリをクロスコンパイルするビルドレシピです。
+minimal FFmpeg バイナリと、その周辺ツールです。
+
+## 典型的な使い方
+
+[Releases](https://github.com/uzulla/WyzeCam3-thingino-to-youtube/releases) からバイナリを取得し、
+カメラに転送して実行するだけです:
+
+```sh
+# PC 側: ダウンロードしてリネームし、カメラへ転送
+mv ffmpeg-thingino-wyze-cam3-t31-mipsel ffmpeg
+cat ffmpeg | ssh root@<camera-ip> 'cat > /tmp/ffmpeg && chmod +x /tmp/ffmpeg'
+
+# カメラ側: これだけで YouTube Live に配信が始まる
+/tmp/ffmpeg -rtsp_transport tcp \
+  -i 'rtsp://thingino:thingino@127.0.0.1:554/ch0' \
+  -c copy -f flv \
+  'rtmps://a.rtmps.youtube.com:443/live2/{KEY}'
+```
+
+- `{KEY}` は YouTube Studio のライブ配信設定にあるストリームキー
+- RTSP の認証 (`thingino:thingino`) とパス (`/ch0`) は Thingino のデフォルト。変更していれば合わせる
+- 再エンコードなし (stream copy) なので、カメラの負荷は CPU 約3% / RAM 3MB 程度
+- `/tmp` は再起動で消える。常設・自動起動・自動復帰したくなったら
+  [device/](device/) の supervisor を導入する (おまけ)
+
+以降のビルド手順や起動スクリプトは、自分でビルドしたい人・常設運用したい人向けのおまけです。
 
 ```text
 従来:  Wyze Cam v3 → RTSP → 中継PC (ffmpeg) → RTMPS → YouTube Live
