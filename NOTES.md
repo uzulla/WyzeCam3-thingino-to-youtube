@@ -260,6 +260,8 @@ B フレームなしの H.264 なので DTS=PTS 補正で正しく、FLV 出力�
   free RAM 変化なし、A/V ズレなし。以降も問題なく4時間で試験完了とした)
 - [x] supervisor 実機動作確認 — SD カードに設定を置いて再起動 →
   **自動マウント → 設定検出 → 自動配信開始** まで実機で成功 (スタンドアロン動作の実証)
-- [ ] supervisor スクリプト — 切断/Wi-Fi 断からの自動再起動 (Thingino init script 形式)
+- [x] supervisor スクリプト — 切断/Wi-Fi 断からの自動再起動 (Thingino init script 形式)。
+  クラッシュ再起動・ネットワーク断の待機と復帰後の自動再開まで実機の障害試験で確認済み。
+  復帰しないケースが今後見つかればバグとして対応する
 - [ ] Thingino パッケージとしての統合 (Config.in オプション化、stream key の安全な保持)
 - [ ] typo 修正 (`aac_adtastoasc`) の upstream PR
