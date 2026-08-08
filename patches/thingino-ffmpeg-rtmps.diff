@@ -1,0 +1,33 @@
+diff --git a/package/thingino-ffmpeg/thingino-ffmpeg.mk b/package/thingino-ffmpeg/thingino-ffmpeg.mk
+index 9c948736e..05c335975 100644
+--- a/package/thingino-ffmpeg/thingino-ffmpeg.mk
++++ b/package/thingino-ffmpeg/thingino-ffmpeg.mk
+@@ -114,7 +114,7 @@ THINGINO_FFMPEG_CONF_OPTS += \
+ 	--enable-muxer=segment \
+ 	--enable-muxer=mp4 \
+ 	--enable-bsf=h264_mp4toannexb \
+-	--enable-bsf=aac_adtastoasc \
++	--enable-bsf=aac_adtstoasc \
+ 	--disable-shared \
+ 	--enable-static \
+ 	--extra-cflags="-Os -flto-partition=none" \
+@@ -231,6 +231,19 @@ THINGINO_FFMPEG_CONF_OPTS += \
+ THINGINO_FFMPEG_DEPENDENCIES += opus zlib
+ endif
+ 
++# YouTube Live RTMPS relay support (RTSP input -> H.264/AAC stream copy -> FLV/RTMPS output)
++# Requires TLS via mbedTLS; --enable-version3 is already set in the base options,
++# which satisfies the LGPLv3 relicensing requirement of the mbedTLS backend.
++THINGINO_FFMPEG_MUXERS += flv
++THINGINO_FFMPEG_CONF_OPTS += \
++	--enable-protocol=tls \
++	--enable-protocol=rtmp \
++	--enable-protocol=rtmps \
++	--enable-bsf=extract_extradata \
++	--enable-mbedtls \
++	--extra-libs="-lmbedx509 -lmbedcrypto"
++THINGINO_FFMPEG_DEPENDENCIES += mbedtls
++
+ # Add specific codec/format options only for non-DEV configurations
+ # DEV configuration uses --enable-all flags instead of individual components
+ ifneq ($(BR2_PACKAGE_THINGINO_FFMPEG_DEV),y)

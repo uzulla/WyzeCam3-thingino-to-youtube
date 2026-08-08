@@ -1,0 +1,164 @@
+#!/bin/sh
+# youtube-relay - supervise the ffmpeg RTSP -> RTMPS relay to YouTube Live
+# Install to /usr/sbin/youtube-relay (chmod +x). Started by /etc/init.d/S93youtube-relay.
+#
+# Config search order (first match wins):
+#   /mnt/mmcblk0p1/youtube-relay.json   (SD card - standalone/portable mode)
+#   /etc/youtube-relay.json             (built-in, chmod 600)
+# No usable config -> stand by and keep polling. Config removed while
+# streaming (e.g. SD card pulled) -> stop the stream and stand by.
+
+CONFIG_CANDIDATES="/mnt/mmcblk0p1/youtube-relay.json /etc/youtube-relay.json"
+TAG="youtube-relay"
+
+log() {
+	logger -p daemon.info -t $TAG "$1"
+}
+
+find_config() {
+	for c in $CONFIG_CANDIDATES; do
+		if [ -f "$c" ]; then
+			echo "$c"
+			return 0
+		fi
+	done
+	return 1
+}
+
+# Usable = file exists, not explicitly disabled, has a stream key
+config_ok() {
+	[ -f "$1" ] || return 1
+	[ "$(jct "$1" get enabled 2>/dev/null)" = "false" ] && return 1
+	[ -n "$(jct "$1" get stream_key 2>/dev/null)" ]
+}
+
+# Network is considered up when a default route exists and its gateway (if
+# any) answers ping; an on-link default route (no "via") counts as up.
+network_ready() {
+	route=$(ip -4 route show default 2>/dev/null | head -1)
+	[ -n "$route" ] || return 1
+	gw=$(echo "$route" | awk '{for (i = 1; i < NF; i++) if ($i == "via") { print $(i + 1); exit }}')
+	[ -z "$gw" ] && return 0
+	ping -c 1 -W 2 "$gw" >/dev/null 2>&1
+}
+
+FFMPEG_PID=""
+WATCHER_PID=""
+
+cleanup() {
+	[ -n "$WATCHER_PID" ] && kill "$WATCHER_PID" 2>/dev/null
+	if [ -n "$FFMPEG_PID" ]; then
+		kill "$FFMPEG_PID" 2>/dev/null
+		i=0
+		while kill -0 "$FFMPEG_PID" 2>/dev/null && [ $i -lt 5 ]; do
+			i=$((i + 1))
+			sleep 1
+		done
+		kill -9 "$FFMPEG_PID" 2>/dev/null
+		wait "$FFMPEG_PID" 2>/dev/null
+	fi
+	log "Stopped"
+	exit 0
+}
+trap cleanup TERM INT
+
+log "Started, watching for config: $CONFIG_CANDIDATES"
+
+# Wait for network once, then give NTP up to 60s to sync (nice-to-have for TLS)
+network_ready || log "Waiting for network"
+until network_ready; do
+	sleep 5
+done
+n=0
+while [ ! -f /run/sync_success ] && [ $n -lt 12 ]; do
+	n=$((n + 1))
+	sleep 5
+done
+
+BACKOFF=5
+STANDBY_LOGGED=0
+LAST_TARGET=""
+while true; do
+	CFG=$(find_config)
+	if [ -z "$CFG" ] || ! config_ok "$CFG"; then
+		if [ $STANDBY_LOGGED -eq 0 ]; then
+			log "No usable config, standing by"
+			STANDBY_LOGGED=1
+			LAST_TARGET=""
+			BACKOFF=5
+		fi
+		sleep 10
+		continue
+	fi
+	STANDBY_LOGGED=0
+
+	RTSP_URL=$(jct "$CFG" get rtsp_url 2>/dev/null)
+	[ -n "$RTSP_URL" ] || RTSP_URL="rtsp://thingino:thingino@127.0.0.1:554/ch0"
+	RTMP_URL=$(jct "$CFG" get rtmp_url 2>/dev/null)
+	[ -n "$RTMP_URL" ] || RTMP_URL="rtmps://a.rtmps.youtube.com:443/live2"
+	STREAM_KEY=$(jct "$CFG" get stream_key 2>/dev/null)
+	FFMPEG_OPTS=$(jct "$CFG" get ffmpeg_opts 2>/dev/null)
+
+	# Search order: temporary/removable locations first so a test binary on
+	# the SD card or in /tmp overrides the installed one; reboot (or pulling
+	# the SD card) falls back to the installed binary automatically.
+	FFMPEG=$(jct "$CFG" get ffmpeg_bin 2>/dev/null)
+	[ -n "$FFMPEG" ] || for f in /mnt/mmcblk0p1/ffmpeg /tmp/ffmpeg /usr/bin/ffmpeg /usr/local/bin/ffmpeg; do
+		[ -x "$f" ] && FFMPEG="$f" && break
+	done
+	if [ ! -x "$FFMPEG" ]; then
+		log "No ffmpeg binary found, standing by"
+		sleep 30
+		continue
+	fi
+
+	network_ready || { sleep 5; continue; }
+
+	if [ "$CFG/$RTMP_URL" != "$LAST_TARGET" ]; then
+		log "Streaming to $RTMP_URL/REDACTED (config: $CFG, ffmpeg: $FFMPEG)"
+		LAST_TARGET="$CFG/$RTMP_URL"
+	fi
+
+	START=$(date +%s)
+	set -f
+	set -- $FFMPEG_OPTS
+	set +f
+	"$FFMPEG" -nostdin -loglevel error \
+		-rtsp_transport tcp "$@" -i "$RTSP_URL" \
+		-c copy -f flv "$RTMP_URL/$STREAM_KEY" &
+	FFMPEG_PID=$!
+
+	# Watcher: stop the stream if its config disappears (SD pulled) or is disabled
+	(
+		while kill -0 $FFMPEG_PID 2>/dev/null; do
+			if ! config_ok "$CFG"; then
+				log "Config removed or disabled, stopping stream"
+				kill $FFMPEG_PID 2>/dev/null
+				exit 0
+			fi
+			sleep 15
+		done
+	) &
+	WATCHER_PID=$!
+
+	wait $FFMPEG_PID
+	RC=$?
+	FFMPEG_PID=""
+	kill $WATCHER_PID 2>/dev/null
+	wait $WATCHER_PID 2>/dev/null
+	WATCHER_PID=""
+	DUR=$(($(date +%s) - START))
+
+	# If the config is gone, go straight back to standby without backoff noise
+	config_ok "$CFG" || continue
+
+	# Sleep the current backoff, then grow it; reset after a healthy run
+	if [ $DUR -ge 60 ]; then
+		BACKOFF=5
+	fi
+	log "ffmpeg exited (rc=$RC) after ${DUR}s, restarting in ${BACKOFF}s"
+	DELAY=$BACKOFF
+	BACKOFF=$((BACKOFF * 2))
+	[ $BACKOFF -gt 300 ] && BACKOFF=300
+	sleep $DELAY
+done

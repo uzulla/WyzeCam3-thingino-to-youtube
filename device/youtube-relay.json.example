@@ -1,0 +1,8 @@
+{
+	"stream_key": "xxxx-xxxx-xxxx-xxxx-xxxx",
+	"rtsp_url": "rtsp://thingino:thingino@127.0.0.1:554/ch0",
+	"rtmp_url": "rtmps://a.rtmps.youtube.com:443/live2",
+	"ffmpeg_bin": "/usr/bin/ffmpeg",
+	"ffmpeg_opts": "",
+	"enabled": true
+}
