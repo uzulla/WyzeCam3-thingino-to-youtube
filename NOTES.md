@@ -255,8 +255,11 @@ B フレームなしの H.264 なので DTS=PTS 補正で正しく、FLV 出力�
 
 ## 残タスク
 
-- [x] 長時間試験 1時間経過 — **リーク・劣化なし** (ffmpeg RSS 3312K→3324K (+12KB)、
-  CPU 3.3%→3.2%、free RAM 変化なし、A/V ズレなし)。数時間〜日単位の試験は継続中
+- [x] 長時間試験 — **約4時間の連続配信で完走、リーク・劣化なし**
+  (1時間時点の計測: ffmpeg RSS 3312K→3324K (+12KB)、CPU 3.3%→3.2%、
+  free RAM 変化なし、A/V ズレなし。以降も問題なく4時間で試験完了とした)
+- [x] supervisor 実機動作確認 — SD カードに設定を置いて再起動 →
+  **自動マウント → 設定検出 → 自動配信開始** まで実機で成功 (スタンドアロン動作の実証)
 - [ ] supervisor スクリプト — 切断/Wi-Fi 断からの自動再起動 (Thingino init script 形式)
 - [ ] Thingino パッケージとしての統合 (Config.in オプション化、stream key の安全な保持)
 - [ ] typo 修正 (`aac_adtastoasc`) の upstream PR

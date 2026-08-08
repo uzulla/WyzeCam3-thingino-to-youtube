@@ -34,7 +34,10 @@ Wyze Cam v3 の overlay (データパーティション) は 8.5MB で、ffmpeg 
 - **systemd はない**。busybox init が `/etc/init.d/S*` を番号順に実行する。`S93` は
   ネットワーク (S40前後) と prudynt (S31) の後
 - クラッシュ・切断対応は **supervisor のシェルループ**が担う: ffmpeg 終了を検知して再起動、
-  60秒以上動いていたら即時 (5秒)、即死を繰り返す場合は指数バックオフ (最大300秒)。
+  60秒以上動いていた後の失敗は2秒で即時再起動、連続の即死は 4→8→10秒 (上限10秒)
+  (ライブ配信の欠損を最小にする方針。恒久的な失敗でも約10秒毎の再試行で YouTube 相手には無害)。
+  ネットワーク断 (デフォルトルート消失) 中は ffmpeg を起動せず5秒間隔で復帰を待つ
+  (「Network down」のログが1回出る)。全ての起動試行は「Starting ffmpeg」としてログに残る
   `thingino-ha` パッケージの watchdog と同じ構造
 - 起動前に**デフォルトゲートウェイへの ping で ネットワーク up を待ち**、NTP 同期フラグ
   (`/run/sync_success`) を最大60秒待つ
@@ -119,6 +122,56 @@ service enable youtube-relay    # 有効化
 ```
 
 設定変更 (`/etc/youtube-relay.json` 編集) 後は `service restart youtube-relay`。
+
+## トラブルシュート
+
+### まず状態を見る (この順で)
+
+```sh
+/etc/init.d/S93youtube-relay status     # supervisor が生きているか
+logread | grep youtube-relay            # supervisor のログ (最重要)
+ps | grep ffmpeg | grep -v grep         # ffmpeg が実際に走っているか
+```
+
+正常時のログはこの2行:
+
+```text
+youtube-relay: Started, watching for config: /mnt/mmcblk0p1/youtube-relay.json /etc/youtube-relay.json
+youtube-relay: Streaming to rtmps://.../REDACTED (config: ..., ffmpeg: ...)
+```
+
+最終確認は YouTube Studio のプレビュー (映像と音声メーターが動いていること)。
+
+### 症状別
+
+| ログ / 症状 | 原因と対処 |
+|---|---|
+| `No usable config, standing by` | 設定が見つからない。`mount \| grep mmcblk` で SD がマウントされているか、`ls /mnt/mmcblk0p1/` にファイルがあるか、ファイル名が `youtube-relay.json` か、`jct <path> get stream_key` で読めるか (JSON 構文エラーだと読めない)、`"enabled": false` になっていないかを順に確認 |
+| `No ffmpeg binary found, standing by` | **再起動で `/tmp/ffmpeg` は消える**。`/usr/bin/ffmpeg` へ常設するか SD に置く。設定の `ffmpeg_bin` が存在しないパスを指している場合も同じ (行を消せば自動探索になる)。ffmpeg を置けば30秒以内に自動で拾う (supervisor 再起動不要) |
+| `ffmpeg exited (rc=1) after 0〜2s` を繰り返す | ffmpeg が即死している。RTSP の URL/認証ミス、YouTube 側のキー間違い、DNS/ネットワーク未接続が典型。下記「ffmpeg のエラーを直接見る」で原因を特定 |
+| `ffmpeg exited` が数十秒〜数分間隔 | 接続は成立するが切断されている。Wi-Fi 品質、YouTube 側の一時的な切断など。supervisor が自動復帰させるので、頻度が低ければ実害はない |
+| status が `not running` | `service enable youtube-relay` で有効化されているか (`ls -la /etc/init.d/S93youtube-relay` で実行ビット確認)、`/run/portal_mode` が無いか (Wi-Fi 未設定モード)。手動起動は `/etc/init.d/S93youtube-relay start` |
+| SD を挿してもマウントされない | `logread \| grep automount` を確認。fsck 失敗や非対応フォーマットの可能性。FAT32 でフォーマットし直す |
+| `Waiting for network` / `Network down` のまま復帰しない | `ip -4 route show default` が空ならデフォルトルート喪失 (SSH は同一セグメントなので通る点に注意)。`killall -USR1 udhcpc` で DHCP 再取得 → だめなら `service restart network`。リンク断で udhcpc がルートを再設置しないことがあるため、保険として cron に `* * * * * ip -4 route show default \| grep -q . \|\| killall -USR1 udhcpc` を入れておくとよい (`/etc/cron/crontabs/root` に追記) |
+| YouTube Studio に何も出ない (ログは Streaming) | ストリームキーの間違いが最有力。YouTube 側は間違ったキーでも接続を受けてから切断するため、`ffmpeg exited` の繰り返しになっていないかログを確認 |
+| 映像は出るが音が出ない | RTSP に複数の音声トラックが載っている可能性。設定の `ffmpeg_opts` に `-map 0:v:0 -map 0:a:0` を指定して AAC トラックを明示する |
+
+### ffmpeg のエラーを直接見る
+
+supervisor は `-loglevel error` で静かに動かすため、原因調査時は手動で1回実行する:
+
+```sh
+/etc/init.d/S93youtube-relay stop
+/usr/bin/ffmpeg -rtsp_transport tcp \
+  -i "$(jct /mnt/mmcblk0p1/youtube-relay.json get rtsp_url)" \
+  -c copy -f flv \
+  "$(jct /mnt/mmcblk0p1/youtube-relay.json get rtmp_url)/$(jct /mnt/mmcblk0p1/youtube-relay.json get stream_key)" \
+  -loglevel info
+# 原因を直したら:
+/etc/init.d/S93youtube-relay start
+```
+
+`Invalid DTS ... replacing by guess` の警告は prudynt の仕様によるもので**無害** (NOTES.md 参照)。
 
 ## ストリームキーの取り扱い
 

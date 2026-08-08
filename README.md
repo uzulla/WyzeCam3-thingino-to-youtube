@@ -149,7 +149,8 @@ scp -O ffmpeg root@<camera-ip>:/tmp/
 - [x] QEMU 検証・実機動作確認・YouTube Live 配信成功
 - [x] 負荷測定 (prudynt / ISP 処理への影響なしを確認)
 - [x] 自動再起動 (supervisor) スクリプト — [device/](device/) 参照
-- [ ] 長時間安定性試験
+  (SD カード設定 + 再起動からの自動配信開始を実機確認済み)
+- [x] 長時間安定性試験 — 約4時間の連続配信でリーク・劣化・A/V ズレなし
 - [ ] Thingino パッケージとしての統合 / ファームウェア組み込み
   (将来的には Thingino の新ストリーマ [Raptor](https://github.com/gtxaspec/raptor) の
   RTMPS push 機能 (RSP) への移行も選択肢)

@@ -32,14 +32,11 @@ config_ok() {
 	[ -n "$(jct "$1" get stream_key 2>/dev/null)" ]
 }
 
-# Network is considered up when a default route exists and its gateway (if
-# any) answers ping; an on-link default route (no "via") counts as up.
+# Network is considered up when a default route exists. Deliberately no
+# gateway ping: routers that drop ICMP would wedge this gate forever, while
+# a stale route just makes ffmpeg fail fast and retry (max 10s loop).
 network_ready() {
-	route=$(ip -4 route show default 2>/dev/null | head -1)
-	[ -n "$route" ] || return 1
-	gw=$(echo "$route" | awk '{for (i = 1; i < NF; i++) if ($i == "via") { print $(i + 1); exit }}')
-	[ -z "$gw" ] && return 0
-	ping -c 1 -W 2 "$gw" >/dev/null 2>&1
+	[ -n "$(ip -4 route show default 2>/dev/null)" ]
 }
 
 FFMPEG_PID=""
@@ -75,17 +72,16 @@ while [ ! -f /run/sync_success ] && [ $n -lt 12 ]; do
 	sleep 5
 done
 
-BACKOFF=5
+BACKOFF=2
 STANDBY_LOGGED=0
-LAST_TARGET=""
+NET_LOGGED=0
 while true; do
 	CFG=$(find_config)
 	if [ -z "$CFG" ] || ! config_ok "$CFG"; then
 		if [ $STANDBY_LOGGED -eq 0 ]; then
 			log "No usable config, standing by"
 			STANDBY_LOGGED=1
-			LAST_TARGET=""
-			BACKOFF=5
+			BACKOFF=2
 		fi
 		sleep 10
 		continue
@@ -112,12 +108,17 @@ while true; do
 		continue
 	fi
 
-	network_ready || { sleep 5; continue; }
-
-	if [ "$CFG/$RTMP_URL" != "$LAST_TARGET" ]; then
-		log "Streaming to $RTMP_URL/REDACTED (config: $CFG, ffmpeg: $FFMPEG)"
-		LAST_TARGET="$CFG/$RTMP_URL"
+	if ! network_ready; then
+		if [ $NET_LOGGED -eq 0 ]; then
+			log "Network down (no default route), waiting"
+			NET_LOGGED=1
+		fi
+		sleep 5
+		continue
 	fi
+	NET_LOGGED=0
+
+	log "Starting ffmpeg -> $RTMP_URL/REDACTED (config: $CFG, ffmpeg: $FFMPEG)"
 
 	START=$(date +%s)
 	set -f
@@ -152,13 +153,13 @@ while true; do
 	# If the config is gone, go straight back to standby without backoff noise
 	config_ok "$CFG" || continue
 
-	# Sleep the current backoff, then grow it; reset after a healthy run
+	# Healthy run -> restart quickly; consecutive quick failures -> grow up to 10s
 	if [ $DUR -ge 60 ]; then
-		BACKOFF=5
+		BACKOFF=2
+	else
+		BACKOFF=$((BACKOFF * 2))
+		[ $BACKOFF -gt 10 ] && BACKOFF=10
 	fi
 	log "ffmpeg exited (rc=$RC) after ${DUR}s, restarting in ${BACKOFF}s"
-	DELAY=$BACKOFF
-	BACKOFF=$((BACKOFF * 2))
-	[ $BACKOFF -gt 300 ] && BACKOFF=300
-	sleep $DELAY
+	sleep $BACKOFF
 done
