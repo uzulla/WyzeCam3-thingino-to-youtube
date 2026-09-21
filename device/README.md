@@ -226,7 +226,9 @@ echo 'REC' > /run/prudynt/osd-text2.tmp && mv /run/prudynt/osd-text2.tmp /run/pr
   (別の設定ファイルに切り替わった時も同じ: 前のファイルにだけあった矩形は消える)。それ以外は
   **ファイルに書いてあるキーだけを送る**ので、消したキー (`rows` や `osd.burnin` の設定など) は prudynt が
   再起動するまで前の値のまま残る
-- JSON が壊れている時は何も変えず、`logread | grep osd-config` に理由を 1 回出す
+- JSON が壊れている時は `logread | grep osd-config` に理由を 1 回出す。反映済みのファイルを編集して壊した時は
+  表示を変えない (直せば反映される)。別のファイルに切り替わった先が壊れていた時 (SD を抜いたら内蔵の設定が
+  壊れていた、など) は、前のファイルが有効にした矩形を無効に戻す
 - フラッシュには何も書かない (`save_config` を送らない、`/etc/prudynt.json` に触らない)
 - **OSD プールのサイズ (`general.osd_pool_size`) はこの方法では変えられない** (prudynt の起動時にしか確保されない)。
   大きくしたい時は次の節の手順で `/etc/prudynt.json` に 1 回だけ書く
