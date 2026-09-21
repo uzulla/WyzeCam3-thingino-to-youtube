@@ -14,14 +14,18 @@
 OSD_FILE=${OSD_FILE:-/run/prudynt/osd-text}
 COLS=40 # must not exceed osd.textfile.cols (longer lines are cut off)
 
-# osd_text - show stdin on the overlay
+# osd_text [file] - show stdin on an overlay (default: the bottom-left one).
+# The other two are /run/prudynt/osd-text2 (top-right, osd.textfile2) and
+# /run/prudynt/osd-text3 (bottom-right, osd.textfile3).
 osd_text() {
-	cat >"$OSD_FILE.tmp" && mv "$OSD_FILE.tmp" "$OSD_FILE"
+	f=${1:-$OSD_FILE}
+	cat >"$f.tmp" && mv "$f.tmp" "$f"
 }
 
-# osd_clear - hide the overlay
+# osd_clear [file] - hide an overlay
 osd_clear() {
-	rm -f "$OSD_FILE" "$OSD_FILE.tmp"
+	f=${1:-$OSD_FILE}
+	rm -f "$f" "$f.tmp"
 }
 
 # bar <percent> <width> - print [#####-----]

@@ -178,12 +178,13 @@ docker run --rm -v "$PWD/$SYSROOT":/sysroot:ro debian:stable-slim bash -c \
 
 ## (任意) 映像に任意のテキストを重ねる — prudynt の OSD パッチ
 
-配信映像に、時刻以外の**任意の複数行テキスト** (プログレスバーなどの ASCII アート) を焼き込み、
+配信映像に、時刻以外の**任意の複数行テキスト** (プログレスバーなどの ASCII アート) を 3 か所まで
+(既定は左下・右上・右下) 焼き込み、
 カメラ上の別のプログラムから 0.5 秒単位で更新できるようにするパッチです。ffmpeg は stream copy
 なので、文字を載せられるのはエンコーダより前の prudynt (Thingino のストリーマ) だけです。
 標準の prudynt の burn-in OSD は時刻表示専用 (1 行・1 秒更新・大文字と数字だけの 5x7 フォント) なので、
 `patches/prudynt-osd-textfile.diff` で「tmpfs 上のテキストファイルの中身を映す OSD リージョン」を足します。
-設計と実測値は [NOTES.md](NOTES.md) の「OSD テキストオーバーレイ」、経緯は #17。
+設計と実測値は [NOTES.md](NOTES.md) の「OSD テキストオーバーレイ」、経緯は #17 / #19。
 
 ```sh
 # 操作側 (カメラ上) がやることは「一時ファイルに書いて mv で置き換える」だけ
@@ -280,7 +281,9 @@ scp -O ffmpeg root@<camera-ip>:/tmp/
 - [x] `install.sh` / `disable-netwatch.sh` の実機確認 (`da40db6`。新規インストール、配信中の再実行、
   netwatch 無効化後の状態)
 - [x] `da40db6` での長時間試験
-- [x] 映像に任意のテキストを重ねる prudynt の OSD パッチ (#17) — 実機で 0.5 秒更新・再起動後の自動有効化まで確認
+- [x] 映像に任意のテキストを重ねる prudynt の OSD パッチ (#17、3 か所化 #19) — 実機 (720p) で確認: 3 か所同時の 0.5 秒更新、
+  再起動後の自動有効化、OSD プールの上限。1 時間の連続動作は 1 か所の版 (#17) で確認。1080p・サブストリーム・
+  3 か所での長時間動作は未確認
 - [ ] `S37wifi-from-sd` の実機確認
 - [ ] Thingino パッケージとしての統合 / ファームウェア組み込み
   (将来的には Thingino の新ストリーマ [Raptor](https://github.com/gtxaspec/raptor) の
