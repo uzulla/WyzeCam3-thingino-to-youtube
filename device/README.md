@@ -222,11 +222,11 @@ supervisor は `-loglevel error` で静かに動かすため、原因調査時�
 
 ```sh
 /etc/init.d/S93youtube-relay stop
-/usr/bin/ffmpeg -rtsp_transport tcp \
+/usr/bin/ffmpeg -loglevel info -rtsp_transport tcp \
   -i "$(jct /mnt/mmcblk0p1/youtube-relay.json get rtsp_url)" \
   -c copy -f flv \
-  "$(jct /mnt/mmcblk0p1/youtube-relay.json get rtmp_url)/$(jct /mnt/mmcblk0p1/youtube-relay.json get stream_key)" \
-  -loglevel info
+  "$(jct /mnt/mmcblk0p1/youtube-relay.json get rtmp_url)/$(jct /mnt/mmcblk0p1/youtube-relay.json get stream_key)"
+# (オプションは必ず出力 URL より前に置く。後ろに置くと警告が出て無視されることがある)
 # 原因を直したら:
 /etc/init.d/S93youtube-relay start
 ```
