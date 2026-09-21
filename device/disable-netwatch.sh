@@ -25,10 +25,17 @@ check_camera "$CAM"
 echo "Before: $(ssh "$CAM" 'jct /etc/thingino.json get netwatch.enabled 2>/dev/null || echo "(unset = enabled)"')"
 ssh "$CAM" 'jct /etc/thingino.json set netwatch.enabled false && /etc/init.d/S52netwatch restart' || true
 
-state=$(ssh "$CAM" 'jct /etc/thingino.json get netwatch.enabled 2>/dev/null')
-running=$(ssh "$CAM" '[ -f /var/run/netwatch.pid ] && kill -0 "$(cat /var/run/netwatch.pid)" 2>/dev/null && echo yes || echo no')
+# "|| echo" keeps set -e from killing the script silently on a failed lookup.
+# Off means exactly what S52netwatch itself treats as off: false | 0 | no.
+state=$(ssh "$CAM" 'jct /etc/thingino.json get netwatch.enabled 2>/dev/null' || echo "?")
+# Look for the watch loop itself, not its pidfile (stop removes that unconditionally)
+running=$(ssh "$CAM" 'ps | grep -q "[S]52netwatch" && echo yes || echo no' || echo "?")
 echo "After:  enabled=$state, watchdog loop running=$running"
-if [ "$state" != "false" ] || [ "$running" != "no" ]; then
+case "$state" in
+	false | 0 | no) ;;
+	*) state_bad=1 ;;
+esac
+if [ -n "$state_bad" ] || [ "$running" != "no" ]; then
 	echo "netwatch is still active - check the camera manually" >&2
 	exit 1
 fi
