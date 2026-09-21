@@ -39,6 +39,17 @@ network_ready() {
 	[ -n "$(ip -4 route show default 2>/dev/null)" ]
 }
 
+# Only use a binary that runs on this firmware and can speak the output
+# protocol. Catches a build for another toolchain generation left on the SD
+# card after an upgrade, and Thingino's own recording-only ffmpeg (no RTMPS;
+# present only in images built with BR2_PACKAGE_PRUDYNT_T_FFMPEG).
+ffmpeg_supports() {
+	"$1" -hide_banner -protocols 2>/dev/null | awk -v proto="$2" '
+		$0 == "Output:" { out = 1; next }
+		out && $1 == proto { found = 1 }
+		END { exit !found }'
+}
+
 FFMPEG_PID=""
 WATCHER_PID=""
 
@@ -75,6 +86,7 @@ done
 BACKOFF=2
 STANDBY_LOGGED=0
 NET_LOGGED=0
+FFMPEG_LOGGED=0
 while true; do
 	CFG=$(find_config)
 	if [ -z "$CFG" ] || ! config_ok "$CFG"; then
@@ -93,20 +105,36 @@ while true; do
 	RTMP_URL=$(jct "$CFG" get rtmp_url 2>/dev/null)
 	[ -n "$RTMP_URL" ] || RTMP_URL="rtmps://a.rtmps.youtube.com:443/live2"
 	STREAM_KEY=$(jct "$CFG" get stream_key 2>/dev/null)
+	# ffmpeg_opts go before -i (input options, e.g. -timeout), ffmpeg_out_opts
+	# after it (output options, e.g. -map). ffmpeg rejects them in the wrong spot.
 	FFMPEG_OPTS=$(jct "$CFG" get ffmpeg_opts 2>/dev/null)
+	FFMPEG_OUT_OPTS=$(jct "$CFG" get ffmpeg_out_opts 2>/dev/null)
 
 	# Search order: temporary/removable locations first so a test binary on
 	# the SD card or in /tmp overrides the installed one; reboot (or pulling
 	# the SD card) falls back to the installed binary automatically.
+	PROTO=${RTMP_URL%%:*}
 	FFMPEG=$(jct "$CFG" get ffmpeg_bin 2>/dev/null)
-	[ -n "$FFMPEG" ] || for f in /mnt/mmcblk0p1/ffmpeg /tmp/ffmpeg /usr/bin/ffmpeg /usr/local/bin/ffmpeg; do
-		[ -x "$f" ] && FFMPEG="$f" && break
-	done
+	# An explicit ffmpeg_bin wins, but if it is unusable (typically
+	# /usr/bin/ffmpeg wiped with the overlay by an upgrade) fall back to
+	# the search so an SD card binary can still bring the stream up.
+	if [ -n "$FFMPEG" ] && { [ ! -x "$FFMPEG" ] || ! ffmpeg_supports "$FFMPEG" "$PROTO"; }; then
+		FFMPEG=""
+	fi
+	if [ -z "$FFMPEG" ]; then
+		for f in /mnt/mmcblk0p1/ffmpeg /tmp/ffmpeg /usr/bin/ffmpeg /usr/local/bin/ffmpeg; do
+			[ -x "$f" ] && ffmpeg_supports "$f" "$PROTO" && FFMPEG="$f" && break
+		done
+	fi
 	if [ ! -x "$FFMPEG" ]; then
-		log "No ffmpeg binary found, standing by"
+		if [ $FFMPEG_LOGGED -eq 0 ]; then
+			log "No ffmpeg binary with $PROTO support found, standing by"
+			FFMPEG_LOGGED=1
+		fi
 		sleep 30
 		continue
 	fi
+	FFMPEG_LOGGED=0
 
 	if ! network_ready; then
 		if [ $NET_LOGGED -eq 0 ]; then
@@ -122,11 +150,10 @@ while true; do
 
 	START=$(date +%s)
 	set -f
-	set -- $FFMPEG_OPTS
+	set -- -nostdin -loglevel error -rtsp_transport tcp $FFMPEG_OPTS \
+		-i "$RTSP_URL" -c copy $FFMPEG_OUT_OPTS -f flv "$RTMP_URL/$STREAM_KEY"
 	set +f
-	"$FFMPEG" -nostdin -loglevel error \
-		-rtsp_transport tcp "$@" -i "$RTSP_URL" \
-		-c copy -f flv "$RTMP_URL/$STREAM_KEY" &
+	"$FFMPEG" "$@" &
 	FFMPEG_PID=$!
 
 	# Watcher: stop the stream if its config disappears (SD pulled) or is disabled

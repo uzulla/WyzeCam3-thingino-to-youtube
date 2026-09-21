@@ -41,6 +41,12 @@ start() {
 
 stop() {
 	echo -n "Stopping $DAEMON: "
+	# A stale pidfile may name a PID since reused by something else: never signal that
+	if ! running; then
+		echo "SKIP (not running)"
+		rm -f "$PIDFILE"
+		return 0
+	fi
 	if start-stop-daemon -K -p "$PIDFILE" -s TERM 2>/dev/null; then
 		echo "OK"
 	else
