@@ -108,9 +108,13 @@ while true; do
 	# the SD card) falls back to the installed binary automatically.
 	PROTO=${RTMP_URL%%:*}
 	FFMPEG=$(jct "$CFG" get ffmpeg_bin 2>/dev/null)
-	if [ -n "$FFMPEG" ]; then
-		[ -x "$FFMPEG" ] && ! ffmpeg_supports "$FFMPEG" "$PROTO" && FFMPEG=""
-	else
+	# An explicit ffmpeg_bin wins, but if it is unusable (typically
+	# /usr/bin/ffmpeg reverted to the stock binary by an upgrade) fall back
+	# to the search so an SD card binary can still bring the stream up.
+	if [ -n "$FFMPEG" ] && { [ ! -x "$FFMPEG" ] || ! ffmpeg_supports "$FFMPEG" "$PROTO"; }; then
+		FFMPEG=""
+	fi
+	if [ -z "$FFMPEG" ]; then
 		for f in /mnt/mmcblk0p1/ffmpeg /tmp/ffmpeg /usr/bin/ffmpeg /usr/local/bin/ffmpeg; do
 			[ -x "$f" ] && ffmpeg_supports "$f" "$PROTO" && FFMPEG="$f" && break
 		done

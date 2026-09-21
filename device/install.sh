@@ -32,18 +32,34 @@ fi
 # Thingino has no sftp-server, so stream files through ssh instead of scp
 push() {
 	echo "  $1 -> $2"
-	ssh "$CAM" "cat > '$2.new' && chmod $3 '$2.new' && mv '$2.new' '$2'" <"$1"
+	if ! ssh "$CAM" "cat > '$2.new' && chmod $3 '$2.new' && mv '$2.new' '$2' || { rm -f '$2.new'; exit 1; }" <"$1"; then
+		echo "Failed to write $2 (overlay full? check: ssh $CAM df -h /overlay)" >&2
+		exit 1
+	fi
 }
 
-echo "Camera: $(ssh "$CAM" '. /etc/os-release; echo "$IMAGE_ID / $BUILD_ID / gcc$TOOLCHAIN_GCC"')"
+# md5sum on Linux, md5 on macOS
+local_md5() {
+	if command -v md5sum >/dev/null 2>&1; then
+		md5sum <"$1" | cut -d' ' -f1
+	else
+		md5 -q "$1"
+	fi
+}
+
+if ! info=$(ssh "$CAM" '. /etc/os-release; echo "$IMAGE_ID / $BUILD_ID / gcc$TOOLCHAIN_GCC"'); then
+	echo "Cannot reach $CAM over ssh" >&2
+	exit 1
+fi
+echo "Camera: $info"
 
 if [ -n "$FFMPEG" ]; then
 	echo "Installing ffmpeg"
 	ssh "$CAM" 'df -h /overlay | tail -1'
 	push "$FFMPEG" /usr/bin/ffmpeg 755
-	want=$(md5sum <"$FFMPEG" | cut -d' ' -f1)
+	want=$(local_md5 "$FFMPEG")
 	got=$(ssh "$CAM" 'md5sum </usr/bin/ffmpeg' | cut -d' ' -f1)
-	if [ "$want" != "$got" ]; then
+	if [ -z "$want" ] || [ "$want" != "$got" ]; then
 		echo "md5 mismatch after transfer (overlay full?)" >&2
 		exit 1
 	fi
