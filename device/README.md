@@ -175,9 +175,12 @@ rm /run/prudynt/osd-text
 - 常用するなら `/etc/prudynt.json` の `osd.textfile` に書く。このリポジトリのスクリプトは prudynt の
   設定ファイルを書き換えない (`prudyntctl json` に `save_config` を送ればフラッシュに保存されるが、
   スクリプトからは送っていない)
-- リージョンが大きすぎて OSD プールに入らないと `logread` に `IMP_OSD_SetRgnAttr failed` が出て
-  表示されない。`scale` / `cols` / `rows` を下げるか、`/etc/prudynt.json` の `general.osd_pool_size`
-  (KB) を上げて prudynt を再起動する
+- **リージョンが大きすぎて OSD プールに入らないと、libimp はエラーを出さずに表示しない**
+  (`IMP_OSD_SetRgnAttr` は成功を返し、`logread` にも何も出ない)。そのためパッチ側でプールの予算を計算し、
+  入らない設定は scale → 行数 → 桁数の順に自動で縮める。縮めた時は `logread | grep textfile` に
+  `does not fit ... reduced to scale N, CxR cells` の警告が出る。指定より小さく出る・出ない時はこのログを見て、
+  `scale` / `cols` / `rows` を下げるか、`/etc/prudynt.json` の `general.osd_pool_size` (KB) を上げて
+  prudynt を再起動する。720p の既定のプール (約 616KB) で使えるのは約 535KB (scale 2 なら 40 桁×11 行まで)
 
 ## 設計 (Thingino の流儀に準拠)
 

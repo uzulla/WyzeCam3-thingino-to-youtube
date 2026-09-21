@@ -37,6 +37,12 @@ bar() {
 }
 
 TOTAL=${1:-30}
+case "$TOTAL" in
+"" | *[!0-9]* | 0)
+	echo "Usage: $0 [seconds (1 or more)]" >&2
+	exit 1
+	;;
+esac
 STEPS=$((TOTAL * 2)) # one update every 0.5 s
 
 trap 'osd_clear; exit 0' INT TERM

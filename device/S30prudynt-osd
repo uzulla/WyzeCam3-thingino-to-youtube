@@ -5,7 +5,8 @@
 # Thingino's own /usr/bin/prudynt is left untouched: our binary lives next to it
 # as /usr/bin/prudynt-osd and is bind-mounted over it at boot. To go back to the
 # stock prudynt: "service disable prudynt-osd" (or delete this file) and reboot,
-# or right away:  /etc/init.d/S30prudynt-osd stop && service restart prudynt
+# or right away (prudynt has to be stopped first, or the umount fails with "busy"):
+#   service stop prudynt; /etc/init.d/S30prudynt-osd stop; service start prudynt
 #
 # The binary only fits the firmware it was built for, so it is used only while
 # /etc/os-release still shows the BUILD_ID recorded at install time.

@@ -211,10 +211,10 @@ index e0ba5b2..c0d1bfe 100644
    // until ts_scale_ changes (osd.burnin.scale takes effect live).
 diff --git c/src/video/OSDTextRender.hpp i/src/video/OSDTextRender.hpp
 new file mode 100644
-index 0000000..1d2f16c
+index 0000000..ea05235
 --- /dev/null
 +++ i/src/video/OSDTextRender.hpp
-@@ -0,0 +1,215 @@
+@@ -0,0 +1,222 @@
 +#pragma once
 +// -- text-file overlay: layout + rasterizer ---------------------------
 +// Pure helpers for OSD::updateTextfileOverlay() (OSDTextfile.cpp). No IMP
@@ -299,8 +299,9 @@ index 0000000..1d2f16c
 +}
 +
 +// Split raw file bytes into at most `rows` lines of at most `cols` cells.
-+// Accepts LF or CRLF, decodes UTF-8 (one cell per codepoint), expands
-+// nothing: tabs and other control characters become blanks. Trailing
++// Accepts LF or CRLF, decodes UTF-8 (one cell per codepoint; bytes that are
++// not valid UTF-8 become one blank each), expands nothing: tabs and other
++// control characters become blanks. Trailing
 +// blank lines are dropped, so an empty or whitespace-only file yields an
 +// empty vector (= overlay hidden).
 +inline std::vector<Line> parseLines(const char *data, size_t len, int cols,
@@ -317,21 +318,27 @@ index 0000000..1d2f16c
 +    unsigned char c = (unsigned char)data[i];
 +    uint32_t cp;
 +    size_t n = 1;
++    // Continuation byte (10xxxxxx) at offset k of the current sequence?
++    auto cont = [&](size_t k) {
++      return i + k < len && ((unsigned char)data[i + k] & 0xC0) == 0x80;
++    };
 +    if (c < 0x80) {
 +      cp = c;
-+    } else if ((c & 0xE0) == 0xC0 && i + 1 < len) {
++    } else if ((c & 0xE0) == 0xC0 && cont(1)) {
 +      cp = ((uint32_t)(c & 0x1F) << 6) | (uint32_t)(data[i + 1] & 0x3F);
 +      n = 2;
-+    } else if ((c & 0xF0) == 0xE0 && i + 2 < len) {
++    } else if ((c & 0xF0) == 0xE0 && cont(1) && cont(2)) {
 +      cp = ((uint32_t)(c & 0x0F) << 12) | ((uint32_t)(data[i + 1] & 0x3F) << 6) |
 +           (uint32_t)(data[i + 2] & 0x3F);
 +      n = 3;
-+    } else if ((c & 0xF8) == 0xF0 && i + 3 < len) {
++    } else if ((c & 0xF8) == 0xF0 && cont(1) && cont(2) && cont(3)) {
 +      cp = ((uint32_t)(c & 0x07) << 18) | ((uint32_t)(data[i + 1] & 0x3F) << 12) |
 +           ((uint32_t)(data[i + 2] & 0x3F) << 6) | (uint32_t)(data[i + 3] & 0x3F);
 +      n = 4;
 +    } else {
-+      cp = ' '; // malformed or truncated sequence
++      // Not valid UTF-8 (Shift_JIS, Latin-1, a truncated sequence...): blank
++      // this one byte only, so that a following newline is never swallowed.
++      cp = ' ';
 +    }
 +    i += n;
 +    if (cp == '\n') {
