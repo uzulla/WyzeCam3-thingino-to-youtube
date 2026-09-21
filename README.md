@@ -113,7 +113,7 @@ git 管理外です。必要な変更はすべて `patches/` に分離してあ�
 | Thingino | toolchain | uClibc-ng | mbedTLS | Release | 状態 |
 |---|---|---|---|---|---|
 | `ciao+c334a03` (2026-08-01) | GCC 15 | 1.0.57 | 3.6.6 | v1.0.0 | 実機で長時間配信まで確認済み |
-| `ciao+da40db6` (2026-09-14) | GCC 16.2 | 1.0.59 | 3.6.6 | v1.1.0 | 実機で YouTube Live 配信 (映像・音声) まで確認済み。`device/` のスクリプトはこのビルド専用 |
+| `ciao+da40db6` (2026-09-14) | GCC 16.2 | 1.0.59 | 3.6.6 | v1.1.0 | 実機で長時間配信まで確認済み。`device/` のスクリプトはこのビルド専用 |
 
 > **注意**: バイナリは実機ファームと同じ toolchain 世代・同じ mbedTLS soname に依存します。
 > 実機の `/etc/os-release` の `BUILD_ID` (`ciao+<commit>`) と `TOOLCHAIN_GCC`、および
@@ -224,7 +224,8 @@ scp -O ffmpeg root@<camera-ip>:/tmp/
 - [x] インストーラ (`install.sh`)、netwatch 無効化、SD カードからの Wi-Fi 設定 (複数可)
 - [x] `install.sh` / `disable-netwatch.sh` の実機確認 (`da40db6`。新規インストール、配信中の再実行、
   netwatch 無効化後の状態)
-- [ ] `da40db6` での長時間試験、`S37wifi-from-sd` の実機確認
+- [x] `da40db6` での長時間試験
+- [ ] `S37wifi-from-sd` の実機確認
 - [ ] Thingino パッケージとしての統合 / ファームウェア組み込み
   (将来的には Thingino の新ストリーマ [Raptor](https://github.com/gtxaspec/raptor) の
   RTMPS push 機能 (RSP) への移行も選択肢)
