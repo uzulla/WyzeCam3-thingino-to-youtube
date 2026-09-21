@@ -19,10 +19,8 @@ if [ -z "$CAM" ]; then
 	exit 1
 fi
 
-if ! ssh "$CAM" '[ -x /etc/init.d/S52netwatch ]'; then
-	echo "No netwatch on this firmware - nothing to do."
-	exit 0
-fi
+. "$(dirname "$0")/common.sh"
+check_camera "$CAM"
 
 echo "Before: $(ssh "$CAM" 'jct /etc/thingino.json get netwatch.enabled 2>/dev/null || echo "(unset = enabled)"')"
 ssh "$CAM" 'jct /etc/thingino.json set netwatch.enabled false && /etc/init.d/S52netwatch restart' || true

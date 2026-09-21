@@ -46,11 +46,8 @@ local_md5() {
 	fi
 }
 
-if ! info=$(ssh "$CAM" '. /etc/os-release; echo "$IMAGE_ID / $BUILD_ID / gcc$TOOLCHAIN_GCC"'); then
-	echo "Cannot reach $CAM over ssh" >&2
-	exit 1
-fi
-echo "Camera: $info"
+. "$HERE/common.sh"
+check_camera "$CAM"
 
 if [ -n "$FFMPEG" ]; then
 	echo "Installing ffmpeg"
@@ -69,7 +66,24 @@ if [ -n "$FFMPEG" ]; then
 fi
 
 echo "Installing scripts"
-ssh "$CAM" '/etc/init.d/S93youtube-relay stop >/dev/null 2>&1 || true'
+# stop only signals the supervisor; it exits after its current sleep and after
+# reaping ffmpeg. Wait for that, or the new instance would briefly publish to
+# the same stream key alongside the old one.
+ssh "$CAM" '
+	pid=$(cat /run/youtube-relay.pid 2>/dev/null)
+	/etc/init.d/S93youtube-relay stop >/dev/null 2>&1
+	i=0
+	while [ -n "$pid" ] && [ -d "/proc/$pid" ] && [ $i -lt 45 ]; do
+		i=$((i + 1))
+		sleep 1
+	done
+	if [ -n "$pid" ] && [ -d "/proc/$pid" ]; then
+		echo "old supervisor (pid $pid) did not exit, killing it" >&2
+		pkill -P "$pid" 2>/dev/null # its ffmpeg child first, or it would be orphaned
+		kill -9 "$pid" 2>/dev/null
+	fi
+	true
+'
 push "$HERE/youtube-relay" /usr/sbin/youtube-relay 755
 push "$HERE/S93youtube-relay" /etc/init.d/S93youtube-relay 755
 

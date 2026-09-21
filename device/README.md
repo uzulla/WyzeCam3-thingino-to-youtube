@@ -10,6 +10,7 @@ Thingino 実機に置く supervisor 一式。`/etc` 以下は overlayfs でフ�
 | `youtube-relay.json.example` | `/etc/youtube-relay.json` または SD カード直下 | 設定ファイル (下記「SD カードモード」参照) |
 | `install.sh` | (PC 側で実行) | 上記と ffmpeg を SSH 経由でまとめて入れるインストーラ。再実行可能。**このリポジトリのファイルを置くだけで、Thingino 側の設定やファーム更新には触らない** |
 | `disable-netwatch.sh` | (PC 側で実行) | Thingino の netwatch (ping 失敗で OS を再起動) を無効化する。OS 設定の変更なので `install.sh` とは別 (下記「netwatch」参照) |
+| `common.sh` | (上の 2 本が読み込む) | 対応ファームの判定。カメラの `/etc/os-release` の `BUILD_ID` が **`ciao+da40db6`** でなければ何も変更せず中止する |
 
 ## 設定ファイルの探索順と「SD カードモード」
 
@@ -106,6 +107,11 @@ Thingino はルート全体が overlayfs (SquashFS + JFFS2 データパーティ
 |---|---|---|
 | `ffmpeg_opts` | `-i` の**前** (入力オプション) | `-timeout 5000000` |
 | `ffmpeg_out_opts` | `-i` の**後** (出力オプション) | `-map 0:v:0 -map 0:a:0` |
+
+`install.sh` / `disable-netwatch.sh` は**特定のファーム (`ciao+da40db6`) 決め打ち**で、カメラの
+`/etc/os-release` が違えば何も変更せずに止まる。ffmpeg はそのファームの toolchain でビルドした
+ものしか動かず、スクリプトもそのファームの構成 (netwatch がある等) を前提にしているため。
+別のファームに上げるときは、ビルドし直した上で `common.sh` の `SUPPORTED_BUILD` を更新する。
 
 `install.sh` がやっていることを手作業で行う場合:
 
