@@ -12,6 +12,7 @@ Thingino 実機に置く supervisor 一式。`/etc` 以下は overlayfs でフ�
 | `disable-netwatch.sh` | (PC 側で実行) | Thingino の netwatch (ping 失敗で OS を再起動) を無効化する。OS 設定の変更なので `install.sh` とは別 (下記「netwatch」参照) |
 | `install-wifi-from-sd.sh` / `S37wifi-from-sd` | (PC 側で実行) / `/etc/init.d/S37wifi-from-sd` | **任意**。SD の `wpa_supplicant.conf` (複数の Wi-Fi 可) を起動時に適用する。OS 設定を書き換えるので `install.sh` とは別 (下記「Wi-Fi 設定も SD カードで運ぶ」参照) |
 | `install-prudynt-osd.sh` / `S30prudynt-osd` / `osd-progress-demo` | (PC 側で実行) / `/etc/init.d/S30prudynt-osd` / `/usr/sbin/osd-progress-demo` | **任意**。映像に任意のテキストを重ねられる prudynt (パッチ入り) を入れる。Thingino のストリーマを差し替えるので `install.sh` とは別 (下記「OSD テキストオーバーレイ」参照) |
+| `osd-config` / `S93osd-config` / `prudynt-osd.json.example` | `/usr/sbin/osd-config` / `/etc/init.d/S93osd-config` / SD カード直下または `/etc/prudynt-osd.json` | **任意** (`install-prudynt-osd.sh` が入れる)。OSD の設定を SD カードのファイルから読み、prudynt が再起動するたびに送り直す (下記「設定を SD カードに置く」参照) |
 | `common.sh` | (PC 側の各スクリプトが読み込む) | 対応ファームの判定。カメラの `/etc/os-release` の `BUILD_ID` が **`ciao+da40db6`** でなければ何も変更せず中止する |
 
 ## 設定ファイルの探索順と「SD カードモード」
@@ -126,10 +127,13 @@ network={
 - インストール時に prudynt を再起動するので、**配信が数秒切れる** (supervisor が自動で再接続する)
 - バイナリはビルドしたファーム専用。`/etc/os-release` の `BUILD_ID` がインストール時と違っていたら
   bind mount せず、標準の prudynt のまま起動する
-- 元に戻す: `service disable prudynt-osd` して再起動 (すぐ戻すなら
-  `service stop prudynt; /etc/init.d/S30prudynt-osd stop; service start prudynt`)。
+- 元に戻す: `service disable prudynt-osd; service disable osd-config` して再起動 (すぐ戻すなら
+  `service stop osd-config; service stop prudynt; /etc/init.d/S30prudynt-osd stop; service start prudynt`)。
   完全に消すなら `/etc/init.d/S30prudynt-osd` `/usr/bin/prudynt-osd` `/usr/bin/prudynt-osd.build`
-  `/usr/sbin/osd-progress-demo` を削除する
+  `/usr/sbin/osd-progress-demo` `/usr/sbin/osd-config` `/etc/init.d/S93osd-config` と、置いていれば
+  設定ファイル (`/etc/prudynt-osd.json` と、SD カード直下の `prudynt-osd.json` = カメラ上では
+  `/mnt/mmcblk0p1/prudynt-osd.json`) を削除する。どちらかが残っていると、入れ直した時や `osd-config` を
+  有効に戻した時に、古い OSD 設定が自動で反映される
 - Thingino を入れ直した/更新した後は、他のファイルと同じく入れ直しが必要 (新しいファームに合わせて
   prudynt をビルドし直す)
 
@@ -194,6 +198,44 @@ echo 'REC' > /run/prudynt/osd-text2.tmp && mv /run/prudynt/osd-text2.tmp /run/pr
   設定ファイルを書き換えない (`prudyntctl json` に `save_config` を送ればフラッシュに保存されるが、
   スクリプトからは送っていない)。**`prudyntctl json` での変更は prudynt の再起動で消える**
   (再起動後に何も出なくなったら、まず `enabled` が false に戻っていないか見る)
+
+### 設定を SD カードに置く (再起動しても消えないようにする)
+
+`prudyntctl json` で変えた設定は、prudynt の再起動やカメラの再起動で消える。SD カード直下に
+`prudynt-osd.json` を置いておくと、常駐スクリプト `osd-config` が自動で送り直す
+(ストリームキーの `youtube-relay.json` と同じく **SD → `/etc/prudynt-osd.json`** の順で探す)。
+
+```json
+{
+  "osd": {
+    "textfile":  { "enabled": true, "cols": 40, "rows": 10 },
+    "textfile2": { "enabled": true },
+    "textfile3": { "enabled": true, "rows": 4 }
+  }
+}
+```
+
+- 中身は `prudyntctl json` に渡す JSON と同じ形。**送られるのは `osd` の部分だけ**で、それ以外のキー
+  (`action` や映像の設定など) は無視される。`osd.burnin` (日時の書式や大きさ) も書ける
+- 送り直すのは、prudynt が再起動した時 (WebUI で設定を変えた後など) と、ファイルの中身が変わった時
+  (SD を挿した、書き換えた)。5 秒間隔で見ているので、カメラの再起動は要らない
+- ファイルが無くなると (SD を抜くと)、**そのファイルに書いてあったテキストの矩形だけ**を無効に戻す
+  (ファイルに出てこない矩形や日時の設定には触らない)。設定ファイルを置いていなければ、prudynt には何も送らない
+  (手で `prudyntctl json` した設定に干渉しない)
+- prudynt が設定を受け付けない状態が 30 秒続くと (キーの綴り間違い、パッチなしの prudynt など)、
+  `logread | grep osd-config` に 1 回出して、送り続ける
+- テキストの矩形 (`textfile` / `textfile2` / `textfile3`) のブロックをファイルから消すと、その矩形は無効に戻る
+  (別の設定ファイルに切り替わった時も同じ: 前のファイルにだけあった矩形は消える)。それ以外は
+  **ファイルに書いてあるキーだけを送る**ので、消したキー (`rows` や `osd.burnin` の設定など) は prudynt が
+  再起動するまで前の値のまま残る
+- JSON が壊れている時は `logread | grep osd-config` に理由を 1 回出す。反映済みのファイルを編集して壊した時は
+  表示を変えない (直せば反映される)。別のファイルに切り替わった先が壊れていた時 (SD を抜いたら内蔵の設定が
+  壊れていた、など) は、前のファイルが有効にした矩形を無効に戻す
+- フラッシュには何も書かない (`save_config` を送らない、`/etc/prudynt.json` に触らない)
+- **OSD プールのサイズ (`general.osd_pool_size`) はこの方法では変えられない** (prudynt の起動時にしか確保されない)。
+  大きくしたい時は次の節の手順で `/etc/prudynt.json` に 1 回だけ書く
+- ログ: `logread | grep osd-config`。止めて、次回の起動でも動かないようにする:
+  `service stop osd-config; service disable osd-config`
 
 ### 大きさの上限と OSD プール
 

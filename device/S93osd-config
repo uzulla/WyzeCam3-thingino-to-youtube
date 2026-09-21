@@ -1,0 +1,81 @@
+#!/bin/sh
+# Start/stop the OSD settings keeper (see /usr/sbin/osd-config).
+# Install to /etc/init.d/S93osd-config (chmod +x).
+# Enable/disable with: service enable osd-config / service disable osd-config
+
+DAEMON="osd-config"
+DAEMON_PATH="/usr/sbin/osd-config"
+PIDFILE="/run/$DAEMON.pid"
+
+running() {
+	[ -f "$PIDFILE" ] || return 1
+	pid=$(cat "$PIDFILE" 2>/dev/null)
+	[ -n "$pid" ] || return 1
+	# Verify the PID is alive and actually is our daemon, not a reused PID
+	# (match the full path: this init script's own name contains "osd-config" too)
+	grep -q "$DAEMON_PATH" "/proc/$pid/cmdline" 2>/dev/null
+}
+
+start() {
+	echo -n "Starting $DAEMON: "
+	if [ -f /run/portal_mode ]; then
+		echo "SKIP (portal mode)"
+		exit 0
+	fi
+	# No config check here: osd-config stands by until a config appears on the
+	# SD card (/mnt/mmcblk0p1) or in /etc, so an SD card inserted later is applied.
+	if running; then
+		echo "SKIP (already running, pid $(cat $PIDFILE))"
+		exit 0
+	fi
+	rm -f "$PIDFILE"
+	# -N 10: lower priority so we never compete with prudynt/ISP
+	if start-stop-daemon -S -b -m -N 10 -p "$PIDFILE" -x "$DAEMON_PATH"; then
+		echo "OK"
+	else
+		echo "FAIL"
+		exit 1
+	fi
+}
+
+stop() {
+	echo -n "Stopping $DAEMON: "
+	# A stale pidfile may name a PID since reused by something else: never signal that
+	if ! running; then
+		echo "SKIP (not running)"
+		rm -f "$PIDFILE"
+		return 0
+	fi
+	if start-stop-daemon -K -p "$PIDFILE" -s TERM 2>/dev/null; then
+		echo "OK"
+	else
+		echo "FAIL (not running?)"
+	fi
+	rm -f "$PIDFILE"
+}
+
+case "$1" in
+	start)
+		start
+		;;
+	stop)
+		stop
+		;;
+	restart)
+		stop
+		sleep 1
+		start
+		;;
+	status)
+		if running; then
+			echo "$DAEMON is running (pid $(cat $PIDFILE))"
+		else
+			echo "$DAEMON is not running"
+			exit 1
+		fi
+		;;
+	*)
+		echo "Usage: $0 {start|stop|restart|status}"
+		exit 1
+		;;
+esac
