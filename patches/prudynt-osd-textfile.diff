@@ -1,7 +1,7 @@
-diff --git c/src/config/Config.cpp i/src/config/Config.cpp
+diff --git a/src/config/Config.cpp b/src/config/Config.cpp
 index cefac45..4865291 100644
---- c/src/config/Config.cpp
-+++ i/src/config/Config.cpp
+--- a/src/config/Config.cpp
++++ b/src/config/Config.cpp
 @@ -332,6 +332,15 @@ std::vector<ConfigItem<bool>> CFG::getBoolItems() {
        {"osd.burnin.enabled", osd.burnin.enabled, true, validateBool},
        {"osd.burnin.substream_disabled", osd.burnin.substream_disabled, false,
@@ -86,10 +86,10 @@ index cefac45..4865291 100644
  
        {"image.ae_compensation", image.ae_compensation, 128, validateInt255},
        /* Expert overrides preserved for backward compatibility */
-diff --git c/src/config/Config.hpp i/src/config/Config.hpp
+diff --git a/src/config/Config.hpp b/src/config/Config.hpp
 index fb30ab0..1b678df 100644
---- c/src/config/Config.hpp
-+++ i/src/config/Config.hpp
+--- a/src/config/Config.hpp
++++ b/src/config/Config.hpp
 @@ -206,6 +206,23 @@ struct _privacy {
  };
  
@@ -127,10 +127,10 @@ index fb30ab0..1b678df 100644
  };
  struct _recorder {
    bool enabled;
-diff --git c/src/config/JsonAPI.cpp i/src/config/JsonAPI.cpp
+diff --git a/src/config/JsonAPI.cpp b/src/config/JsonAPI.cpp
 index fb883cc..21fa555 100644
---- c/src/config/JsonAPI.cpp
-+++ i/src/config/JsonAPI.cpp
+--- a/src/config/JsonAPI.cpp
++++ b/src/config/JsonAPI.cpp
 @@ -507,6 +507,46 @@ void handle_osd(JsonValue *obj, int idx, std::string &sect, bool &s2,
      sect += "}";
      wrote = true;
@@ -178,10 +178,10 @@ index fb883cc..21fa555 100644
  }
  
  void handle_audio(JsonValue *obj, std::string &out, bool &sep) {
-diff --git c/src/video/OSD.cpp i/src/video/OSD.cpp
+diff --git a/src/video/OSD.cpp b/src/video/OSD.cpp
 index 500c5fb..925a3ee 100644
---- c/src/video/OSD.cpp
-+++ i/src/video/OSD.cpp
+--- a/src/video/OSD.cpp
++++ b/src/video/OSD.cpp
 @@ -920,6 +920,7 @@ int OSD::exit() {
      ts_rgn_ = INVHANDLE;
      ts_region_created_ = false;
@@ -203,10 +203,10 @@ index 500c5fb..925a3ee 100644
    current = time(nullptr);
    ltime = localtime(&current);
  
-diff --git c/src/video/OSD.hpp i/src/video/OSD.hpp
+diff --git a/src/video/OSD.hpp b/src/video/OSD.hpp
 index e0ba5b2..b182778 100644
---- c/src/video/OSD.hpp
-+++ i/src/video/OSD.hpp
+--- a/src/video/OSD.hpp
++++ b/src/video/OSD.hpp
 @@ -14,8 +14,14 @@
  #include <netinet/in.h>
  #include <string>
@@ -267,12 +267,12 @@ index e0ba5b2..b182778 100644
  #ifdef USE_OSD_FONT_LIBSCHRIFT
    // Antialiased glyph bitmap, rasterized once per character and cached
    // until ts_scale_ changes (osd.burnin.scale takes effect live).
-diff --git c/src/video/OSDTextRender.hpp i/src/video/OSDTextRender.hpp
+diff --git a/src/video/OSDTextRender.hpp b/src/video/OSDTextRender.hpp
 new file mode 100644
-index 0000000..1d2f16c
+index 0000000..ea05235
 --- /dev/null
-+++ i/src/video/OSDTextRender.hpp
-@@ -0,0 +1,215 @@
++++ b/src/video/OSDTextRender.hpp
+@@ -0,0 +1,222 @@
 +#pragma once
 +// -- text-file overlay: layout + rasterizer ---------------------------
 +// Pure helpers for OSD::updateTextfileOverlay() (OSDTextfile.cpp). No IMP
@@ -357,8 +357,9 @@ index 0000000..1d2f16c
 +}
 +
 +// Split raw file bytes into at most `rows` lines of at most `cols` cells.
-+// Accepts LF or CRLF, decodes UTF-8 (one cell per codepoint), expands
-+// nothing: tabs and other control characters become blanks. Trailing
++// Accepts LF or CRLF, decodes UTF-8 (one cell per codepoint; bytes that are
++// not valid UTF-8 become one blank each), expands nothing: tabs and other
++// control characters become blanks. Trailing
 +// blank lines are dropped, so an empty or whitespace-only file yields an
 +// empty vector (= overlay hidden).
 +inline std::vector<Line> parseLines(const char *data, size_t len, int cols,
@@ -375,21 +376,27 @@ index 0000000..1d2f16c
 +    unsigned char c = (unsigned char)data[i];
 +    uint32_t cp;
 +    size_t n = 1;
++    // Continuation byte (10xxxxxx) at offset k of the current sequence?
++    auto cont = [&](size_t k) {
++      return i + k < len && ((unsigned char)data[i + k] & 0xC0) == 0x80;
++    };
 +    if (c < 0x80) {
 +      cp = c;
-+    } else if ((c & 0xE0) == 0xC0 && i + 1 < len) {
++    } else if ((c & 0xE0) == 0xC0 && cont(1)) {
 +      cp = ((uint32_t)(c & 0x1F) << 6) | (uint32_t)(data[i + 1] & 0x3F);
 +      n = 2;
-+    } else if ((c & 0xF0) == 0xE0 && i + 2 < len) {
++    } else if ((c & 0xF0) == 0xE0 && cont(1) && cont(2)) {
 +      cp = ((uint32_t)(c & 0x0F) << 12) | ((uint32_t)(data[i + 1] & 0x3F) << 6) |
 +           (uint32_t)(data[i + 2] & 0x3F);
 +      n = 3;
-+    } else if ((c & 0xF8) == 0xF0 && i + 3 < len) {
++    } else if ((c & 0xF8) == 0xF0 && cont(1) && cont(2) && cont(3)) {
 +      cp = ((uint32_t)(c & 0x07) << 18) | ((uint32_t)(data[i + 1] & 0x3F) << 12) |
 +           ((uint32_t)(data[i + 2] & 0x3F) << 6) | (uint32_t)(data[i + 3] & 0x3F);
 +      n = 4;
 +    } else {
-+      cp = ' '; // malformed or truncated sequence
++      // Not valid UTF-8 (Shift_JIS, Latin-1, a truncated sequence...): blank
++      // this one byte only, so that a following newline is never swallowed.
++      cp = ' ';
 +    }
 +    i += n;
 +    if (cp == '\n') {
@@ -488,11 +495,11 @@ index 0000000..1d2f16c
 +}
 +
 +} // namespace osdtext
-diff --git c/src/video/OSDTextfile.cpp i/src/video/OSDTextfile.cpp
+diff --git a/src/video/OSDTextfile.cpp b/src/video/OSDTextfile.cpp
 new file mode 100644
 index 0000000..4c8a1ff
 --- /dev/null
-+++ i/src/video/OSDTextfile.cpp
++++ b/src/video/OSDTextfile.cpp
 @@ -0,0 +1,388 @@
 +// -- text-file overlay --------------------------------------------------
 +// Extra burned-in OSD regions ("slots": osd.textfile, osd.textfile2,
