@@ -315,13 +315,13 @@ QEMU 検証 (新 sysroot = uClibc 1.0.59 + 4KB バッファの mbedTLS):
   **設定を WebUI で動的に変えた後は `service restart prudynt` が必要** (下記「prudynt の
   高負荷」)。なお RTSP サーバは旧ピンの時点で既に自前実装 (`src/simple-rtsp`) で、
   9/13 の "drop live555-era hybrid linking" はリンク方式の整理だけ。RTSP の挙動は変わっていない
-- **アップグレードは overlay を消去する**。設定は 64KB の backup パーティション経由で
-  `S37cfg-autorestore` が復元するが、`sysupgrade -B` を付けたときだけで、2.5MB の ffmpeg は
-  入らない (公式イメージに `/usr/bin/ffmpeg` は無い。`BR2_PACKAGE_PRUDYNT_T_FFMPEG` は opt-in)
-  → supervisor に「起動できて rtmps を持つか」の `-protocols` チェックを追加、
-  `device/install.sh` を用意
+- **Thingino を更新するとカメラ上の書き込み領域 (overlayfs の data パーティション) ごと消える。**
+  このリポジトリで入れたファイルも全部消えるので、更新後は `device/install.sh` で入れ直す
+  (公式イメージに `/usr/bin/ffmpeg` は無い。`BR2_PACKAGE_PRUDYNT_T_FFMPEG` は opt-in)。
+  OS の更新や設定バックアップ自体はこのリポジトリの範囲外とし、インストーラは自前のファイルを
+  置くだけにした。supervisor には「起動できて rtmps を持つか」の `-protocols` チェックを追加
 - 変わっていなかったもの: `jct` (1.2.0→1.2.1)、`/run/sync_success`、`/run/portal_mode`、
-  `service enable|disable`、SD の自動マウント (`/mnt/mmcblk0p1`)、`/etc/cfg-backup.list`、
+  `service enable|disable`、SD の自動マウント (`/mnt/mmcblk0p1`)、
   デフォルト streamer (prudynt。Raptor / timps / Strero は選択肢として追加されただけ)
 
 ### 実機確認 (`ciao+da40db6`, 2026-09-21)
