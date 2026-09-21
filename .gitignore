@@ -1,7 +1,7 @@
 # --- 外部ソースツリー(コミットしない) ---
 # Thingino 本体の clone + buildroot submodule + ビルド出力(数GB)。
 # 再現に必要な情報は patches/thingino-ffmpeg-rtmps.diff と NOTES.md に完結している。
-# リポジトリに含めたい場合は git submodule として c334a03 を参照する形にする。
+# リポジトリに含めたい場合は git submodule として対象 commit (README の対応表) を参照する形にする。
 /thingino-firmware/
 
 # --- ビルド成果物・バイナリ (dist/ に集約) ---

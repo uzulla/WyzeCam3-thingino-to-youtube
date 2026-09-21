@@ -253,6 +253,82 @@ B フレームなしの H.264 なので DTS=PTS 補正で正しく、FLV 出力�
 
 ---
 
+## 2026-09 追記: Thingino `ciao+da40db6` (GCC16) への追従
+
+2026-09-21 実施。実機を `ciao+c334a03` (2026-08-01) から `ciao+da40db6` (2026-09-14) へ
+更新するにあたっての再調査。間は 853 コミット。以降の本文は c334a03 時点の記録のまま残し、
+差分だけここに書く。
+
+### ビルド側: ほぼ無変更
+
+| 項目 | c334a03 | da40db6 |
+|---|---|---|
+| toolchain | GCC 15 | **GCC 16.2.0** (`thingino-toolchain-x86_64_xburst1_uclibc_gcc16-linux-mipsel.tar.gz`) |
+| uClibc-ng | 1.0.57 | **1.0.59** |
+| buildroot pin | `313414b` | `d518030` |
+| mbedTLS / soname | 3.6.6 / .21 .7 .16 | 同じ |
+| FFmpeg | 8.0.1 | 同じ (`package/thingino-ffmpeg` は 853 コミット間で無変更) |
+
+- パッチは無修正で当たる。upstream の typo (`aac_adtastoasc`) も未修正のまま
+- 成果物: 2,604,580 バイト、NEEDED は `libatomic.so.1` `libmbedtls.so.21` `libmbedx509.so.7`
+  `libmbedcrypto.so.16` `libc.so.0` で従来と同一
+- `br-%` ターゲットは `Makefile` から `Makefile.utils` に移っただけで使い方は同じ
+- **`da40db6` は `ciao` ブランチにしか無い。** master と ciao は 2026-05 に分岐しており、
+  「master を checkout して BUILD_ID 付近を探す」やり方は通用しない
+
+**ハマり5: ビルダーイメージが古いと `Dependency check failed`。** `scripts/dep_check.sh` が
+`libgmp-dev` / `python3-gmpy2` を要求するようになった。最新の builder image には入っているが、
+`make -f Makefile.container container-pull` はローカルにイメージがあると pull し直さない。
+`docker pull ghcr.io/themactep/thingino-builder-image:latest` で解決。
+
+### mbedTLS の出力バッファが 4KB になった
+
+`3fe80e9dd` (2026-08-06) で `MBEDTLS_SSL_OUT_CONTENT_LEN` が 16KB → 4KB に縮小され、
+`mbedtls_ssl_write()` が 4KB 超で部分書き込みを返すようになった。FFmpeg は
+`ffurl_write` (`retry_transfer_wrapper`) が全量書き切るまでループするので影響しない見立て。
+QEMU では問題なし (下記)。実機での CPU 再計測は未了 (#5)。
+
+QEMU 検証 (新 sysroot = uClibc 1.0.59 + 4KB バッファの mbedTLS):
+
+- `-protocols` に rtmp / rtmps / tls、`-muxers` に flv、`-bsfs` に aac_adtstoasc / extract_extradata
+- H.264+AAC の MP4 → FLV stream copy 成功 (ffprobe で h264 300 / aac 863 パケット)
+- YouTube 実エンドポイントに無効キーで接続 → `Handshaking...` → `Server version 4.0.0.1` →
+  `Releasing stream` / `FCPublish` / `Creating stream` → `Sending publish command` → サーバ切断。
+  **c334a03 のビルドと同じ地点まで到達** = TLS も RTMP handshake (C0+C1 1537 バイト) も問題なし
+
+**読み違い注意**: このテストは成功しても最後は `ffurl_read returned 0xdfb9b0bb` (= AVERROR_EOF)
+と `Error opening output ...: Input/output error` で終わる (無効キーなので publish 後に切られる)。
+`-loglevel verbose` 以下だと RTMP 層の行が出ず、TLS handshake で失敗したように見えて紛らわしい。
+判定は `-loglevel debug 2>&1 | grep '^\[rtmps'` で `Server version` と `Sending publish command`
+が出ているかで行う (`qemu-mipsel-static -strace` で send/recv の往復を見ても分かる)。
+
+### 実機側: こちらの方が影響が大きい
+
+- **netwatch** (`S52netwatch`, 2026-09-10 追加, デフォルト有効): ゲートウェイへの ping が
+  30 秒間隔で 3 回連続失敗すると**カメラを再起動**する。supervisor が「ICMP を落とすルーターが
+  あるので ping しない」とした判断と正面衝突する。モバイルルーター運用では無効化が必要
+  (device/README.md 参照)
+- **prudynt が live555 をやめ自前 RTSP 実装になった** (2026-09-13)。下の「prudynt の RTSP は
+  ビデオ DTS が不正」節は live555 時代の観測であり、現行での再確認が必要 (#3)
+- **アップグレードは overlay を消去する**。設定は 64KB の backup パーティション経由で
+  `S37cfg-autorestore` が復元するが、`sysupgrade -B` を付けたときだけで、2.5MB の ffmpeg は
+  入らない。さらに素のファームには prudynt 依存で RTMPS 非対応の `/usr/bin/ffmpeg` が
+  入っているため、supervisor だけ復元されるとそれを拾って即死ループする
+  → supervisor に `-protocols` チェックを追加、`device/install.sh` を用意
+- 変わっていなかったもの: `jct` (1.2.0→1.2.1)、`/run/sync_success`、`/run/portal_mode`、
+  `service enable|disable`、SD の自動マウント (`/mnt/mmcblk0p1`)、`/etc/cfg-backup.list`、
+  デフォルト streamer (prudynt。Raptor / timps / Strero は選択肢として追加されただけ)
+
+### 調査のやり方メモ
+
+thingino-firmware を `--filter=blob:none` で clone して `git grep <commit>` すると blob を
+1 個ずつ取りに行って数分単位で固まる。2 コミットの比較は
+`https://github.com/themactep/thingino-firmware/archive/<commit>.tar.gz` を 2 つ展開して
+`diff -r` / `grep -r` する方が圧倒的に速い (buildroot は submodule なので含まれない。
+pin は `git ls-tree <commit> buildroot` で見る)。
+
+---
+
 ## 残タスク
 
 - [x] 長時間試験 — **約4時間の連続配信で完走、リーク・劣化なし**
@@ -263,5 +339,6 @@ B フレームなしの H.264 なので DTS=PTS 補正で正しく、FLV 出力�
 - [x] supervisor スクリプト — 切断/Wi-Fi 断からの自動再起動 (Thingino init script 形式)。
   クラッシュ再起動・ネットワーク断の待機と復帰後の自動再開まで実機の障害試験で確認済み。
   復帰しないケースが今後見つかればバグとして対応する
+- [ ] `ciao+da40db6` での実機確認 (RTSP 認証・DTS 警告・音声・CPU 再計測・netwatch)
 - [ ] Thingino パッケージとしての統合 (Config.in オプション化、stream key の安全な保持)
 - [ ] typo 修正 (`aac_adtastoasc`) の upstream PR
