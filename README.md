@@ -222,7 +222,9 @@ scp -O ffmpeg root@<camera-ip>:/tmp/
 - [x] 長時間安定性試験 — 約4時間の連続配信でリーク・劣化・A/V ズレなし (`c334a03`)
 - [x] Thingino `ciao+da40db6` (GCC16) への追従 — 再ビルド、実機で YouTube Live 配信を確認
 - [x] インストーラ (`install.sh`)、netwatch 無効化、SD カードからの Wi-Fi 設定 (複数可)
-- [ ] `da40db6` での長時間試験、`install.sh` / `disable-netwatch.sh` / `S37wifi-from-sd` の実機通し確認
+- [x] `install.sh` / `disable-netwatch.sh` の実機確認 (`da40db6`。新規インストール、配信中の再実行、
+  netwatch 無効化後の状態)
+- [ ] `da40db6` での長時間試験、`S37wifi-from-sd` の実機確認
 - [ ] Thingino パッケージとしての統合 / ファームウェア組み込み
   (将来的には Thingino の新ストリーマ [Raptor](https://github.com/gtxaspec/raptor) の
   RTMPS push 機能 (RSP) への移行も選択肢)
