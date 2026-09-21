@@ -28,19 +28,6 @@ if [ -n "$FFMPEG" ] && [ ! -f "$FFMPEG" ]; then
 	exit 1
 fi
 
-# Copy a file into place atomically: write to .new, chmod, mv, clean up on failure.
-# Thingino has no sftp-server, so plain scp fails. "scp -O" (legacy protocol)
-# works and is the simpler choice by hand, but here it would not save anything:
-# the chmod/mv/cleanup needs an ssh call anyway, -O is rejected by older OpenSSH
-# clients, and it needs an scp binary on the camera. ssh + cat has none of that.
-push() {
-	echo "  $1 -> $2"
-	if ! ssh "$CAM" "cat > '$2.new' && chmod $3 '$2.new' && mv '$2.new' '$2' || { rm -f '$2.new'; exit 1; }" <"$1"; then
-		echo "Failed to write $2 (overlay full? check: ssh $CAM df -h /overlay)" >&2
-		exit 1
-	fi
-}
-
 # md5sum on Linux, md5 on macOS
 local_md5() {
 	if command -v md5sum >/dev/null 2>&1; then
