@@ -8,7 +8,7 @@ Thingino 実機に置く supervisor 一式。`/etc` 以下は overlayfs でフ�
 | `youtube-relay` | `/usr/sbin/youtube-relay` | supervisor 本体 (ffmpeg を監視・再起動するループ) |
 | `S93youtube-relay` | `/etc/init.d/S93youtube-relay` | 起動スクリプト (boot 時に自動開始) |
 | `youtube-relay.json.example` | `/etc/youtube-relay.json` または SD カード直下 | 設定ファイル (下記「SD カードモード」参照) |
-| `install.sh` | (PC 側で実行) | 上記と ffmpeg を SSH 経由でまとめて入れるインストーラ。再実行可能 |
+| `install.sh` | (PC 側で実行) | 上記と ffmpeg を SSH 経由でまとめて入れるインストーラ。再実行可能。**このリポジトリのファイルを置くだけで、Thingino 側の設定やファーム更新には触らない** |
 
 ## 設定ファイルの探索順と「SD カードモード」
 
@@ -123,12 +123,9 @@ cat S93youtube-relay   | ssh $CAM 'cat > /etc/init.d/S93youtube-relay && chmod +
 cat youtube-relay.json.example | ssh $CAM 'cat > /etc/youtube-relay.json && chmod 600 /etc/youtube-relay.json'
 ssh $CAM 'vi /etc/youtube-relay.json'    # stream_key を記入
 #  b) SD カードに置く (スタンドアロン運用)
-#     PC で SD 直下に youtube-relay.json を書いてカメラに挿すだけ。手順 4 は不要
+#     PC で SD 直下に youtube-relay.json を書いてカメラに挿すだけ
 
-# 4. 設定をファーム更新時のバックアップ対象に登録 (下記「ファームウェアを更新した後は…」参照)
-ssh $CAM 'grep -qxF /etc/youtube-relay.json /etc/cfg-backup.list || echo /etc/youtube-relay.json >> /etc/cfg-backup.list'
-
-# 5. 起動
+# 4. 起動
 ssh $CAM '/etc/init.d/S93youtube-relay start'
 
 # 状態確認・ログ
@@ -156,12 +153,17 @@ ssh $CAM 'logread | grep youtube-relay | tail -20'
 
 - 入れ直すまでの間、supervisor も消えているので配信は止まる。supervisor だけ残っていて
   ffmpeg が無い場合は `No ffmpeg binary with rtmps support found` を出して待機する
-- `/etc/youtube-relay.json` (ストリームキー) だけは Thingino のバックアップ対象リスト
-  `/etc/cfg-backup.list` に登録してある。Thingino 側で設定バックアップを有効にして更新
-  (`sysupgrade` なら `-B`) すれば Wi-Fi 設定などと一緒に復元される。バックアップなしで
-  更新した場合は `install.sh` の後でキーを書き直す
-- スクリプトや ffmpeg はあえてこのリストに入れていない。バックアップ領域は 64KB しかなく、
-  溢れると Wi-Fi 設定を含むバックアップ全体が失敗する (しかも更新は続行される) ため
+- ストリームキーを更新後も残したい場合は、**任意で** `/etc/youtube-relay.json` を Thingino の
+  バックアップ対象リストに自分で登録しておく (これは OS 側の設定なので `install.sh` は触らない):
+
+  ```sh
+  ssh $CAM 'grep -qxF /etc/youtube-relay.json /etc/cfg-backup.list || echo /etc/youtube-relay.json >> /etc/cfg-backup.list'
+  ```
+
+  Thingino 側で設定バックアップを有効にして更新すれば Wi-Fi 設定などと一緒に復元される。
+  登録しない/バックアップなしで更新した場合は `install.sh` の後でキーを書き直すだけ
+- スクリプトや ffmpeg はこのリストに入れないこと。バックアップ領域は 64KB しかなく、
+  溢れると Wi-Fi 設定を含むバックアップ全体が失敗する (しかも更新は続行される)
 - SD カードに設定と ffmpeg を置く運用でも、supervisor と init スクリプトは内蔵側なので
   入れ直しは必要
 

@@ -9,20 +9,16 @@
 #
 # The ffmpeg argument is optional; without it only scripts are (re)installed.
 # An existing /etc/youtube-relay.json on the camera is never overwritten.
+#
+# Scope: this only places OUR files (ffmpeg, supervisor, init script, config).
+# It never touches Thingino's own files or settings - firmware upgrades, config
+# backup lists, netwatch etc. are separate, manual steps (see README.md).
 
 set -e
 
 CAM=$1
 FFMPEG=$2
 HERE=$(cd "$(dirname "$0")" && pwd)
-
-# Firmware upgrades are the user's business, not ours: we only keep the (tiny)
-# config in Thingino's cfg-backup list so the stream key survives an upgrade
-# done with backup enabled. Scripts and ffmpeg are simply re-installed by
-# re-running this script. Deliberately NOT adding the scripts to the list:
-# the backup area is 64KB and an oversized list makes the whole backup
-# (Wi-Fi settings included) fail, which sysupgrade treats as non-fatal.
-BACKUP_PATHS="/etc/youtube-relay.json"
 
 if [ -z "$CAM" ]; then
 	echo "Usage: $0 root@<camera-ip> [path/to/ffmpeg]" >&2
@@ -83,20 +79,6 @@ if ssh "$CAM" '[ -f /etc/youtube-relay.json ]'; then
 else
 	push "$HERE/youtube-relay.json.example" /etc/youtube-relay.json 600
 	echo "  -> edit stream_key in /etc/youtube-relay.json (or use the SD card instead)"
-fi
-
-echo "Registering files in /etc/cfg-backup.list"
-for p in $BACKUP_PATHS; do
-	ssh "$CAM" "grep -qxF '$p' /etc/cfg-backup.list || echo '$p' >> /etc/cfg-backup.list"
-done
-
-# cfg-backup stores an uncompressed tar in one 64KB block behind a 64B header
-# (missing paths are skipped, same as cfg-backup does)
-size=$(ssh "$CAM" 'tar cf - /etc/cfg-backup.list $(for p in $(grep -v "^#" /etc/cfg-backup.list); do [ -e "$p" ] && echo "$p"; done) 2>/dev/null | wc -c')
-echo "Config backup payload: $size / 65472 bytes"
-if [ "$size" -gt 65472 ]; then
-	echo "WARNING: /etc/cfg-backup.list exceeds the 64KB backup area - Thingino's" >&2
-	echo "         config backup will fail on upgrade. Trim the list." >&2
 fi
 
 ssh "$CAM" '/etc/init.d/S93youtube-relay start'
