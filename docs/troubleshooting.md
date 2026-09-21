@@ -77,9 +77,13 @@ FFMPEG=/usr/bin/ffmpeg           # ↑ の ffmpeg: の値 (/mnt/mmcblk0p1/ffmpeg
 # 設定に書いていない項目は supervisor と同じ既定値を使う
 RTSP_URL=$(jct "$CFG" get rtsp_url 2>/dev/null); [ -n "$RTSP_URL" ] || RTSP_URL='rtsp://thingino:thingino@127.0.0.1:554/ch0'
 RTMP_URL=$(jct "$CFG" get rtmp_url 2>/dev/null); [ -n "$RTMP_URL" ] || RTMP_URL='rtmps://a.rtmps.youtube.com:443/live2'
-"$FFMPEG" -loglevel info -rtsp_transport tcp \
+# ffmpeg_opts (-i の前) と ffmpeg_out_opts (-i の後) も supervisor と同じ位置に展開する (未設定なら空)。
+# -loglevel だけは設定の ffmpeg_loglevel ではなく info に固定している (診断のために出力を増やすのが目的)
+FFMPEG_OPTS=$(jct "$CFG" get ffmpeg_opts 2>/dev/null)
+FFMPEG_OUT_OPTS=$(jct "$CFG" get ffmpeg_out_opts 2>/dev/null)
+"$FFMPEG" -loglevel info -rtsp_transport tcp $FFMPEG_OPTS \
   -i "$RTSP_URL" \
-  -c copy -f flv \
+  -c copy $FFMPEG_OUT_OPTS -f flv \
   "$RTMP_URL/$(jct "$CFG" get stream_key)"
 # (オプションは必ず出力 URL より前に置く。後ろに置くと警告が出て無視されることがある)
 # 原因を直したら:
