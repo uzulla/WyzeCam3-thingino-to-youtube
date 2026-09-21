@@ -45,8 +45,10 @@ Wyze Cam v3 の overlay (データパーティション) は 8.5MB で、ffmpeg 
 - `start-stop-daemon -N 10` で低優先度起動 — prudynt / ISP 処理と CPU を取り合わない
   (`telegrambot` と同じ流儀)
 - ストリームキーが未設定でも supervisor は常駐し、設定が現れるまで**配信せず待機** (無害)
-- ffmpeg は `-protocols` で出力プロトコル (rtmps) 対応を確認してから使う。素の Thingino に
-  入っている録画用 `/usr/bin/ffmpeg` (RTMPS 非対応) を誤って拾わないため
+- ffmpeg は `-protocols` を実行して「このファームで起動でき、出力プロトコル (rtmps) を
+  持つ」ことを確認してから使う。ファーム更新後に SD に残った旧 toolchain 世代のバイナリや、
+  Thingino 自身の録画用 ffmpeg (RTMPS 非対応。`BR2_PACKAGE_PRUDYNT_T_FFMPEG` を有効にした
+  カスタムビルドにだけ入る。公式イメージには無い) を誤って使わないため
 - 有効/無効の切り替えは Thingino 標準の `service enable|disable youtube-relay`
   (init スクリプトの実行ビットで制御) か、JSON の `"enabled"` フラグ
 
@@ -74,7 +76,7 @@ Thingino はルート全体が overlayfs (SquashFS + JFFS2 データパーティ
   新しいビルドを試すときは SD か /tmp に置くだけでよく、常設バイナリはそのまま残る。
   再起動 (/tmp が消える) や SD 抜去で自動的に常設版へ戻る。
   明示指定したい場合は設定の `ffmpeg_bin` にフルパスを書く (探索より優先)。ただし指定先が存在しない・
-  RTMPS 非対応 (ファーム更新で素の ffmpeg に戻った等) の場合は上記の探索にフォールバックする
+  起動できない・RTMPS 非対応の場合は上記の探索にフォールバックする
 - PoC で `/tmp/ffmpeg` に置いたバイナリを常設に昇格するには (実機上で):
 
   ```sh
@@ -129,8 +131,8 @@ ssh $CAM 'logread | grep youtube-relay | tail -20'
 ## ファームウェア更新 (重要: overlay は消える)
 
 Thingino の rootfs / full アップグレードは **overlay を消去する**。つまりこのディレクトリの
-ファイルと `/usr/bin/ffmpeg` は全部消え、素のファームの `/usr/bin/ffmpeg` (録画用・RTMPS 非対応)
-に戻る。残せるのは 64KB の backup パーティションに入る分だけ:
+ファイルと `/usr/bin/ffmpeg` は全部消える (公式イメージに ffmpeg は入っていない —
+`ciao+da40db6` 実機で確認)。残せるのは 64KB の backup パーティションに入る分だけ:
 
 - `/etc/cfg-backup.list` に載っているパスが、**`sysupgrade -B` (`--backup`) を付けたときだけ**
   退避され、更新後の初回起動で `S37cfg-autorestore` が自動復元する (`-B` はデフォルト無効)
@@ -148,7 +150,7 @@ ssh $CAM 'sysupgrade -B -f'                       # 設定を退避して更新
 
 ffmpeg を SD カード (`/mnt/mmcblk0p1/ffmpeg`) に置く運用なら、更新後も `-B` の復元だけで
 配信が再開する。復元後に ffmpeg が無い間は supervisor が
-`No ffmpeg binary with rtmps support found` を出して待機する (素の ffmpeg は使わない)。
+`No ffmpeg binary with rtmps support found` を出して待機する。
 
 ## netwatch (ネットワーク監視による自動再起動) に注意
 
@@ -204,7 +206,7 @@ youtube-relay: Starting ffmpeg -> rtmps://.../REDACTED (config: ..., ffmpeg: ...
 | ログ / 症状 | 原因と対処 |
 |---|---|
 | `No usable config, standing by` | 設定が見つからない。`mount \| grep mmcblk` で SD がマウントされているか、`ls /mnt/mmcblk0p1/` にファイルがあるか、ファイル名が `youtube-relay.json` か、`jct <path> get stream_key` で読めるか (JSON 構文エラーだと読めない)、`"enabled": false` になっていないかを順に確認 |
-| `No ffmpeg binary with rtmps support found, standing by` | ファーム更新で overlay が消え、素の `/usr/bin/ffmpeg` (RTMPS 非対応) に戻った可能性が高い → `install.sh` で入れ直す。また**再起動で `/tmp/ffmpeg` は消える**。`/usr/bin/ffmpeg` へ常設するか SD に置く。設定の `ffmpeg_bin` が存在しないパスを指している場合も同じ (行を消せば自動探索になる)。ffmpeg を置けば30秒以内に自動で拾う (supervisor 再起動不要) |
+| `No ffmpeg binary with rtmps support found, standing by` | ファーム更新で overlay ごと `/usr/bin/ffmpeg` が消えた可能性が高い → `install.sh` で入れ直す。ファイルはあるのにこれが出る場合は、そのバイナリが今のファームで起動できていない (toolchain 世代の不一致。`/usr/bin/ffmpeg -version` を手で実行して確認)。また**再起動で `/tmp/ffmpeg` は消える**。`/usr/bin/ffmpeg` へ常設するか SD に置く。設定の `ffmpeg_bin` が存在しないパスを指している場合も同じ (行を消せば自動探索になる)。ffmpeg を置けば30秒以内に自動で拾う (supervisor 再起動不要) |
 | `ffmpeg exited (rc=1) after 0〜2s` を繰り返す | ffmpeg が即死している。RTSP の URL/認証ミス、YouTube 側のキー間違い、DNS/ネットワーク未接続が典型。下記「ffmpeg のエラーを直接見る」で原因を特定 |
 | `ffmpeg exited` が数十秒〜数分間隔 | 接続は成立するが切断されている。Wi-Fi 品質、YouTube 側の一時的な切断など。supervisor が自動復帰させるので、頻度が低ければ実害はない |
 | status が `not running` | `service enable youtube-relay` で有効化されているか (`ls -la /etc/init.d/S93youtube-relay` で実行ビット確認)、`/run/portal_mode` が無いか (Wi-Fi 未設定モード)。手動起動は `/etc/init.d/S93youtube-relay start` |
