@@ -120,7 +120,7 @@ THINGINO_FFMPEG_CONF_OPTS += \
 THINGINO_FFMPEG_DEPENDENCIES += mbedtls
 ```
 
-+ 既存の typo 修正: `--enable-bsf=aac_adtastoasc` → `aac_adtstoasc` (upstream 報告価値あり)。
++ 既存の typo 修正: `--enable-bsf=aac_adtastoasc` → `aac_adtstoasc` (このリポジトリのパッチ内で直している)。
 
 ### ハマり1: mbedTLS のリンクで `DSO missing from command line`
 
@@ -403,4 +403,3 @@ pin は `git ls-tree <commit> buildroot` で見る)。
   ffmpeg CPU 4.8% @720p10/1Mbps。長時間試験と `install.sh` / `disable-netwatch.sh` /
   `S37wifi-from-sd` の実機通し実行は未実施
 - [ ] Thingino パッケージとしての統合 (Config.in オプション化、stream key の安全な保持)
-- [ ] typo 修正 (`aac_adtastoasc`) の upstream PR
