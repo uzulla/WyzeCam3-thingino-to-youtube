@@ -122,7 +122,21 @@ while :; do
 			fi
 			;;
 		*)
-			# Broken JSON or no "osd" object: change nothing, say so once
+			# Broken JSON or no "osd" object. If it is the file we applied that got
+			# broken (a typo while editing), change nothing. If a different file
+			# took over (SD pulled, and the built-in one is unusable), what the
+			# old file had turned on must not stay: off, as if no file was left.
+			case "$applied" in
+			"$pid|$cfg|"*) ;;
+			*)
+				if [ -n "$managed" ] && send "$(off_json "$managed")"; then
+					log "Config changed to $cfg - turned off: $managed"
+					applied="$pid|none"
+					managed=""
+					save_state
+				fi
+				;;
+			esac
 			if [ "$complained" != "parse:$cfg" ]; then
 				log "$cfg has no usable \"osd\" object - ignored"
 				complained="parse:$cfg"
