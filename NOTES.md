@@ -312,8 +312,8 @@ QEMU 検証 (新 sysroot = uClibc 1.0.59 + 4KB バッファの mbedTLS):
   全ストリームの既定サイズがセンサー解像度になり (`9f3d309`。以前 stream1 / JPEG は 640x360)、
   bitrate 0 = 約 1Mbps/メガピクセルの自動値になった (`3188189`)。ファーム更新で設定が初期化
   されると main が **1920x1080 / 25fps / 約 2.1Mbps**、JPEG プレビューも 1080p になる。
-  実機では prudynt の CPU が 70% 前後 (旧計測 8% は 720p15 時) まで上がり idle が尽きた。
-  切り分け中 (#3)。なお RTSP サーバは旧ピンの時点で既に自前実装 (`src/simple-rtsp`) で、
+  **設定を WebUI で動的に変えた後は `service restart prudynt` が必要** (下記「prudynt の
+  高負荷」)。なお RTSP サーバは旧ピンの時点で既に自前実装 (`src/simple-rtsp`) で、
   9/13 の "drop live555-era hybrid linking" はリンク方式の整理だけ。RTSP の挙動は変わっていない
 - **アップグレードは overlay を消去する**。設定は 64KB の backup パーティション経由で
   `S37cfg-autorestore` が復元するが、`sysupgrade -B` を付けたときだけで、2.5MB の ffmpeg は
@@ -336,13 +336,44 @@ QEMU 検証 (新 sysroot = uClibc 1.0.59 + 4KB バッファの mbedTLS):
   今は警告だけだが、FFmpeg のバージョンを上げるときは要注意
 - **ファーム更新で prudynt の設定が初期値に戻り 1920x1080 / 25fps / 約 2.1Mbps になった。**
   旧計測 (720p15 / 約 330kbps で ffmpeg CPU 3.3%) はこのビットレートには当てはまらない。
-  YouTube 配信中の実測は **ffmpeg CPU 約 10% / RSS 3.4MB** (`top -n 1` の単発値なので目安)。
-  TLS の負荷はビットレートにほぼ比例するという見立てどおりで、ffmpeg 側は問題ない。
-  重いのは prudynt 側 (上記)
+  実測は 1080p25 / 2.1Mbps で **ffmpeg CPU 約 10%** (単発値)、720p10 / 1Mbps で **4.8% / RSS 3.4MB**。
+  TLS の負荷はビットレートにほぼ比例するという見立てどおりで、ffmpeg 側は問題ない
 - **ffmpeg のオプションは出力 URL より前に置く。** 後ろに置いた `-t 10` は
   `Trailing option(s) found in the command: may be ignored.` の警告とともに本当に無視され、
   tmpfs に 37MB 書き込む事故になった。旧版のコマンド例は `-loglevel error` を末尾に置いていた
   (`-loglevel` だけは先読みされるので効いていたが、警告は出る) ため先頭へ移した
+
+### prudynt の高負荷: 動的再構成の後遺症だった (#3)
+
+更新直後、ffmpeg を止めていても prudynt が CPU 55〜70% を食い、idle が尽きて解像度/fps を
+上げるとカメラが固まる状態になった。切り分けの経過:
+
+1. 最初は「既定値が 1080p25 / 2.1Mbps になったせい」と考えたが、720p10 / 1Mbps に下げても 55%
+2. `/proc/<pid>/task/*/stat` の差分でスレッド別に測ると、libimp の **`group_update` 1 本が 53.8%**。
+   prudynt 自身のスレッド (RTSP / HTTP / 音声) は合計 5% 程度、外部クライアントは 0
+3. そのスレッドの tid が起動時のスレッド群よりずっと新しい = WebUI での設定変更でパイプラインが
+   動的に作り直されていた
+4. **設定は何も変えずに `service restart prudynt` しただけで prudynt 2.1% / idle 82% に戻った**
+
+| 状態 (720p10 / 1Mbps) | prudynt | ffmpeg | idle |
+|---|---|---|---|
+| WebUI で解像度等を変更した後 | 55% | (停止中) | 30% |
+| prudynt 再起動後 | 2.1% | 4.8% | 82% |
+
+つまり原因は ffmpeg でも設定値でもなく、prudynt (`354b1b4`) の動的再構成後の異常状態。
+upstream でも直近で pipeline リークの修正が入っている領域。回避策は単純で、
+**WebUI で stream の設定を変えたら prudynt を再起動する**。
+
+スレッド別 CPU の測り方 (busybox の `top -H` に頼らない):
+
+```sh
+P=$(pidof prudynt)
+snap() { for t in /proc/$P/task/*; do echo "${t##*/} $(tr ' ' _ <$t/comm) $(sed 's/.*) //' $t/stat | awk '{print $12+$13}')"; done; }
+snap >/tmp/s1; sleep 10; snap >/tmp/s2
+awk 'NR==FNR{a[$1]=$3;next}{printf "%5.1f%%  tid=%s  %s\n",($3-a[$1])/10,$1,$2}' /tmp/s1 /tmp/s2 | sort -rn | head
+```
+
+なお `top -b -n 1` の単発値は busybox では当てにならない。`top -b -d 5 -n 2` の 2 サンプル目を見る。
 
 ### 調査のやり方メモ
 
