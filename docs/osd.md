@@ -74,6 +74,12 @@ echo 'REC' > /run/prudynt/osd-text2.tmp && mv /run/prudynt/osd-text2.tmp /run/pr
 | `outline_color` | `#00000000` | 縁取りの色。alpha が 0 なら縁取りなし (既定) |
 | `background_color` | `#00000080` | 背景ボックスの色。alpha が 0 なら背景なし |
 
+- prudynt は `osd.sei.enabled` と `osd.burnin.enabled` が**両方 false** だと OSD の処理自体を起動しない。その構成で
+  テキストだけ出したい時は、`/etc/prudynt.json` に `osd.textfile.enabled: true` (または `textfile2` / `textfile3`) を書いて
+  起動する必要がある (実行中に `prudyntctl json` で有効化しても出ない)。どちらかが true なら (既定は両方 true)
+  実行中に有効化できる
+- `path` と色の変更が映像に出るまで最大 1 秒かかる (文字列の設定は 1 秒に 1 回だけ読み直す。ファイルの中身の
+  更新は 0.1 秒以内)
 - 常用するなら `/etc/prudynt.json` の `osd.textfile` 等に書く。このリポジトリのスクリプトは prudynt の
   設定ファイルを書き換えない (`prudyntctl json` に `save_config` を送ればフラッシュに保存されるが、
   スクリプトからは送っていない)。**`prudyntctl json` での変更は prudynt の再起動で消える**
