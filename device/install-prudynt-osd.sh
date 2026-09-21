@@ -78,9 +78,10 @@ while [ $i -lt 15 ]; do
 done
 if [ -z "$ok" ]; then
 	echo "prudynt did not come up with osd.textfile support - going back to the stock prudynt" >&2
-	ssh "$CAM" '/etc/init.d/S31prudynt stop; /etc/init.d/S30prudynt-osd stop; chmod -x /etc/init.d/S30prudynt-osd; /etc/init.d/S31prudynt start' || true
+	# osd-config is pointless (and would keep poking the stock prudynt) without the patch
+	ssh "$CAM" 'chmod -x /etc/init.d/S93osd-config; /etc/init.d/S31prudynt stop; /etc/init.d/S30prudynt-osd stop; chmod -x /etc/init.d/S30prudynt-osd; /etc/init.d/S31prudynt start' || true
 	exit 1
 fi
-ssh "$CAM" '/etc/init.d/S93osd-config start'
+ssh "$CAM" '/etc/init.d/S93osd-config start' || echo "warning: osd-config did not start (prudynt itself is fine)" >&2
 echo "Done. Try it:  ssh $CAM osd-progress-demo 20"
 echo "Settings that survive restarts: put prudynt-osd.json on the SD card (see device/README.md)"

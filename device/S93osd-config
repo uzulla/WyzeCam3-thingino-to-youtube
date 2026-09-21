@@ -12,7 +12,8 @@ running() {
 	pid=$(cat "$PIDFILE" 2>/dev/null)
 	[ -n "$pid" ] || return 1
 	# Verify the PID is alive and actually is our daemon, not a reused PID
-	grep -q "$DAEMON" "/proc/$pid/cmdline" 2>/dev/null
+	# (match the full path: this init script's own name contains "osd-config" too)
+	grep -q "$DAEMON_PATH" "/proc/$pid/cmdline" 2>/dev/null
 }
 
 start() {

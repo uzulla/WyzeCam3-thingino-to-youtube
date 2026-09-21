@@ -127,8 +127,8 @@ network={
 - インストール時に prudynt を再起動するので、**配信が数秒切れる** (supervisor が自動で再接続する)
 - バイナリはビルドしたファーム専用。`/etc/os-release` の `BUILD_ID` がインストール時と違っていたら
   bind mount せず、標準の prudynt のまま起動する
-- 元に戻す: `service disable prudynt-osd` して再起動 (すぐ戻すなら
-  `service stop prudynt; /etc/init.d/S30prudynt-osd stop; service start prudynt`)。
+- 元に戻す: `service disable prudynt-osd; service disable osd-config` して再起動 (すぐ戻すなら
+  `service stop osd-config; service stop prudynt; /etc/init.d/S30prudynt-osd stop; service start prudynt`)。
   完全に消すなら `/etc/init.d/S30prudynt-osd` `/usr/bin/prudynt-osd` `/usr/bin/prudynt-osd.build`
   `/usr/sbin/osd-progress-demo` `/usr/sbin/osd-config` `/etc/init.d/S93osd-config` を削除する
 - Thingino を入れ直した/更新した後は、他のファイルと同じく入れ直しが必要 (新しいファームに合わせて
@@ -210,8 +210,11 @@ echo 'REC' > /run/prudynt/osd-text2.tmp && mv /run/prudynt/osd-text2.tmp /run/pr
   (`action` や映像の設定など) は無視される。`osd.burnin` (日時の書式や大きさ) も書ける
 - 送り直すのは、prudynt が再起動した時 (WebUI で設定を変えた後など) と、ファイルの中身が変わった時
   (SD を挿した、書き換えた)。5 秒間隔で見ているので、カメラの再起動は要らない
-- ファイルが無くなると (SD を抜くと)、このスクリプトが有効にしたテキストを全部無効に戻す。
-  設定ファイルを一度も置いていなければ、prudynt には何も送らない (手で `prudyntctl json` した設定に干渉しない)
+- ファイルが無くなると (SD を抜くと)、**そのファイルに書いてあったテキストの矩形だけ**を無効に戻す
+  (ファイルに出てこない矩形や日時の設定には触らない)。設定ファイルを置いていなければ、prudynt には何も送らない
+  (手で `prudyntctl json` した設定に干渉しない)
+- prudynt が設定を受け付けない状態が 30 秒続くと (キーの綴り間違い、パッチなしの prudynt など)、
+  `logread | grep osd-config` に 1 回出して、送り続ける
 - **送るのはファイルに書いてあるキーだけ。** ファイルから消したキーは、prudynt が再起動するまで前の値のまま残る
   (例: `textfile2` の行を消しても右上は消えない。消したい時は `"enabled": false` と書く)
 - JSON が壊れている時は何も変えず、`logread | grep osd-config` に理由を 1 回出す

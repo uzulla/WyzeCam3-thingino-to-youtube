@@ -14,13 +14,13 @@
 # Only its "osd" section is sent; anything else in the file is ignored.
 #
 # Re-sent when prudynt was restarted (new pid) or the file changed / appeared /
-# moved (SD inserted). File gone (SD pulled) -> the text overlays this script had
-# turned on are turned off again. No config file ever seen -> prudynt is left alone.
+# moved (SD inserted). File gone (SD pulled) -> the text overlays named in that file
+# are turned off again; slots it never mentioned are not touched. No config file
+# ever seen -> prudynt is left alone.
 
 CONFIG_CANDIDATES=${OSD_CONFIG_CANDIDATES:-"/mnt/mmcblk0p1/prudynt-osd.json /etc/prudynt-osd.json"}
 POLL=${OSD_CONFIG_POLL:-5}
 TAG="osd-config"
-ALL_OFF='{"textfile":{"enabled":false},"textfile2":{"enabled":false},"textfile3":{"enabled":false}}'
 
 log() {
 	logger -p daemon.info -t $TAG "$1"
@@ -47,9 +47,36 @@ send() {
 	return 1
 }
 
-applied=""  # "pid|file|checksum" of what the running prudynt has been sent
-active=""   # non-empty once a config has been applied to this prudynt
-complained=""
+# Slots (textfile, textfile2, textfile3) that the config file mentions: only those
+# are ours to turn off again when the file goes away.
+slots_in() {
+	for slot in textfile textfile2 textfile3; do
+		case $(jct "$1" get "osd.$slot" 2>/dev/null) in "{"*) printf '%s ' "$slot" ;; esac
+	done
+}
+
+# off_json <slots> - {"textfile":{"enabled":false},...}
+off_json() {
+	j=""
+	for slot in $1; do
+		j="$j${j:+,}\"$slot\":{\"enabled\":false}"
+	done
+	echo "{$j}"
+}
+
+# What the running prudynt has been sent. Kept on tmpfs so that restarting this
+# script alone does not forget which overlays it turned on (a reboot or a prudynt
+# restart resets prudynt anyway, and the pid in "applied" then no longer matches).
+STATE=/run/osd-config.state
+applied=""  # "pid|file|checksum" of the config applied to the running prudynt
+managed=""  # text slots turned on by it
+[ -f "$STATE" ] && . "$STATE"
+save_state() {
+	printf 'applied="%s"\nmanaged="%s"\n' "$applied" "$managed" >"$STATE"
+}
+
+complained="" # last problem reported, so each one is logged once
+fails=0
 
 while :; do
 	pid=$(pidof prudynt | cut -d' ' -f1)
@@ -57,32 +84,47 @@ while :; do
 		sleep "$POLL"
 		continue
 	fi
-	case "$applied" in "$pid|"*) ;; *) active="" ;; esac # new prudynt: nothing of ours is on
+	# A new prudynt starts from its own config: nothing of ours is on any more
+	case "$applied" in "$pid|"*) ;; *) managed="" ;; esac
 
 	if cfg=$(find_config); then
 		body=$(jct "$cfg" get osd 2>/dev/null)
 		case "$body" in
 		"{"*)
-			want="$pid|$cfg|$(echo "$body" | md5sum | cut -d' ' -f1)"
-			if [ "$want" != "$applied" ] && send "$body"; then
+			want="$pid|$cfg|$(printf '%s' "$body" | md5sum | cut -d' ' -f1)"
+			if [ "$want" = "$applied" ]; then
+				complained=""
+			elif send "$body"; then
 				log "Applied $cfg to prudynt (pid $pid)"
 				applied=$want
-				active=1
+				managed=$(slots_in "$cfg")
+				save_state
 				complained=""
+				fails=0
+			else
+				# Normal for a few seconds while prudynt starts up. If it goes on,
+				# prudynt understood nothing in the file (misspelled keys, or a
+				# prudynt without the OSD patch).
+				fails=$((fails + 1))
+				if [ $fails -ge 6 ] && [ "$complained" != "send:$want" ]; then
+					log "prudynt does not accept the osd settings in $cfg - still retrying"
+					complained="send:$want"
+				fi
 			fi
 			;;
 		*)
-			# Broken JSON or no "osd" object: change nothing, say so once per file
-			if [ "$complained" != "$cfg" ]; then
+			# Broken JSON or no "osd" object: change nothing, say so once
+			if [ "$complained" != "parse:$cfg" ]; then
 				log "$cfg has no usable \"osd\" object - ignored"
-				complained=$cfg
+				complained="parse:$cfg"
 			fi
 			;;
 		esac
-	elif [ -n "$active" ] && send "$ALL_OFF"; then
-		log "Config file is gone - text overlays turned off"
+	elif [ -n "$managed" ] && send "$(off_json "$managed")"; then
+		log "Config file is gone - turned off: $managed"
 		applied="$pid|none"
-		active=""
+		managed=""
+		save_state
 	fi
 	sleep "$POLL"
 done
