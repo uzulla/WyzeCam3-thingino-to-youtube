@@ -81,7 +81,7 @@ git 管理外です。必要な変更はすべて `patches/` に分離してあ�
 | Thingino | toolchain | uClibc-ng | mbedTLS | 状態 |
 |---|---|---|---|---|
 | `ciao+c334a03` (2026-08-01) | GCC 15 | 1.0.57 | 3.6.6 | 実機で長時間配信まで確認済み |
-| `ciao+da40db6` (2026-09-14) | GCC 16.2 | 1.0.59 | 3.6.6 | ビルド・QEMU 検証済み。実機確認中 (#3) |
+| `ciao+da40db6` (2026-09-14) | GCC 16.2 | 1.0.59 | 3.6.6 | 実機で YouTube Live 配信 (映像・音声) まで確認済み |
 
 > **注意**: バイナリは実機ファームと同じ toolchain 世代・同じ mbedTLS soname に依存します。
 > 実機の `/etc/os-release` の `BUILD_ID` (`ciao+<commit>`) と `TOOLCHAIN_GCC`、および

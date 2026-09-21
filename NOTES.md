@@ -395,6 +395,7 @@ pin は `git ls-tree <commit> buildroot` で見る)。
 - [x] supervisor スクリプト — 切断/Wi-Fi 断からの自動再起動 (Thingino init script 形式)。
   クラッシュ再起動・ネットワーク断の待機と復帰後の自動再開まで実機の障害試験で確認済み。
   復帰しないケースが今後見つかればバグとして対応する
-- [ ] `ciao+da40db6` での実機確認 (RTSP 認証・DTS 警告・音声・CPU 再計測・netwatch)
+- [x] `ciao+da40db6` での実機確認 — YouTube Live へ映像・音声とも配信成功 (2026-09-21)。
+  ffmpeg CPU 4.8% @720p10/1Mbps。長時間試験と `install.sh` の通し実行は未実施
 - [ ] Thingino パッケージとしての統合 (Config.in オプション化、stream key の安全な保持)
 - [ ] typo 修正 (`aac_adtastoasc`) の upstream PR
