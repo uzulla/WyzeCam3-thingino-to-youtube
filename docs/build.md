@@ -62,6 +62,9 @@ docker run --rm -v "$PWD/$SYSROOT":/sysroot:ro debian:stable-slim bash -c \
 ```sh
 # prudynt のソースに当てるパッチは、Buildroot のパッケージディレクトリに置けば自動で適用される
 cp ../patches/prudynt-osd-textfile.diff package/prudynt-t/0001-osd-textfile.patch
+# 任意: 配信中に 5 秒ごとに出続ける誤報の警告 (msgChannel sink clogged) を止める 1 行の修正。
+# OSD のパッチとは独立で、どちらか片方だけでも当たる (経緯は NOTES.md)
+cp ../patches/prudynt-msgchannel-warning.diff package/prudynt-t/0002-msgchannel-warning.patch
 
 # フル ASCII の 8x8 フォントを有効にする (既定の 5x7 は大文字・数字と一部の記号だけ)。
 # user/ は Thingino のユーザー設定用ディレクトリで、Thingino 側でも git 管理外

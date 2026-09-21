@@ -71,6 +71,7 @@ localhost RTSP (prudynt) → H.264/AAC stream copy → FLV mux → RTMPS/TLS →
 patches/   このリポジトリの本体。Thingino に当てる差分
              thingino-ffmpeg-rtmps.diff         thingino-ffmpeg パッケージを RTMPS 対応にする
              prudynt-osd-textfile.diff          任意: prudynt (ストリーマ) に「テキストファイルを映像へ重ねる OSD」を足す
+             prudynt-msgchannel-warning.diff    任意: prudynt が 5 秒ごとに出す誤報の警告 (msgChannel sink clogged) を止める
 device/    カメラ側の常設運用一式 (ファイルの一覧は device/README.md、使い方は docs/)
              youtube-relay / S93youtube-relay   supervisor と起動スクリプト
              install.sh                         上記と ffmpeg をカメラへ入れる (自前のファイルを置くだけ)
