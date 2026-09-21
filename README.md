@@ -28,9 +28,19 @@ cat ffmpeg | ssh root@<camera-ip> 'cat > /tmp/ffmpeg && chmod +x /tmp/ffmpeg'
 
 - `{KEY}` は YouTube Studio のライブ配信設定にあるストリームキー
 - RTSP の認証 (`thingino:thingino`) とパス (`/ch0`) は Thingino のデフォルト。変更していれば合わせる
-- 再エンコードなし (stream copy) なので、カメラの負荷は CPU 約3% / RAM 3MB 程度
+- 再エンコードなし (stream copy) なので、カメラの負荷は CPU 3〜10% (ビットレート次第) / RAM 3MB 程度
 - `/tmp` は再起動で消える。常設・自動起動・自動復帰したくなったら
   [device/](device/) の supervisor を導入する (おまけ)
+- **2026-09 以降の Thingino は、ゲートウェイへの ping が約 90 秒通らないとカメラを OS ごと
+  再起動する (netwatch、デフォルト有効)。** 配信が切れるので、長時間配信する前に無効化しておく:
+
+  ```sh
+  device/disable-netwatch.sh root@<camera-ip>
+  # カメラ上で直接やるなら: jct /etc/thingino.json set netwatch.enabled false && service restart netwatch
+  ```
+
+  Thingino の OS 設定を変えるものなので、ffmpeg やスクリプトのインストールとは別の手順にしてある。
+  理由と代償 (Wi-Fi が固まっても自動復旧しなくなる) は [device/README.md](device/README.md) の netwatch 節
 
 以降のビルド手順や起動スクリプトは、自分でビルドしたい人・常設運用したい人向けのおまけです。
 
@@ -62,23 +72,33 @@ git 管理外です。必要な変更はすべて `patches/` に分離してあ�
 - **バイナリ 2.5MB** (stripped)。FFmpeg 8.0.1 を RTSP 入力 + FLV/RTMPS 出力だけに絞った構成
 - **stream copy 専用** — encoder/decoder/filter を一切含まない
 - **TLS は mbedTLS** — Thingino 実機に入っている `libmbedtls.so.3.6.6` に動的リンク
+- **ファームウェア世代ごとにビルドが必要** — toolchain (GCC / uClibc) を実機に揃えるため。
+  対応表は下記「動作確認環境」
 - **ファームウェア書き換え不要** — `/tmp` に転送して実行するだけ (PoC 用途)
 - **SD カードが物理スイッチになるスタンドアロンモード** — 設定 (ストリームキー) を書いた
   SD を挿すと配信開始、抜くと停止 ([device/](device/) の supervisor が提供)
-- 実測負荷: ffmpeg CPU **3.3%** / RSS **3.3MB**(720p15 / ~330kbps 配信時、CPU idle 81%→73%)
+- 実測負荷: ffmpeg CPU **3.3%** / RSS **3.3MB**(720p15 / ~330kbps 配信時、CPU idle 81%→73%)。
+  TLS の負荷はビットレートにほぼ比例する: 720p10 / 1Mbps で 4.8%、1080p25 / 2.1Mbps で約 10%
+  (2026-09 以降の Thingino は既定が 1080p25 / 約 2.1Mbps)
 
 ## 動作確認環境
 
 | 項目 | 値 |
 |---|---|
 | カメラ | Wyze Cam v3 (Ingenic T31X, GC2053, ATBM6031) |
-| ファームウェア | Thingino `ciao+c334a03` (2026-08-02) |
-| ABI | mipsel / MIPS32 o32 / hard-float / uClibc-ng 1.0.57 |
+| ファームウェア | Thingino `ciao+da40db6` (2026-09-14) — 下表参照 |
+| ABI | mipsel / MIPS32 o32 / hard-float / uClibc-ng |
 | ビルドホスト | x86_64 Linux + Docker |
 
-> **注意**: バイナリは実機ファームと同じ toolchain 世代 (GCC15) ・同じ mbedTLS soname に
-> 依存します。別バージョンの Thingino では、実機の `/usr/lib/libmbed*` を確認の上、
-> 対応するコミットでビルドし直してください (手順は同じです)。
+| Thingino | toolchain | uClibc-ng | mbedTLS | 状態 |
+|---|---|---|---|---|
+| `ciao+c334a03` (2026-08-01) | GCC 15 | 1.0.57 | 3.6.6 | 実機で長時間配信まで確認済み |
+| `ciao+da40db6` (2026-09-14) | GCC 16.2 | 1.0.59 | 3.6.6 | 実機で YouTube Live 配信 (映像・音声) まで確認済み |
+
+> **注意**: バイナリは実機ファームと同じ toolchain 世代・同じ mbedTLS soname に依存します。
+> 実機の `/etc/os-release` の `BUILD_ID` (`ciao+<commit>`) と `TOOLCHAIN_GCC`、および
+> `ls /usr/lib | grep mbed` を確認の上、**その commit でビルドし直してください** (手順は同じです)。
+> パッチ (`patches/`) は上記どちらの commit にも無修正で当たります。
 
 ## ビルド手順
 
@@ -86,9 +106,11 @@ git 管理外です。必要な変更はすべて `patches/` に分離してあ�
 
 ```sh
 # 1. Thingino を実機ファームと同じコミットで取得
-git clone https://github.com/themactep/thingino-firmware
+#    (実機の BUILD_ID="ciao+da40db6, ..." の da40db6 の部分。リリースは master ではなく
+#     ciao ブランチから作られており、master の HEAD とは別系統なので必ず commit を指定する)
+git clone --branch ciao https://github.com/themactep/thingino-firmware
 cd thingino-firmware
-git checkout c334a03
+git checkout da40db6
 git submodule update --init          # buildroot をピン位置で checkout
 
 # 2. RTMPS 対応パッチを適用
@@ -96,6 +118,9 @@ git apply ../patches/thingino-ffmpeg-rtmps.diff
 
 # 3. 公式ビルダーイメージと DL キャッシュを取得
 WORKFLOW=1 make -f Makefile.container container-pull
+#    以前のイメージがローカルに残っていると container-pull は更新しない。古いままだと
+#    "Dependency check failed" (libgmp-dev / python3-gmpy2 不足) になるので明示的に更新する
+docker pull ghcr.io/themactep/thingino-builder-image:latest
 
 # 4. DL キャッシュボリュームを書き込み可能にする(root所有のため。初回のみ)
 docker run --rm --user 0:0 --volumes-from thingino-dl-cache \
@@ -146,11 +171,10 @@ scp -O ffmpeg root@<camera-ip>:/tmp/
 #   LD_LIBRARY_PATH=/tmp /tmp/ffmpeg -version
 
 # YouTube Live へ配信
-/tmp/ffmpeg -rtsp_transport tcp \
+/tmp/ffmpeg -loglevel error -rtsp_transport tcp \
   -i 'rtsp://thingino:thingino@127.0.0.1:554/ch0' \
   -c copy -f flv \
-  'rtmps://a.rtmps.youtube.com:443/live2/<STREAM_KEY>' \
-  -loglevel error
+  'rtmps://a.rtmps.youtube.com:443/live2/<STREAM_KEY>'
 ```
 
 - RTSP の認証・パスは Thingino のデフォルト (`thingino:thingino`, `/ch0`)。環境に合わせて変更

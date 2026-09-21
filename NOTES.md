@@ -241,15 +241,148 @@ B フレームなしの H.264 なので DTS=PTS 補正で正しく、FLV 出力�
 ### 実行コマンド (確定版)
 
 ```sh
-/tmp/ffmpeg -rtsp_transport tcp \
+/tmp/ffmpeg -loglevel error -rtsp_transport tcp \
   -i 'rtsp://thingino:thingino@127.0.0.1:554/ch0' \
   -c copy -f flv \
-  'rtmps://a.rtmps.youtube.com:443/live2/<STREAM_KEY>' \
-  -loglevel error
+  'rtmps://a.rtmps.youtube.com:443/live2/<STREAM_KEY>'
 ```
 
 - RTSP 認証は Thingino デフォルト `thingino:thingino`、パス `/ch0` (メイン) / `/ch1` (サブ)
 - ストリームキーはシェル履歴・ログ・チャットに残る。**露出したら YouTube Studio で再生成**
+
+---
+
+## 2026-09 追記: Thingino `ciao+da40db6` (GCC16) への追従
+
+2026-09-21 実施。実機を `ciao+c334a03` (2026-08-01) から `ciao+da40db6` (2026-09-14) へ
+更新するにあたっての再調査。間は 853 コミット。以降の本文は c334a03 時点の記録のまま残し、
+差分だけここに書く。
+
+### ビルド側: ほぼ無変更
+
+| 項目 | c334a03 | da40db6 |
+|---|---|---|
+| toolchain | GCC 15 | **GCC 16.2.0** (`thingino-toolchain-x86_64_xburst1_uclibc_gcc16-linux-mipsel.tar.gz`) |
+| uClibc-ng | 1.0.57 | **1.0.59** |
+| buildroot pin | `313414b` | `d518030` |
+| mbedTLS / soname | 3.6.6 / .21 .7 .16 | 同じ |
+| FFmpeg | 8.0.1 | 同じ (`package/thingino-ffmpeg` は 853 コミット間で無変更) |
+
+- パッチは無修正で当たる。upstream の typo (`aac_adtastoasc`) も未修正のまま
+- 成果物: 2,604,580 バイト、NEEDED は `libatomic.so.1` `libmbedtls.so.21` `libmbedx509.so.7`
+  `libmbedcrypto.so.16` `libc.so.0` で従来と同一
+- `br-%` ターゲットは `Makefile` から `Makefile.utils` に移っただけで使い方は同じ
+- **`da40db6` は `ciao` ブランチにしか無い。** master と ciao は 2026-05 に分岐しており、
+  「master を checkout して BUILD_ID 付近を探す」やり方は通用しない
+
+**ハマり5: ビルダーイメージが古いと `Dependency check failed`。** `scripts/dep_check.sh` が
+`libgmp-dev` / `python3-gmpy2` を要求するようになった。最新の builder image には入っているが、
+`make -f Makefile.container container-pull` はローカルにイメージがあると pull し直さない。
+`docker pull ghcr.io/themactep/thingino-builder-image:latest` で解決。
+
+### mbedTLS の出力バッファが 4KB になった
+
+`3fe80e9dd` (2026-08-06) で `MBEDTLS_SSL_OUT_CONTENT_LEN` が 16KB → 4KB に縮小され、
+`mbedtls_ssl_write()` が 4KB 超で部分書き込みを返すようになった。FFmpeg は
+`ffurl_write` (`retry_transfer_wrapper`) が全量書き切るまでループするので影響しない見立て。
+QEMU では問題なし (下記)。実機での CPU 再計測は未了 (#5)。
+
+QEMU 検証 (新 sysroot = uClibc 1.0.59 + 4KB バッファの mbedTLS):
+
+- `-protocols` に rtmp / rtmps / tls、`-muxers` に flv、`-bsfs` に aac_adtstoasc / extract_extradata
+- H.264+AAC の MP4 → FLV stream copy 成功 (ffprobe で h264 300 / aac 863 パケット)
+- YouTube 実エンドポイントに無効キーで接続 → `Handshaking...` → `Server version 4.0.0.1` →
+  `Releasing stream` / `FCPublish` / `Creating stream` → `Sending publish command` → サーバ切断。
+  **c334a03 のビルドと同じ地点まで到達** = TLS も RTMP handshake (C0+C1 1537 バイト) も問題なし
+
+**読み違い注意**: このテストは成功しても最後は `ffurl_read returned 0xdfb9b0bb` (= AVERROR_EOF)
+と `Error opening output ...: Input/output error` で終わる (無効キーなので publish 後に切られる)。
+`-loglevel verbose` 以下だと RTMP 層の行が出ず、TLS handshake で失敗したように見えて紛らわしい。
+判定は `-loglevel debug 2>&1 | grep '^\[rtmps'` で `Server version` と `Sending publish command`
+が出ているかで行う (`qemu-mipsel-static -strace` で send/recv の往復を見ても分かる)。
+
+### 実機側: こちらの方が影響が大きい
+
+- **netwatch** (`S52netwatch`, 2026-09-10 追加, デフォルト有効): ゲートウェイへの ping が
+  30 秒間隔で 3 回連続失敗すると **OS ごと強制リブート**する (`reboot -f` → sysrq → watchdog 停止による
+  ハードウェアリセット)。旧ファームには無かった。supervisor は「ICMP を落とすルーターがあるので
+  ping しない。ネットワークが戻るのを待って再開する」設計なので、配信用途では再起動は欠損を
+  延ばすだけになる。このため配信用途では無効化することにした
+  (手順は README / device/README.md)
+- **prudynt が `ad6294e` → `354b1b4` (142 コミット) に更新され、既定値が変わった。**
+  全ストリームの既定サイズがセンサー解像度になり (`9f3d309`。以前 stream1 / JPEG は 640x360)、
+  bitrate 0 = 約 1Mbps/メガピクセルの自動値になった (`3188189`)。ファーム更新で設定が初期化
+  されると main が **1920x1080 / 25fps / 約 2.1Mbps**、JPEG プレビューも 1080p になる。
+  **設定を WebUI で動的に変えた後は `service restart prudynt` が必要** (下記「prudynt の
+  高負荷」)。なお RTSP サーバは旧ピンの時点で既に自前実装 (`src/simple-rtsp`) で、
+  9/13 の "drop live555-era hybrid linking" はリンク方式の整理だけ。RTSP の挙動は変わっていない
+- **Thingino を更新するとカメラ上の書き込み領域 (overlayfs の data パーティション) ごと消える。**
+  このリポジトリで入れたファイルも全部消えるので、更新後は `device/install.sh` で入れ直す
+  (公式イメージに `/usr/bin/ffmpeg` は無い。`BR2_PACKAGE_PRUDYNT_T_FFMPEG` は opt-in)。
+  OS の更新や設定バックアップ自体はこのリポジトリの範囲外とし、インストーラは自前のファイルを
+  置くだけにした。supervisor には「起動できて rtmps を持つか」の `-protocols` チェックを追加
+- 変わっていなかったもの: `jct` (1.2.0→1.2.1)、`/run/sync_success`、`/run/portal_mode`、
+  `service enable|disable`、SD の自動マウント (`/mnt/mmcblk0p1`)、
+  デフォルト streamer (prudynt。Raptor / timps / Strero は選択肢として追加されただけ)
+
+### 実機確認 (`ciao+da40db6`, 2026-09-21)
+
+- GCC16 ビルドのバイナリは実機で起動。mbedTLS soname・libatomic とも実機に存在 (同梱不要)
+- RTSP は `thingino:thingino` / `/ch0` のまま。h264 (Main) + aac 16kHz mono が 1 本ずつ。
+  SDP に sprop があり (デコーダ無しでも解像度が取れる)、`extract_extradata` は保険のまま
+- **`Invalid DTS` は引き続き出る。** DTS が PTS より 106ms 進んで始まり、
+  約 2 秒後 (最初の RTCP SR で同期し直した時点) に 28ms に縮む。B フレーム無しなので補正結果は
+  正しく、2 分超の FLV が正常に再生できた。加えて先頭で 1 回
+  `[flv] Timestamps are unset in a packet for stream 0. This is deprecated` が出るようになった。
+  今は警告だけだが、FFmpeg のバージョンを上げるときは要注意
+- **ファーム更新で prudynt の設定が初期値に戻り 1920x1080 / 25fps / 約 2.1Mbps になった。**
+  旧計測 (720p15 / 約 330kbps で ffmpeg CPU 3.3%) はこのビットレートには当てはまらない。
+  実測は 1080p25 / 2.1Mbps で **ffmpeg CPU 約 10%** (単発値)、720p10 / 1Mbps で **4.8% / RSS 3.4MB**。
+  TLS の負荷はビットレートにほぼ比例するという見立てどおりで、ffmpeg 側は問題ない
+- **ffmpeg のオプションは出力 URL より前に置く。** 後ろに置いた `-t 10` は
+  `Trailing option(s) found in the command: may be ignored.` の警告とともに本当に無視され、
+  tmpfs に 37MB 書き込む事故になった。旧版のコマンド例は `-loglevel error` を末尾に置いていた
+  (`-loglevel` だけは先読みされるので効いていたが、警告は出る) ため先頭へ移した
+
+### prudynt の高負荷: 動的再構成の後遺症だった (#3)
+
+更新直後、ffmpeg を止めていても prudynt が CPU 55〜70% を食い、idle が尽きて解像度/fps を
+上げるとカメラが固まる状態になった。切り分けの経過:
+
+1. 最初は「既定値が 1080p25 / 2.1Mbps になったせい」と考えたが、720p10 / 1Mbps に下げても 55%
+2. `/proc/<pid>/task/*/stat` の差分でスレッド別に測ると、libimp の **`group_update` 1 本が 53.8%**。
+   prudynt 自身のスレッド (RTSP / HTTP / 音声) は合計 5% 程度、外部クライアントは 0
+3. そのスレッドの tid が起動時のスレッド群よりずっと新しい = WebUI での設定変更でパイプラインが
+   動的に作り直されていた
+4. **設定は何も変えずに `service restart prudynt` しただけで prudynt 2.1% / idle 82% に戻った**
+
+| 状態 (720p10 / 1Mbps) | prudynt | ffmpeg | idle |
+|---|---|---|---|
+| WebUI で解像度等を変更した後 | 55% | (停止中) | 30% |
+| prudynt 再起動後 | 2.1% | 4.8% | 82% |
+
+つまり原因は ffmpeg でも設定値でもなく、prudynt (`354b1b4`) の動的再構成後の異常状態。
+upstream でも直近で pipeline リークの修正が入っている領域。回避策は単純で、
+**WebUI で stream の設定を変えたら prudynt を再起動する**。
+
+スレッド別 CPU の測り方 (busybox の `top -H` に頼らない):
+
+```sh
+P=$(pidof prudynt)
+snap() { for t in /proc/$P/task/*; do echo "${t##*/} $(tr ' ' _ <$t/comm) $(sed 's/.*) //' $t/stat | awk '{print $12+$13}')"; done; }
+snap >/tmp/s1; sleep 10; snap >/tmp/s2
+awk 'NR==FNR{a[$1]=$3;next}{printf "%5.1f%%  tid=%s  %s\n",($3-a[$1])/10,$1,$2}' /tmp/s1 /tmp/s2 | sort -rn | head
+```
+
+なお `top -b -n 1` の単発値は busybox では当てにならない。`top -b -d 5 -n 2` の 2 サンプル目を見る。
+
+### 調査のやり方メモ
+
+thingino-firmware を `--filter=blob:none` で clone して `git grep <commit>` すると blob を
+1 個ずつ取りに行って数分単位で固まる。2 コミットの比較は
+`https://github.com/themactep/thingino-firmware/archive/<commit>.tar.gz` を 2 つ展開して
+`diff -r` / `grep -r` する方が圧倒的に速い (buildroot は submodule なので含まれない。
+pin は `git ls-tree <commit> buildroot` で見る)。
 
 ---
 
@@ -263,5 +396,7 @@ B フレームなしの H.264 なので DTS=PTS 補正で正しく、FLV 出力�
 - [x] supervisor スクリプト — 切断/Wi-Fi 断からの自動再起動 (Thingino init script 形式)。
   クラッシュ再起動・ネットワーク断の待機と復帰後の自動再開まで実機の障害試験で確認済み。
   復帰しないケースが今後見つかればバグとして対応する
+- [x] `ciao+da40db6` での実機確認 — YouTube Live へ映像・音声とも配信成功 (2026-09-21)。
+  ffmpeg CPU 4.8% @720p10/1Mbps。長時間試験と `install.sh` の通し実行は未実施
 - [ ] Thingino パッケージとしての統合 (Config.in オプション化、stream key の安全な保持)
 - [ ] typo 修正 (`aac_adtastoasc`) の upstream PR
