@@ -304,10 +304,11 @@ QEMU 検証 (新 sysroot = uClibc 1.0.59 + 4KB バッファの mbedTLS):
 ### 実機側: こちらの方が影響が大きい
 
 - **netwatch** (`S52netwatch`, 2026-09-10 追加, デフォルト有効): ゲートウェイへの ping が
-  30 秒間隔で 3 回連続失敗すると**カメラを再起動**する。supervisor が「ICMP を落とすルーターが
-  あるので ping しない」とした判断と正面衝突する。モバイルルーター運用では
-  `jct /etc/thingino.json set netwatch.enabled false` で無効化するか、`netwatch.target` を
-  ping に応答するホストにする (詳細は device/README.md の netwatch 節)
+  30 秒間隔で 3 回連続失敗すると **OS ごと強制リブート**する (`reboot -f` → sysrq → watchdog 停止による
+  ハードウェアリセット)。旧ファームには無かった。supervisor は「ICMP を落とすルーターがあるので
+  ping しない。ネットワークが戻るのを待って再開する」設計なので、配信用途では再起動は欠損を
+  延ばすだけになる。**無効化を推奨** (`device/disable-netwatch.sh`。OS 設定の変更なので
+  `install.sh` とは別スクリプト)
 - **prudynt が `ad6294e` → `354b1b4` (142 コミット) に更新され、既定値が変わった。**
   全ストリームの既定サイズがセンサー解像度になり (`9f3d309`。以前 stream1 / JPEG は 640x360)、
   bitrate 0 = 約 1Mbps/メガピクセルの自動値になった (`3188189`)。ファーム更新で設定が初期化
