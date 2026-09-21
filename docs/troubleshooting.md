@@ -67,11 +67,20 @@ youtube-relay: ffmpeg: [out#0/flv @ ...] Error opening output rtmps://.../REDACT
 supervisor のログ (`ffmpeg:` 行) で足りない場合は、手動で1回実行する:
 
 ```sh
+# supervisor が実際に使っている設定ファイルと ffmpeg を、直近の起動ログで確認する
+#   youtube-relay: Starting ffmpeg -> ... (config: /etc/youtube-relay.json, ffmpeg: /usr/bin/ffmpeg)
+logread | grep "youtube-relay: Starting ffmpeg" | tail -1
+CFG=/etc/youtube-relay.json      # ↑ の config: の値 (SD なら /mnt/mmcblk0p1/youtube-relay.json)
+FFMPEG=/usr/bin/ffmpeg           # ↑ の ffmpeg: の値 (/mnt/mmcblk0p1/ffmpeg や /tmp/ffmpeg のこともある)
+
 /etc/init.d/S93youtube-relay stop
-/usr/bin/ffmpeg -loglevel info -rtsp_transport tcp \
-  -i "$(jct /mnt/mmcblk0p1/youtube-relay.json get rtsp_url)" \
+# 設定に書いていない項目は supervisor と同じ既定値を使う
+RTSP_URL=$(jct "$CFG" get rtsp_url 2>/dev/null); [ -n "$RTSP_URL" ] || RTSP_URL='rtsp://thingino:thingino@127.0.0.1:554/ch0'
+RTMP_URL=$(jct "$CFG" get rtmp_url 2>/dev/null); [ -n "$RTMP_URL" ] || RTMP_URL='rtmps://a.rtmps.youtube.com:443/live2'
+"$FFMPEG" -loglevel info -rtsp_transport tcp \
+  -i "$RTSP_URL" \
   -c copy -f flv \
-  "$(jct /mnt/mmcblk0p1/youtube-relay.json get rtmp_url)/$(jct /mnt/mmcblk0p1/youtube-relay.json get stream_key)"
+  "$RTMP_URL/$(jct "$CFG" get stream_key)"
 # (オプションは必ず出力 URL より前に置く。後ろに置くと警告が出て無視されることがある)
 # 原因を直したら:
 /etc/init.d/S93youtube-relay start
