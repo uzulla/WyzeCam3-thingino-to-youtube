@@ -3,5 +3,6 @@
 	"rtsp_url": "rtsp://thingino:thingino@127.0.0.1:554/ch0",
 	"rtmp_url": "rtmps://a.rtmps.youtube.com:443/live2",
 	"ffmpeg_opts": "",
+	"ffmpeg_out_opts": "",
 	"enabled": true
 }

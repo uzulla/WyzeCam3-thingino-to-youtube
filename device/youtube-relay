@@ -102,7 +102,10 @@ while true; do
 	RTMP_URL=$(jct "$CFG" get rtmp_url 2>/dev/null)
 	[ -n "$RTMP_URL" ] || RTMP_URL="rtmps://a.rtmps.youtube.com:443/live2"
 	STREAM_KEY=$(jct "$CFG" get stream_key 2>/dev/null)
+	# ffmpeg_opts go before -i (input options, e.g. -timeout), ffmpeg_out_opts
+	# after it (output options, e.g. -map). ffmpeg rejects them in the wrong spot.
 	FFMPEG_OPTS=$(jct "$CFG" get ffmpeg_opts 2>/dev/null)
+	FFMPEG_OUT_OPTS=$(jct "$CFG" get ffmpeg_out_opts 2>/dev/null)
 
 	# Search order: temporary/removable locations first so a test binary on
 	# the SD card or in /tmp overrides the installed one; reboot (or pulling
@@ -144,11 +147,10 @@ while true; do
 
 	START=$(date +%s)
 	set -f
-	set -- $FFMPEG_OPTS
+	set -- -nostdin -loglevel error -rtsp_transport tcp $FFMPEG_OPTS \
+		-i "$RTSP_URL" -c copy $FFMPEG_OUT_OPTS -f flv "$RTMP_URL/$STREAM_KEY"
 	set +f
-	"$FFMPEG" -nostdin -loglevel error \
-		-rtsp_transport tcp "$@" -i "$RTSP_URL" \
-		-c copy -f flv "$RTMP_URL/$STREAM_KEY" &
+	"$FFMPEG" "$@" &
 	FFMPEG_PID=$!
 
 	# Watcher: stop the stream if its config disappears (SD pulled) or is disabled

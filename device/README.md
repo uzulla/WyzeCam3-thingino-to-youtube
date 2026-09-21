@@ -93,6 +93,16 @@ Thingino はルート全体が overlayfs (SquashFS + JFFS2 データパーティ
 # スクリプトだけ入れ直す場合は ffmpeg の引数を省略
 ```
 
+> `install.sh` は 2026-09 に追加したもので、実機での通し実行はまだ確認できていない
+> (構文チェックと選択ロジックの単体確認のみ)。うまくいかない場合は下の手作業の手順で。
+
+追加の ffmpeg オプションは設定 JSON で渡せる。置き場所が違うと ffmpeg が起動エラーになるので注意:
+
+| キー | 展開位置 | 例 |
+|---|---|---|
+| `ffmpeg_opts` | `-i` の**前** (入力オプション) | `-timeout 5000000` |
+| `ffmpeg_out_opts` | `-i` の**後** (出力オプション) | `-map 0:v:0 -map 0:a:0` |
+
 `install.sh` がやっていることを手作業で行う場合:
 
 ```sh
@@ -215,7 +225,7 @@ youtube-relay: Starting ffmpeg -> rtmps://.../REDACTED (config: ..., ffmpeg: ...
 | CPU が張り付く (`top` で prudynt が 50% 超) / 配信がカクつく・カメラが固まる | **WebUI で解像度や fps を変えた後は `service restart prudynt`**。2026-09 時点の prudynt は動的な再構成のあと映像パイプライン (libimp の `group_update` スレッド) が高負荷のまま回り続けることがある。再起動すれば 720p10 で prudynt 2% / ffmpeg 5% 程度に戻る。ffmpeg や配信とは無関係 (ffmpeg を止めても下がらない) |
 | カメラが約 90 秒毎に再起動する | netwatch がゲートウェイへの ping 失敗で再起動している (`logread \| grep netwatch`)。上記「netwatch」参照 |
 | YouTube Studio に何も出ない (ログは Starting ffmpeg) | ストリームキーの間違いが最有力。YouTube 側は間違ったキーでも接続を受けてから切断するため、`ffmpeg exited` の繰り返しになっていないかログを確認 |
-| 映像は出るが音が出ない | RTSP に複数の音声トラックが載っている可能性。設定の `ffmpeg_opts` に `-map 0:v:0 -map 0:a:0` を指定して AAC トラックを明示する |
+| 映像は出るが音が出ない | RTSP に複数の音声トラックが載っている可能性。設定の **`ffmpeg_out_opts`** に `-map 0:v:0 -map 0:a:0` を指定して (`-map` は出力オプションなので `-i` の前に展開される `ffmpeg_opts` に書くと ffmpeg が起動エラーになる)。 AAC トラックを明示する |
 
 ### ffmpeg のエラーを直接見る
 
