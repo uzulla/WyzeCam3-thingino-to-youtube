@@ -133,39 +133,18 @@ ssh $CAM '/etc/init.d/S93youtube-relay status'
 ssh $CAM 'logread | grep youtube-relay | tail -20'
 ```
 
-## ファームウェアを更新した後は入れ直しが必要
+## Thingino を入れ直した / 更新した後
 
-ファームウェア更新そのものはこのリポジトリの範囲外 (やり方は
-[Thingino のドキュメント](https://github.com/themactep/thingino-firmware/blob/master/docs/firmware/sysupgrade.md) を参照)。
-ここで知っておくべきことは 1 つだけ:
-
-**Thingino を更新すると、カメラ上の書き込み領域 (overlayfs の data パーティション。`/overlay`)
-ごと、このディレクトリから入れたファイルと `/usr/bin/ffmpeg` は消える。**
-※ ここでの overlay は映像の OSD ではなくファイルシステムの話。
-
-更新が終わったら入れ直す:
+このディレクトリのファイルと `/usr/bin/ffmpeg` は、Thingino を新規インストールした直後の
+カメラに入れる想定。Thingino を入れ直したり更新したりするとカメラ上の書き込み領域ごと消えるので、
+その後にもう一度 `install.sh` を実行する (ストリームキーも入れ直す):
 
 ```sh
-# ffmpeg は更新後のファーム (toolchain 世代) に合わせてビルドし直したものを使う
-# (対応表はトップの README)
+# ffmpeg はそのファーム (toolchain 世代) に合わせてビルドしたものを使う (対応表はトップの README)
 ./install.sh root@<camera-ip> ../dist/ffmpeg
 ```
 
-- 入れ直すまでの間、supervisor も消えているので配信は止まる。supervisor だけ残っていて
-  ffmpeg が無い場合は `No ffmpeg binary with rtmps support found` を出して待機する
-- ストリームキーを更新後も残したい場合は、**任意で** `/etc/youtube-relay.json` を Thingino の
-  バックアップ対象リストに自分で登録しておく (これは OS 側の設定なので `install.sh` は触らない):
-
-  ```sh
-  ssh $CAM 'grep -qxF /etc/youtube-relay.json /etc/cfg-backup.list || echo /etc/youtube-relay.json >> /etc/cfg-backup.list'
-  ```
-
-  Thingino 側で設定バックアップを有効にして更新すれば Wi-Fi 設定などと一緒に復元される。
-  登録しない/バックアップなしで更新した場合は `install.sh` の後でキーを書き直すだけ
-- スクリプトや ffmpeg はこのリストに入れないこと。バックアップ領域は 64KB しかなく、
-  溢れると Wi-Fi 設定を含むバックアップ全体が失敗する (しかも更新は続行される)
-- SD カードに設定と ffmpeg を置く運用でも、supervisor と init スクリプトは内蔵側なので
-  入れ直しは必要
+Thingino 自体の更新や設定のバックアップはこのリポジトリの範囲外。
 
 ## netwatch (ネットワーク監視による自動再起動) に注意
 
@@ -183,7 +162,6 @@ jct /etc/thingino.json set netwatch.target 1.1.1.1          # または応答す
 service restart netwatch
 ```
 
-`/etc/thingino.json` は標準で cfg-backup の対象なので、この設定はファーム更新後も残る。
 逆に ping が通る環境では、Wi-Fi が固まったときの最終手段として有効なままが望ましい。
 
 ## 運用
@@ -221,7 +199,7 @@ youtube-relay: Starting ffmpeg -> rtmps://.../REDACTED (config: ..., ffmpeg: ...
 | ログ / 症状 | 原因と対処 |
 |---|---|
 | `No usable config, standing by` | 設定が見つからない。`mount \| grep mmcblk` で SD がマウントされているか、`ls /mnt/mmcblk0p1/` にファイルがあるか、ファイル名が `youtube-relay.json` か、`jct <path> get stream_key` で読めるか (JSON 構文エラーだと読めない)、`"enabled": false` になっていないかを順に確認 |
-| `No ffmpeg binary with rtmps support found, standing by` | ファーム更新で `/usr/bin/ffmpeg` が消えた可能性が高い → `install.sh` で入れ直す。ファイルはあるのにこれが出る場合は、そのバイナリが今のファームで起動できていない (toolchain 世代の不一致。`/usr/bin/ffmpeg -version` を手で実行して確認)。また**再起動で `/tmp/ffmpeg` は消える**。`/usr/bin/ffmpeg` へ常設するか SD に置く。設定の `ffmpeg_bin` が存在しないパスを指している場合も同じ (行を消せば自動探索になる)。ffmpeg を置けば30秒以内に自動で拾う (supervisor 再起動不要) |
+| `No ffmpeg binary with rtmps support found, standing by` | Thingino を入れ直した/更新した後なら `/usr/bin/ffmpeg` ごと消えている → `install.sh` で入れ直す。ファイルはあるのにこれが出る場合は、そのバイナリが今のファームで起動できていない (toolchain 世代の不一致。`/usr/bin/ffmpeg -version` を手で実行して確認)。また**再起動で `/tmp/ffmpeg` は消える**。`/usr/bin/ffmpeg` へ常設するか SD に置く。設定の `ffmpeg_bin` が存在しないパスを指している場合も同じ (行を消せば自動探索になる)。ffmpeg を置けば30秒以内に自動で拾う (supervisor 再起動不要) |
 | `ffmpeg exited (rc=1) after 0〜2s` を繰り返す | ffmpeg が即死している。RTSP の URL/認証ミス、YouTube 側のキー間違い、DNS/ネットワーク未接続が典型。下記「ffmpeg のエラーを直接見る」で原因を特定 |
 | `ffmpeg exited` が数十秒〜数分間隔 | 接続は成立するが切断されている。Wi-Fi 品質、YouTube 側の一時的な切断など。supervisor が自動復帰させるので、頻度が低ければ実害はない |
 | status が `not running` | `service enable youtube-relay` で有効化されているか (`ls -la /etc/init.d/S93youtube-relay` で実行ビット確認)、`/run/portal_mode` が無いか (Wi-Fi 未設定モード)。手動起動は `/etc/init.d/S93youtube-relay start` |

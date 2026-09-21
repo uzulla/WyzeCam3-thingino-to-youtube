@@ -3,16 +3,15 @@
 # Run on the PC, from anywhere:
 #   device/install.sh root@<camera-ip> [path/to/ffmpeg]
 #
-# Safe to re-run. Meant for the first install AND for after a firmware upgrade:
-# upgrades wipe the camera's writable area, so everything installed here is
-# gone afterwards. Upgrading itself is up to you (see Thingino's docs).
+# Safe to re-run. Meant to be run on a freshly installed (or freshly updated)
+# Thingino: reinstalling/updating the firmware removes everything placed here.
 #
 # The ffmpeg argument is optional; without it only scripts are (re)installed.
 # An existing /etc/youtube-relay.json on the camera is never overwritten.
 #
 # Scope: this only places OUR files (ffmpeg, supervisor, init script, config).
-# It never touches Thingino's own files or settings - firmware upgrades, config
-# backup lists, netwatch etc. are separate, manual steps (see README.md).
+# It never touches Thingino's own files or settings; updating or backing up
+# the OS is out of scope.
 
 set -e
 
