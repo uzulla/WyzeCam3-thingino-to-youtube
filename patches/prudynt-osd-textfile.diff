@@ -1,18 +1,24 @@
 diff --git c/src/config/Config.cpp i/src/config/Config.cpp
-index cefac45..f29e75d 100644
+index cefac45..4865291 100644
 --- c/src/config/Config.cpp
 +++ i/src/config/Config.cpp
-@@ -332,6 +332,9 @@ std::vector<ConfigItem<bool>> CFG::getBoolItems() {
+@@ -332,6 +332,15 @@ std::vector<ConfigItem<bool>> CFG::getBoolItems() {
        {"osd.burnin.enabled", osd.burnin.enabled, true, validateBool},
        {"osd.burnin.substream_disabled", osd.burnin.substream_disabled, false,
         validateBool},
 +      {"osd.textfile.enabled", osd.textfile.enabled, false, validateBool},
-+      {"osd.textfile.substream_disabled", osd.textfile.substream_disabled,
-+       true, validateBool},
++      {"osd.textfile.substream_disabled", osd.textfile.substream_disabled, true,
++       validateBool},
++      {"osd.textfile2.enabled", osd.textfile2.enabled, false, validateBool},
++      {"osd.textfile2.substream_disabled", osd.textfile2.substream_disabled, true,
++       validateBool},
++      {"osd.textfile3.enabled", osd.textfile3.enabled, false, validateBool},
++      {"osd.textfile3.substream_disabled", osd.textfile3.substream_disabled, true,
++       validateBool},
        {"stream1.audio_enabled", stream1.audio_enabled, true, validateBool},
        {"stream1.enabled", stream1.enabled, true, validateBool},
        {"stream1.allow_shared", stream1.allow_shared, true, validateBool},
-@@ -469,6 +472,14 @@ std::vector<ConfigItem<const char *>> CFG::getCharItems() {
+@@ -469,6 +478,30 @@ std::vector<ConfigItem<const char *>> CFG::getCharItems() {
         validateCharNotEmpty},
        {"osd.burnin.background_color", osd.burnin.background_color, "#00000080",
         validateCharNotEmpty},
@@ -22,12 +28,28 @@ index cefac45..f29e75d 100644
 +       isValidHexColor},
 +      {"osd.textfile.outline_color", osd.textfile.outline_color, "#00000000",
 +       isValidHexColor},
-+      {"osd.textfile.background_color", osd.textfile.background_color,
-+       "#00000080", isValidHexColor},
++      {"osd.textfile.background_color", osd.textfile.background_color, "#00000080",
++       isValidHexColor},
++      {"osd.textfile2.path", osd.textfile2.path, "/run/prudynt/osd-text2",
++       validateCharNotEmpty},
++      {"osd.textfile2.fill_color", osd.textfile2.fill_color, "#ffffffff",
++       isValidHexColor},
++      {"osd.textfile2.outline_color", osd.textfile2.outline_color, "#00000000",
++       isValidHexColor},
++      {"osd.textfile2.background_color", osd.textfile2.background_color, "#00000080",
++       isValidHexColor},
++      {"osd.textfile3.path", osd.textfile3.path, "/run/prudynt/osd-text3",
++       validateCharNotEmpty},
++      {"osd.textfile3.fill_color", osd.textfile3.fill_color, "#ffffffff",
++       isValidHexColor},
++      {"osd.textfile3.outline_color", osd.textfile3.outline_color, "#00000000",
++       isValidHexColor},
++      {"osd.textfile3.background_color", osd.textfile3.background_color, "#00000080",
++       isValidHexColor},
  #if defined(WEBSOCKET_ENABLED)
        {"websocket.name", websocket.name, "wss prudynt", validateCharNotEmpty},
        {"websocket.token", websocket.token, "auto",
-@@ -520,6 +531,16 @@ std::vector<ConfigItem<int>> CFG::getIntItems() {
+@@ -520,6 +553,36 @@ std::vector<ConfigItem<int>> CFG::getIntItems() {
         [](const int &v) { return v >= 0 && v <= 65536; }},
        {"osd.burnin.scale", osd.burnin.scale, 0,
         [](const int &v) { return v >= 0 && v <= kBurninMaxScale; }},
@@ -41,57 +63,85 @@ index cefac45..f29e75d 100644
 +       [](const int &v) { return v >= -8192 && v <= 8192; }},
 +      {"osd.textfile.pos_y", osd.textfile.pos_y, -8,
 +       [](const int &v) { return v >= -8192 && v <= 8192; }},
++      {"osd.textfile2.scale", osd.textfile2.scale, 0,
++       [](const int &v) { return v >= 0 && v <= kBurninMaxScale; }},
++      {"osd.textfile2.cols", osd.textfile2.cols, 24,
++       [](const int &v) { return v >= 1 && v <= kTextfileMaxCols; }},
++      {"osd.textfile2.rows", osd.textfile2.rows, 2,
++       [](const int &v) { return v >= 1 && v <= kTextfileMaxRows; }},
++      {"osd.textfile2.pos_x", osd.textfile2.pos_x, -8,
++       [](const int &v) { return v >= -8192 && v <= 8192; }},
++      {"osd.textfile2.pos_y", osd.textfile2.pos_y, 8,
++       [](const int &v) { return v >= -8192 && v <= 8192; }},
++      {"osd.textfile3.scale", osd.textfile3.scale, 0,
++       [](const int &v) { return v >= 0 && v <= kBurninMaxScale; }},
++      {"osd.textfile3.cols", osd.textfile3.cols, 24,
++       [](const int &v) { return v >= 1 && v <= kTextfileMaxCols; }},
++      {"osd.textfile3.rows", osd.textfile3.rows, 2,
++       [](const int &v) { return v >= 1 && v <= kTextfileMaxRows; }},
++      {"osd.textfile3.pos_x", osd.textfile3.pos_x, -8,
++       [](const int &v) { return v >= -8192 && v <= 8192; }},
++      {"osd.textfile3.pos_y", osd.textfile3.pos_y, -8,
++       [](const int &v) { return v >= -8192 && v <= 8192; }},
  
        {"image.ae_compensation", image.ae_compensation, 128, validateInt255},
        /* Expert overrides preserved for backward compatibility */
 diff --git c/src/config/Config.hpp i/src/config/Config.hpp
-index fb30ab0..b159c73 100644
+index fb30ab0..1b678df 100644
 --- c/src/config/Config.hpp
 +++ i/src/config/Config.hpp
-@@ -206,6 +206,8 @@ struct _privacy {
+@@ -206,6 +206,23 @@ struct _privacy {
  };
  
  constexpr int kBurninMaxScale = 10;
 +constexpr int kTextfileMaxCols = 128;
 +constexpr int kTextfileMaxRows = 32;
++
++struct _osd_textfile {
++  bool enabled;
++  bool substream_disabled;
++  const char *path;
++  int scale;
++  int cols;
++  int rows;
++  int pos_x;
++  int pos_y;
++  const char *fill_color;
++  const char *outline_color;
++  const char *background_color;
++};
++constexpr int kTextfileSlots = 3;
  
  struct _osd {
    _stream_stats stats;
-@@ -222,6 +224,21 @@ struct _osd {
+@@ -222,6 +239,12 @@ struct _osd {
      const char *fill_color;
      const char *outline_color;
    } burnin;
-+  // Text-file overlay: a second burn-in region that shows the contents of a
-+  // (tmpfs) text file, re-rendered whenever the file changes. See OSD.cpp.
-+  struct {
-+    bool enabled;
-+    bool substream_disabled;
-+    const char *path;
-+    int scale;
-+    int cols;
-+    int rows;
-+    int pos_x;
-+    int pos_y;
-+    const char *fill_color;
-+    const char *outline_color;
-+    const char *background_color;
-+  } textfile;
++  // Text-file overlays: extra burn-in regions that each show the contents
++  // of a (tmpfs) text file, re-rendered whenever the file changes. See
++  // OSDTextfile.cpp. Defaults: bottom-left, top-right, bottom-right.
++  _osd_textfile textfile;
++  _osd_textfile textfile2;
++  _osd_textfile textfile3;
  };
  struct _recorder {
    bool enabled;
 diff --git c/src/config/JsonAPI.cpp i/src/config/JsonAPI.cpp
-index fb883cc..e679ae6 100644
+index fb883cc..21fa555 100644
 --- c/src/config/JsonAPI.cpp
 +++ i/src/config/JsonAPI.cpp
-@@ -507,6 +507,44 @@ void handle_osd(JsonValue *obj, int idx, std::string &sect, bool &s2,
+@@ -507,6 +507,46 @@ void handle_osd(JsonValue *obj, int idx, std::string &sect, bool &s2,
      sect += "}";
      wrote = true;
    }
 +
-+  // textfile (text-file overlay, see OSD::updateTextfileOverlay)
-+  if (JsonValue *node = obj_get(obj, "textfile");
-+      node && (node->type == JSON_OBJECT || node->type == JSON_NULL)) {
-+    const std::string base = std::string(root) + ".textfile.";
++  // textfile, textfile2, textfile3 (text-file overlays, see OSDTextfile.cpp)
++  for (const char *slot : {"textfile", "textfile2", "textfile3"}) {
++    JsonValue *node = obj_get(obj, slot);
++    if (!node || (node->type != JSON_OBJECT && node->type != JSON_NULL))
++      continue;
++    const std::string base = std::string(root) + "." + slot + ".";
 +    static const char *const boolKeys[] = {"enabled", "substream_disabled"};
 +    static const char *const intKeys[] = {"scale", "cols", "rows", "pos_x",
 +                                          "pos_y"};
@@ -108,7 +158,7 @@ index fb883cc..e679ae6 100644
 +        if (JsonValue *v = obj_get(node, k); v && v->type == JSON_STRING)
 +          cfg->set<const char *>(base + k, v->value.string);
 +    }
-+    add_key(sect, s2, "textfile", "{");
++    add_key(sect, s2, slot, "{");
 +    bool sp = false;
 +    for (const char *k : boolKeys) {
 +      add_key(sect, sp, k);
@@ -129,14 +179,14 @@ index fb883cc..e679ae6 100644
  
  void handle_audio(JsonValue *obj, std::string &out, bool &sep) {
 diff --git c/src/video/OSD.cpp i/src/video/OSD.cpp
-index 500c5fb..dca76d2 100644
+index 500c5fb..925a3ee 100644
 --- c/src/video/OSD.cpp
 +++ i/src/video/OSD.cpp
 @@ -920,6 +920,7 @@ int OSD::exit() {
      ts_rgn_ = INVHANDLE;
      ts_region_created_ = false;
    }
-+  destroyTextfileOverlay();
++  destroyTextfileOverlays();
  #ifdef USE_OSD_FONT_LIBSCHRIFT
    shutdownTimestampFont();
  #endif
@@ -154,7 +204,7 @@ index 500c5fb..dca76d2 100644
    ltime = localtime(&current);
  
 diff --git c/src/video/OSD.hpp i/src/video/OSD.hpp
-index e0ba5b2..c0d1bfe 100644
+index e0ba5b2..b182778 100644
 --- c/src/video/OSD.hpp
 +++ i/src/video/OSD.hpp
 @@ -14,8 +14,14 @@
@@ -172,39 +222,47 @@ index e0ba5b2..c0d1bfe 100644
  #if defined(OSD_BURN_TIMESTAMP) && defined(USE_OSD_FONT_LIBSCHRIFT)
  #include "schrift.h"
  #include <unordered_map>
-@@ -156,6 +162,36 @@ private:
+@@ -156,6 +162,44 @@ private:
    bool osd_group_started_{false};
    std::string last_ts_text_;
  
-+  // Text-file overlay (OSDTextfile.cpp): a separate region showing the
-+  // contents of osd.textfile.path, polled from the OSD thread tick.
++  // Text-file overlays (OSDTextfile.cpp): separate regions ("slots") that
++  // each show the contents of a text file, polled from the OSD thread tick.
++  struct TextfileSlot {
++    IMPRgnHandle rgn{INVHANDLE};
++    IMPOSDRgnAttr attr{};
++    std::vector<uint8_t> buf;          // BGRA pixel buffer for the region
++    std::vector<osdtext::Line> lines;  // text currently loaded from the file
++    std::string path;
++    // Wanted geometry (last tick). Starts as an impossible layout so that
++    // the first tick always counts as a geometry change.
++    osdtext::Layout layout{0, 0, 0, 0, 0};
++    osdtext::Colors colors{};
++    osdtext::Layout attr_layout{};     // geometry the region actually has
++    int attr_x{0};
++    int attr_y{0};
++    bool region_created{false};
++    bool attr_set{false};
++    bool shown{false};
++    bool dirty{true};
++    bool failed{false};       // IMP_OSD_SetRgnAttr refused this geometry
++    bool over_budget{false};  // no room left in the OSD pool
++    bool create_error_logged{false};
++    bool file_seen{false};
++    ino_t file_ino{0};
++    off_t file_size{0};
++    struct timespec file_mtime{};
++  };
++  struct TextfilePlan;
 +  void updateTextfileOverlay();
-+  void hideTextfileOverlay();
-+  void destroyTextfileOverlay();
-+  bool reloadTextfile(const std::string &path, int cols, int rows, bool force);
++  void applyTextfileSlot(int index, const TextfilePlan &plan);
++  void hideTextfileSlot(TextfileSlot &s);
++  void destroyTextfileSlot(TextfileSlot &s);
++  void destroyTextfileOverlays();
++  bool reloadTextfile(TextfileSlot &s, const std::string &path, int cols,
++                      int rows, bool force);
 +
-+  IMPRgnHandle tf_rgn_{INVHANDLE};
-+  IMPOSDRgnAttr tf_attr_{};
-+  std::vector<uint8_t> tf_buf_;          // BGRA pixel buffer for the region
-+  std::vector<osdtext::Line> tf_lines_;  // text currently loaded from the file
-+  std::string tf_path_;
-+  // Wanted geometry (last tick). Starts as an impossible layout so that the
-+  // first tick always counts as a geometry change.
-+  osdtext::Layout tf_layout_{0, 0, 0, 0, 0};
-+  osdtext::Colors tf_colors_{};
-+  osdtext::Layout tf_attr_layout_{};     // geometry the region actually has
-+  int tf_attr_x_{0};
-+  int tf_attr_y_{0};
-+  bool tf_region_created_{false};
-+  bool tf_attr_set_{false};
-+  bool tf_shown_{false};
-+  bool tf_dirty_{true};
-+  bool tf_failed_{false};
-+  bool tf_create_error_logged_{false};
-+  bool tf_file_seen_{false};
-+  ino_t tf_file_ino_{0};
-+  off_t tf_file_size_{0};
-+  struct timespec tf_file_mtime_{};
++  std::array<TextfileSlot, kTextfileSlots> tf_slots_;
 +
  #ifdef USE_OSD_FONT_LIBSCHRIFT
    // Antialiased glyph bitmap, rasterized once per character and cached
@@ -432,20 +490,22 @@ index 0000000..1d2f16c
 +} // namespace osdtext
 diff --git c/src/video/OSDTextfile.cpp i/src/video/OSDTextfile.cpp
 new file mode 100644
-index 0000000..b2923b6
+index 0000000..4c8a1ff
 --- /dev/null
 +++ i/src/video/OSDTextfile.cpp
-@@ -0,0 +1,311 @@
+@@ -0,0 +1,388 @@
 +// -- text-file overlay --------------------------------------------------
-+// A second burned-in OSD region that shows the contents of a text file
-+// (osd.textfile.path, meant to live on tmpfs). Another program updates the
-+// overlay by replacing that file (write a temp file, then rename); this
-+// code polls the file's identity/mtime on every OSD thread tick (100 ms)
-+// and re-renders only when the contents or the settings changed.
++// Extra burned-in OSD regions ("slots": osd.textfile, osd.textfile2,
++// osd.textfile3) that each show the contents of a text file (the slot's
++// path, meant to live on tmpfs). Another program updates an overlay by
++// replacing its file (write a temp file, then rename); this code polls the
++// file's identity/mtime on every OSD thread tick (100 ms) and re-renders
++// only when the contents or the settings changed.
 +//
 +// Kept apart from the timestamp overlay (renderTimestamp() /
 +// updateTimestampOverlay() in OSD.cpp) on purpose: own region, own buffer,
-+// own renderer. An empty or missing file hides the region.
++// own renderer. An empty or missing file hides the region; disabling a
++// slot destroys its region so that its share of the OSD pool is released.
 +
 +#ifdef OSD_BURN_TIMESTAMP
 +
@@ -473,7 +533,9 @@ index 0000000..b2923b6
 +// size has to be limited up front. Mirrors the pool size set in
 +// IMPSystem.cpp, minus this stream's timestamp region (`used`, which can be
 +// most of the pool at osd.burnin.scale 10) and a fixed reserve for the
-+// regions of the other stream's OSD, which this object cannot see.
++// regions of the other stream's OSD, which this object cannot see. The
++// result is shared by this stream's slots in slot order (see
++// updateTextfileOverlay()).
 +size_t textfilePoolBudget(size_t used) {
 +  const size_t kReservedBytes = 48 * 1024 + used;
 +  size_t pool_kb;
@@ -488,9 +550,13 @@ index 0000000..b2923b6
 +  }
 +  size_t bytes = pool_kb * 1024;
 +  bytes = bytes > kReservedBytes ? bytes - kReservedBytes : 0;
-+  // With the overlay on both streams, two OSD objects size their regions
++  // With overlays on both streams, two OSD objects size their regions
 +  // independently out of the same pool: give each one half.
-+  if (!cfg->osd.textfile.substream_disabled && cfg->stream1.enabled)
++  const bool on_substream =
++      (cfg->osd.textfile.enabled && !cfg->osd.textfile.substream_disabled) ||
++      (cfg->osd.textfile2.enabled && !cfg->osd.textfile2.substream_disabled) ||
++      (cfg->osd.textfile3.enabled && !cfg->osd.textfile3.substream_disabled);
++  if (on_substream && cfg->stream1.enabled)
 +    bytes /= 2;
 +  return bytes;
 +}
@@ -522,42 +588,64 @@ index 0000000..b2923b6
 +  return p & ~1;
 +}
 +
++const char *slotName(int i) {
++  static const char *const names[kTextfileSlots] = {"textfile", "textfile2",
++                                                     "textfile3"};
++  return names[i];
++}
++
 +} // namespace
 +
-+void OSD::hideTextfileOverlay() {
-+  if (tf_region_created_ && tf_shown_) {
-+    IMP_OSD_ShowRgn(tf_rgn_, osdGrp, 0);
-+    tf_shown_ = false;
++// What a slot should look like on this tick, from its settings and the pool
++// budget left over by the slots before it.
++struct OSD::TextfilePlan {
++  bool enabled{false};
++  bool reduced{false}; // layout is smaller than the settings ask for
++  bool over_budget{false}; // not even the smallest grid fits
++  std::string path;
++  int scale{1}, cols{1}, rows{1}; // as configured
++  size_t budget{0};
++  osdtext::Layout layout;
++  int x{0}, y{0};
++  osdtext::Colors colors;
++};
++
++void OSD::hideTextfileSlot(TextfileSlot &s) {
++  if (s.region_created && s.shown) {
++    IMP_OSD_ShowRgn(s.rgn, osdGrp, 0);
++    s.shown = false;
 +  }
 +}
 +
-+void OSD::destroyTextfileOverlay() {
-+  if (tf_region_created_) {
-+    IMP_OSD_ShowRgn(tf_rgn_, osdGrp, 0);
-+    IMP_OSD_UnRegisterRgn(tf_rgn_, osdGrp);
-+    IMP_OSD_DestroyRgn(tf_rgn_);
-+    tf_rgn_ = INVHANDLE;
-+    tf_region_created_ = false;
-+    tf_attr_set_ = false;
-+    tf_shown_ = false;
-+    tf_dirty_ = true;
++void OSD::destroyTextfileSlot(TextfileSlot &s) {
++  if (s.region_created) {
++    IMP_OSD_ShowRgn(s.rgn, osdGrp, 0);
++    IMP_OSD_UnRegisterRgn(s.rgn, osdGrp);
++    IMP_OSD_DestroyRgn(s.rgn);
 +  }
++  // Back to the initial state: the next enable starts from scratch.
++  s = TextfileSlot{};
 +}
 +
-+// Reload tf_lines_ from the file if its identity or mtime changed.
++void OSD::destroyTextfileOverlays() {
++  for (auto &s : tf_slots_)
++    destroyTextfileSlot(s);
++}
++
++// Reload s.lines from the file if its identity or mtime changed.
 +// Returns true when the parsed text differs from what was loaded before.
-+bool OSD::reloadTextfile(const std::string &path, int cols, int rows,
++bool OSD::reloadTextfile(TextfileSlot &s, const std::string &path, int cols, int rows,
 +                         bool force) {
 +  struct stat st;
 +  if (stat(path.c_str(), &st) != 0 || !S_ISREG(st.st_mode)) {
-+    bool changed = !tf_lines_.empty();
-+    tf_lines_.clear();
-+    tf_file_seen_ = false;
++    bool changed = !s.lines.empty();
++    s.lines.clear();
++    s.file_seen = false;
 +    return changed;
 +  }
-+  if (!force && tf_file_seen_ && st.st_ino == tf_file_ino_ &&
-+      st.st_size == tf_file_size_ && st.st_mtim.tv_sec == tf_file_mtime_.tv_sec &&
-+      st.st_mtim.tv_nsec == tf_file_mtime_.tv_nsec)
++  if (!force && s.file_seen && st.st_ino == s.file_ino &&
++      st.st_size == s.file_size && st.st_mtim.tv_sec == s.file_mtime.tv_sec &&
++      st.st_mtim.tv_nsec == s.file_mtime.tv_nsec)
 +    return false;
 +
 +  // Any failure below leaves the remembered identity alone, so the next
@@ -590,159 +678,206 @@ index 0000000..b2923b6
 +    return false;
 +  std::vector<osdtext::Line> lines =
 +      osdtext::parseLines(data.data(), got, cols, rows);
-+  tf_file_seen_ = true;
-+  tf_file_ino_ = st.st_ino;
-+  tf_file_size_ = st.st_size;
-+  tf_file_mtime_ = st.st_mtim;
++  s.file_seen = true;
++  s.file_ino = st.st_ino;
++  s.file_size = st.st_size;
++  s.file_mtime = st.st_mtim;
 +
-+  if (lines == tf_lines_)
++  if (lines == s.lines)
 +    return false;
-+  tf_lines_ = std::move(lines);
++  s.lines = std::move(lines);
 +  return true;
 +}
 +
 +void OSD::updateTextfileOverlay() {
-+  const bool enabled = cfg && cfg->osd.textfile.enabled &&
-+                       !(is_substream_ && cfg->osd.textfile.substream_disabled);
-+  if (!enabled) {
-+    hideTextfileOverlay();
++  if (!cfg)
 +    return;
-+  }
++  const _osd_textfile *conf[kTextfileSlots] = {
++      &cfg->osd.textfile, &cfg->osd.textfile2, &cfg->osd.textfile3};
 +
-+  // Snapshot the settings; everything below works on the copies.
-+  const std::string path = cfg->osd.textfile.path ? cfg->osd.textfile.path : "";
-+  int scale = cfg->osd.textfile.scale;
-+  if (scale <= 0)
-+    scale = stream_width / 480; // same auto rule as osd.burnin.scale
-+  scale = std::clamp(scale, 1, kBurninMaxScale);
-+  const int cols = std::clamp(cfg->osd.textfile.cols, 1, kTextfileMaxCols);
-+  const int rows = std::clamp(cfg->osd.textfile.rows, 1, kTextfileMaxRows);
-+  osdtext::Colors colors;
-+  parseColor(cfg->osd.textfile.fill_color, colors.fill);
-+  parseColor(cfg->osd.textfile.outline_color, colors.outline);
-+  parseColor(cfg->osd.textfile.background_color, colors.background);
-+
++  // Pass 1: decide every slot's geometry. Each region is always allocated
++  // at its full cols x rows size, so that a text update is only an
++  // IMP_OSD_UpdateRgnAttrData() (no reallocation). The pool budget is handed
++  // out in slot order: an enabled slot keeps its share even while its file
++  // is empty, and later slots shrink to what is left.
 +  const size_t ts_bytes =
 +      ts_region_created_ ? (size_t)ts_width_ * ts_height_ * 4 : 0;
++  size_t remaining = textfilePoolBudget(ts_bytes);
++  TextfilePlan plans[kTextfileSlots];
++  for (int i = 0; i < kTextfileSlots; ++i) {
++    const _osd_textfile &c = *conf[i];
++    TextfilePlan &p = plans[i];
++    p.enabled = c.enabled && !(is_substream_ && c.substream_disabled);
++    if (!p.enabled)
++      continue;
++    // Snapshot the settings; everything below works on the copies.
++    p.path = c.path ? c.path : "";
++    p.scale = c.scale > 0 ? c.scale : stream_width / 480; // auto: as osd.burnin.scale
++    p.scale = std::clamp(p.scale, 1, kBurninMaxScale);
++    p.cols = std::clamp(c.cols, 1, kTextfileMaxCols);
++    p.rows = std::clamp(c.rows, 1, kTextfileMaxRows);
++    parseColor(c.fill_color, p.colors.fill);
++    parseColor(c.outline_color, p.colors.outline);
++    parseColor(c.background_color, p.colors.background);
++    p.budget = remaining;
++    p.layout = osdtext::fitLayout(p.scale, p.cols, p.rows, stream_width,
++                                  stream_height, remaining);
++    p.over_budget = osdtext::layoutBytes(p.layout) > remaining;
++    p.reduced = p.layout.scale != p.scale || p.layout.cols != p.cols ||
++                p.layout.rows != p.rows;
++    if (!p.over_budget)
++      remaining -= osdtext::layoutBytes(p.layout);
++    p.x = resolvePos(c.pos_x, p.layout.width, stream_width);
++    p.y = resolvePos(c.pos_y, p.layout.height, stream_height);
++  }
 +
-+  // The region is always allocated at the full cols x rows size so that a
-+  // text update is only an IMP_OSD_UpdateRgnAttrData() (no reallocation).
-+  const osdtext::Layout layout =
-+      osdtext::fitLayout(scale, cols, rows, stream_width, stream_height,
-+                         textfilePoolBudget(ts_bytes));
-+  const int x = resolvePos(cfg->osd.textfile.pos_x, layout.width, stream_width);
-+  const int y = resolvePos(cfg->osd.textfile.pos_y, layout.height, stream_height);
++  // Pass 2: apply. Slots that release pool memory (disabled, or shrinking)
++  // go first, so that the ones that grow find the room they were promised.
++  for (int pass = 0; pass < 2; ++pass) {
++    for (int i = 0; i < kTextfileSlots; ++i) {
++      TextfileSlot &s = tf_slots_[i];
++      const size_t have = s.attr_set ? osdtext::layoutBytes(s.attr_layout) : 0;
++      const bool grows =
++          plans[i].enabled && osdtext::layoutBytes(plans[i].layout) > have;
++      if (grows == (pass == 1))
++        applyTextfileSlot(i, plans[i]);
++    }
++  }
++}
 +
-+  const bool layout_changed = layout != tf_layout_;
-+  const bool colors_changed = memcmp(&colors, &tf_colors_, sizeof(colors)) != 0;
-+  const bool path_changed = path != tf_path_;
++void OSD::applyTextfileSlot(int index, const TextfilePlan &plan) {
++  TextfileSlot &s = tf_slots_[index];
++  if (!plan.enabled) {
++    destroyTextfileSlot(s);
++    return;
++  }
++  if (plan.over_budget) {
++    // The planner gave this slot no pool memory, so it must not keep any:
++    // hiding the region would leave its old allocation in place and starve
++    // the slots that were promised that room. Recreated once it fits again.
++    if (!s.over_budget)
++      LOG_WARN("OSD: " << slotName(index) << " overlay not shown: only "
++               << (plan.budget / 1024) << " KB of the OSD pool left for it "
++               "(see general.osd_pool_size)");
++    destroyTextfileSlot(s);
++    s.over_budget = true;
++    return;
++  }
++  s.over_budget = false;
++
++  const osdtext::Layout &layout = plan.layout;
++  const osdtext::Colors &colors = plan.colors;
++  const std::string &path = plan.path;
++  const int x = plan.x, y = plan.y;
++
++  const bool layout_changed = layout != s.layout;
++  const bool colors_changed = memcmp(&colors, &s.colors, sizeof(colors)) != 0;
++  const bool path_changed = path != s.path;
 +  if (layout_changed) {
-+    // New geometry: worth another attempt, unless even the smallest grid
-+    // is over the pool budget (general.osd_pool_size set absurdly low).
-+    tf_failed_ = osdtext::layoutBytes(layout) > textfilePoolBudget(ts_bytes);
-+    if (layout.scale != scale || layout.cols != cols || layout.rows != rows)
-+      LOG_WARN("OSD: textfile overlay (scale " << scale << ", " << cols << "x"
-+               << rows << " cells) does not fit the " << stream_width << "x"
++    s.failed = false; // new geometry: worth another attempt
++    if (plan.reduced)
++      LOG_WARN("OSD: " << slotName(index) << " overlay (scale " << plan.scale
++               << ", " << plan.cols << "x" << plan.rows
++               << " cells) does not fit the " << stream_width << "x"
 +               << stream_height << " frame or the OSD pool ("
-+               << (textfilePoolBudget(ts_bytes) / 1024) << " KB usable, see "
++               << (plan.budget / 1024) << " KB left for it, see "
 +               "general.osd_pool_size); reduced to scale " << layout.scale
 +               << ", " << layout.cols << "x" << layout.rows << " cells");
 +  }
-+
-+  const bool text_changed = reloadTextfile(path, layout.cols, layout.rows,
++  const bool text_changed = reloadTextfile(s, path, layout.cols, layout.rows,
 +                                           path_changed || layout_changed);
-+  tf_path_ = path;
-+  tf_layout_ = layout;
-+  tf_colors_ = colors;
++  s.path = path;
++  s.layout = layout;
++  s.colors = colors;
 +  // Sticky across ticks: changes that arrive while the overlay is hidden
 +  // (empty file) must still be rendered once it is shown again.
-+  tf_dirty_ = tf_dirty_ || layout_changed || colors_changed || text_changed;
++  s.dirty = s.dirty || layout_changed || colors_changed || text_changed;
 +
-+  if (tf_lines_.empty() || tf_failed_) {
-+    hideTextfileOverlay();
++  if (s.lines.empty() || s.failed) {
++    hideTextfileSlot(s);
 +    return;
 +  }
 +
-+  const bool rendered = tf_dirty_ || tf_buf_.empty();
++  const bool rendered = s.dirty || s.buf.empty();
 +  if (rendered) {
-+    osdtext::render(tf_lines_, layout, colors, tf_buf_);
-+    tf_dirty_ = false;
++    osdtext::render(s.lines, layout, colors, s.buf);
++    s.dirty = false;
 +  }
 +
-+  if (!tf_region_created_) {
++  if (!s.region_created) {
 +    // Like the timestamp overlay, the region can only be registered once
 +    // IMPEncoder has created the OSD group, i.e. from the periodic update.
-+    tf_rgn_ = IMP_OSD_CreateRgn(nullptr);
-+    if (tf_rgn_ == INVHANDLE) {
++    s.rgn = IMP_OSD_CreateRgn(nullptr);
++    if (s.rgn == INVHANDLE) {
 +      // Retried on the next tick (the OSD group may not be up yet).
-+      if (!tf_create_error_logged_)
-+        LOG_ERROR("OSD: IMP_OSD_CreateRgn failed for textfile overlay");
-+      tf_create_error_logged_ = true;
++      if (!s.create_error_logged)
++        LOG_ERROR("OSD: IMP_OSD_CreateRgn failed for " << slotName(index) << " overlay");
++      s.create_error_logged = true;
 +      return;
 +    }
-+    tf_create_error_logged_ = false;
-+    IMP_OSD_RegisterRgn(tf_rgn_, osdGrp, nullptr);
-+    tf_region_created_ = true;
++    s.create_error_logged = false;
++    IMP_OSD_RegisterRgn(s.rgn, osdGrp, nullptr);
++    s.region_created = true;
 +  }
 +
 +  // Geometry the region currently has vs. the one wanted now.
-+  const bool attr_stale = !tf_attr_set_ || tf_attr_layout_ != layout ||
-+                          tf_attr_x_ != x || tf_attr_y_ != y;
++  const bool attr_stale = !s.attr_set || s.attr_layout != layout ||
++                          s.attr_x != x || s.attr_y != y;
 +  if (rendered || attr_stale) {
 +    if (attr_stale) {
-+      memset(&tf_attr_, 0, sizeof(tf_attr_));
-+      tf_attr_.type = OSD_REG_PIC;
-+      tf_attr_.fmt = PIX_FMT_BGRA;
-+      tf_attr_.rect.p0.x = x;
-+      tf_attr_.rect.p0.y = y;
-+      tf_attr_.rect.p1.x = x + layout.width - 1;
-+      tf_attr_.rect.p1.y = y + layout.height - 1;
-+      tf_attr_.data.picData.pData = tf_buf_.data();
-+      int ret = IMP_OSD_SetRgnAttr(tf_rgn_, &tf_attr_);
++      memset(&s.attr, 0, sizeof(s.attr));
++      s.attr.type = OSD_REG_PIC;
++      s.attr.fmt = PIX_FMT_BGRA;
++      s.attr.rect.p0.x = x;
++      s.attr.rect.p0.y = y;
++      s.attr.rect.p1.x = x + layout.width - 1;
++      s.attr.rect.p1.y = y + layout.height - 1;
++      s.attr.data.picData.pData = s.buf.data();
++      int ret = IMP_OSD_SetRgnAttr(s.rgn, &s.attr);
 +      if (ret != 0) {
 +        // Most likely the OSD pool is too small for this region; see
 +        // general.osd_pool_size. Do not retry until the geometry changes.
 +        LOG_ERROR("OSD: IMP_OSD_SetRgnAttr failed (" << ret
-+                  << ") for textfile overlay " << layout.width << "x"
++                  << ") for " << slotName(index) << " overlay " << layout.width << "x"
 +                  << layout.height << " (" << (layout.width * layout.height * 4 / 1024)
 +                  << " KB); reduce osd.textfile.scale/cols/rows or raise "
 +                     "general.osd_pool_size");
-+        tf_failed_ = true;
-+        tf_attr_set_ = false;
-+        hideTextfileOverlay();
++        s.failed = true;
++        s.attr_set = false;
++        hideTextfileSlot(s);
 +        return;
 +      }
-+      if (!tf_attr_set_) {
++      if (!s.attr_set) {
 +        IMPOSDGrpRgnAttr grp;
 +        memset(&grp, 0, sizeof(grp));
 +        grp.show = 1;
-+        grp.layer = 3; // above the privacy cover (1) and the timestamp (2)
++        grp.layer = 3 + index; // above the privacy cover (1) and the timestamp (2)
 +        grp.gAlphaEn = 1; // per-pixel alpha blending
 +        grp.fgAlhpa = 255;
 +        grp.bgAlhpa = 0;
-+        IMP_OSD_SetGrpRgnAttr(tf_rgn_, osdGrp, &grp);
++        IMP_OSD_SetGrpRgnAttr(s.rgn, osdGrp, &grp);
 +        if (!osd_group_started_) {
 +          IMP_OSD_Start(osdGrp);
 +          osd_group_started_ = true;
 +        }
-+        tf_shown_ = true;
++        s.shown = true;
 +      }
-+      tf_attr_set_ = true;
-+      tf_attr_layout_ = layout;
-+      tf_attr_x_ = x;
-+      tf_attr_y_ = y;
-+      LOG_INFO("OSD: textfile overlay " << layout.width << "x" << layout.height
++      s.attr_set = true;
++      s.attr_layout = layout;
++      s.attr_x = x;
++      s.attr_y = y;
++      LOG_INFO("OSD: " << slotName(index) << " overlay " << layout.width << "x" << layout.height
 +               << " at " << x << "," << y << " (scale " << layout.scale << ", "
 +               << layout.cols << "x" << layout.rows << " cells)");
 +    } else {
-+      tf_attr_.data.picData.pData = tf_buf_.data();
-+      IMP_OSD_UpdateRgnAttrData(tf_rgn_, &tf_attr_.data);
++      s.attr.data.picData.pData = s.buf.data();
++      IMP_OSD_UpdateRgnAttrData(s.rgn, &s.attr.data);
 +    }
 +  }
 +
-+  if (!tf_shown_) {
-+    IMP_OSD_ShowRgn(tf_rgn_, osdGrp, 1);
-+    tf_shown_ = true;
++  if (!s.shown) {
++    IMP_OSD_ShowRgn(s.rgn, osdGrp, 1);
++    s.shown = true;
 +  }
 +}
 +
