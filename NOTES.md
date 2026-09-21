@@ -308,7 +308,7 @@ QEMU 検証 (新 sysroot = uClibc 1.0.59 + 4KB バッファの mbedTLS):
   ハードウェアリセット)。旧ファームには無かった。supervisor は「ICMP を落とすルーターがあるので
   ping しない。ネットワークが戻るのを待って再開する」設計なので、配信用途では再起動は欠損を
   延ばすだけになる。このため配信用途では無効化することにした
-  (手順は README / device/README.md)
+  (手順は docs/netwatch.md)
 - **prudynt が `ad6294e` → `354b1b4` (142 コミット) に更新され、既定値が変わった。**
   全ストリームの既定サイズがセンサー解像度になり (`9f3d309`。以前 stream1 / JPEG は 640x360)、
   bitrate 0 = 約 1Mbps/メガピクセルの自動値になった (`3188189`)。ファーム更新で設定が初期化
@@ -323,7 +323,7 @@ QEMU 検証 (新 sysroot = uClibc 1.0.59 + 4KB バッファの mbedTLS):
   置くだけにした。supervisor には「起動できて rtmps を持つか」の `-protocols` チェックを追加
 - `S41ifplugd` が `overlay/` から消えたのは `package/thingino-ethernet` へ移っただけで、もともと
   有線 (`eth0`) 専用。Wi-Fi 側の DHCP (`S38wpa_supplicant` の udhcpc まわり) は新旧で同一なので、
-  device/README の「デフォルトルートが戻らないときの cron 回避策」はそのまま有効
+  docs/troubleshooting.md の「デフォルトルートが戻らないときの cron 回避策」はそのまま有効
 - 変わっていなかったもの: `jct` (1.2.0→1.2.1)、`/run/sync_success`、`/run/portal_mode`、
   `service enable|disable`、SD の自動マウント (`/mnt/mmcblk0p1`)、
   デフォルト streamer (prudynt。Raptor / timps / Strero は選択肢として追加されただけ)
@@ -564,6 +564,17 @@ prudynt を再起動して測った (720p10、配信中)。各サイズで 52 �
 - 測定中、標準の prudynt の時点から `video channel:0 - msgChannel sink clogged, 5x frames dropped in last 5s`
   の警告が 5 秒ごとに出続けていた。このパッチとは無関係 (パッチ前の prudynt でも同じ頻度)。配信は流れている
 
+### SD カードからの Wi-Fi 設定: 未検証の点
+
+A (`uenv.txt`)・B (`wpa_supplicant.conf`) とも、ソース `ciao+da40db6` の読解と PC 上の busybox でのテストに基づく。
+実機確認は #10。使い方は docs/wifi-from-sd.md。
+
+- Wi-Fi が一度も設定されていないカメラに A を使うと、その起動は設定用ポータルで立ち上がり、
+  **もう一度再起動して初めて接続される**可能性がある (接続モードの判定が SD の読み込みより前のため)。
+  B は `S38` より前にファイルを置くのでこの問題は起きないはず
+- 起動スクリプトの時点で SD がマウント済みか (B は最大 10 秒待つ)
+- A は Thingino の公式ドキュメントに記載が無く、将来のファームで変わりうる
+
 ---
 
 ## 残タスク
@@ -577,6 +588,14 @@ prudynt を再起動して測った (720p10、配信中)。各サイズで 52 �
   クラッシュ再起動・ネットワーク断の待機と復帰後の自動再開まで実機の障害試験で確認済み。
   復帰しないケースが今後見つかればバグとして対応する
 - [x] `ciao+da40db6` での実機確認 — YouTube Live へ映像・音声とも配信成功 (2026-09-21)。
+  `install.sh` は新規インストールと、配信中の再実行 (旧 supervisor の停止待ち → 入れ替え → 約 5 秒で配信再開) を確認。
   ffmpeg CPU 4.8% @720p10/1Mbps。`install.sh` (新規インストール / 配信中の再実行) と
   `disable-netwatch.sh` も同日に実機で確認。長時間試験も完了。`S37wifi-from-sd` の実機確認は未実施
-- [ ] Thingino パッケージとしての統合 (Config.in オプション化、stream key の安全な保持)
+- [x] インストーラ (`install.sh`)、netwatch 無効化 (`disable-netwatch.sh`)、SD カードからの Wi-Fi 設定 (複数可)
+- [x] 映像に任意のテキストを重ねる prudynt の OSD パッチ (#17、3 か所化 #19、SD からの設定 #22) — 実機 (720p) で確認:
+  3 か所同時の 0.5 秒更新、再起動後の自動有効化、OSD プールの上限。1 時間の連続動作は 1 か所の版 (#17) で確認。
+  1080p・サブストリーム・3 か所での長時間動作・本物の SD カードでの `osd-config` は未確認
+- [ ] `S37wifi-from-sd` の実機確認 (#10)
+- [ ] Thingino パッケージとしての統合 / ファームウェア組み込み (Config.in オプション化、stream key の安全な保持)。
+  将来的には Thingino の新ストリーマ [Raptor](https://github.com/gtxaspec/raptor) の RTMPS push 機能 (RSP) への
+  移行も選択肢

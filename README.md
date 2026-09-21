@@ -39,8 +39,8 @@ cat ffmpeg | ssh root@<camera-ip> 'cat > /tmp/ffmpeg && chmod +x /tmp/ffmpeg'
 - `{KEY}` は YouTube Studio のライブ配信設定にあるストリームキー
 - RTSP の認証 (`thingino:thingino`) とパス (`/ch0`) は Thingino のデフォルト。変更していれば合わせる
 - 再エンコードなし (stream copy) なので、カメラの負荷は CPU 3〜10% (ビットレート次第) / RAM 3MB 程度
-- `/tmp` は再起動で消える。常設・自動起動・自動復帰したくなったら
-  [device/](device/) の supervisor を導入する (おまけ)
+- `/tmp` は再起動で消える。`/tmp` で試す時の細かい注意 (scp が使えない、libatomic など) と、常設・自動起動・自動復帰は
+  supervisor を導入する ([docs/relay.md](docs/relay.md)、おまけ)
 - **2026-09 以降の Thingino は、ゲートウェイへの ping が約 90 秒通らないとカメラを OS ごと
   再起動する (netwatch、デフォルト有効)。** 配信が切れるので、長時間配信する前に無効化しておく:
 
@@ -50,7 +50,7 @@ cat ffmpeg | ssh root@<camera-ip> 'cat > /tmp/ffmpeg && chmod +x /tmp/ffmpeg'
   ```
 
   Thingino の OS 設定を変えるものなので、ffmpeg やスクリプトのインストールとは別の手順にしてある。
-  理由と代償 (Wi-Fi が固まっても自動復旧しなくなる) は [device/README.md](device/README.md) の netwatch 節
+  理由と代償 (Wi-Fi が固まっても自動復旧しなくなる) は [docs/netwatch.md](docs/netwatch.md)
 
 以降のビルド手順や起動スクリプトは、自分でビルドしたい人・常設運用したい人向けのおまけです。
 
@@ -71,7 +71,7 @@ localhost RTSP (prudynt) → H.264/AAC stream copy → FLV mux → RTMPS/TLS →
 patches/   このリポジトリの本体。Thingino に当てる差分
              thingino-ffmpeg-rtmps.diff         thingino-ffmpeg パッケージを RTMPS 対応にする
              prudynt-osd-textfile.diff          任意: prudynt (ストリーマ) に「テキストファイルを映像へ重ねる OSD」を足す
-device/    カメラ側の常設運用一式 (詳細は device/README.md)
+device/    カメラ側の常設運用一式 (ファイルの一覧は device/README.md、使い方は docs/)
              youtube-relay / S93youtube-relay   supervisor と起動スクリプト
              install.sh                         上記と ffmpeg をカメラへ入れる (自前のファイルを置くだけ)
              disable-netwatch.sh                Thingino の netwatch (OS 自動再起動) を無効化する
@@ -82,6 +82,7 @@ device/    カメラ側の常設運用一式 (詳細は device/README.md)
              osd-config / S93osd-config / prudynt-osd.json.example
                                                 任意: OSD の設定を SD カードのファイルから読んで prudynt に送り直す
              common.sh                          対応ファームの判定 (違えば何も変更せず中止)
+docs/      使い方と設定の文書 (下の「ドキュメント」参照)
 NOTES.md   実装の詳細・設計判断・ハマりどころ・実測値の記録 (手順は書かない)
 dist/      ビルド成果物 (git 管理外)。配布は GitHub Releases (ffmpeg バイナリ単体) で行う
 ```
@@ -93,6 +94,19 @@ OS (Thingino) の更新・バックアップ・設定変更と、このリポジ
 `thingino-firmware/` (Thingino のソースツリー) はビルド時にこの直下へ clone しますが、
 git 管理外です。必要な変更はすべて `patches/` に分離してあります。
 
+## ドキュメント
+
+| 文書 | 内容 |
+|---|---|
+| [docs/relay.md](docs/relay.md) | 配信 supervisor: インストール、設定ファイル (SD カードモード)、ffmpeg の置き場所、運用、ストリームキーの取り扱い |
+| [docs/osd.md](docs/osd.md) | 映像にテキストを重ねる (OSD テキストオーバーレイ): インストール、使い方、設定項目、SD カードの設定ファイル、大きさの上限 |
+| [docs/wifi-from-sd.md](docs/wifi-from-sd.md) | Wi-Fi 設定を SD カードで運ぶ |
+| [docs/netwatch.md](docs/netwatch.md) | netwatch (ping 失敗での OS 再起動) の無効化 |
+| [docs/troubleshooting.md](docs/troubleshooting.md) | 症状別の対処 |
+| [docs/build.md](docs/build.md) | ffmpeg / prudynt のビルド手順 |
+| [device/README.md](device/README.md) | `device/` のファイル一覧 |
+| [NOTES.md](NOTES.md) | 経緯、設計判断、ハマりどころ、実測値、未検証事項の記録 |
+
 ## 特徴
 
 - **バイナリ 2.5MB** (stripped)。FFmpeg 8.0.1 を RTSP 入力 + FLV/RTMPS 出力だけに絞った構成
@@ -102,7 +116,7 @@ git 管理外です。必要な変更はすべて `patches/` に分離してあ�
   対応表は下記「動作確認環境」
 - **ファームウェア書き換え不要** — `/tmp` に転送して実行するだけ (PoC 用途)
 - **SD カードが物理スイッチになるスタンドアロンモード** — 設定 (ストリームキー) を書いた
-  SD を挿すと配信開始、抜くと停止 ([device/](device/) の supervisor が提供)
+  SD を挿すと配信開始、抜くと停止 (supervisor が提供。[docs/relay.md](docs/relay.md))
 - 実測負荷: ffmpeg CPU **3.3%** / RSS **3.3MB**(720p15 / ~330kbps 配信時、CPU idle 81%→73%)。
   TLS の負荷はビットレートにほぼ比例する: 720p10 / 1Mbps で 4.8%、1080p25 / 2.1Mbps で約 10%
   (2026-09 以降の Thingino は既定が 1080p25 / 約 2.1Mbps)
@@ -128,137 +142,15 @@ git 管理外です。必要な変更はすべて `patches/` に分離してあ�
 
 ## ビルド手順
 
+自分でビルドする場合の手順 (ffmpeg、OSD パッチ入りの prudynt) は [docs/build.md](docs/build.md)。
 必要なもの: Docker が使える x86_64 Linux、ディスク ~10GB。
 
-```sh
-# 1. Thingino を実機ファームと同じコミットで取得
-#    (実機の BUILD_ID="ciao+da40db6, ..." の da40db6 の部分。リリースは master ではなく
-#     ciao ブランチから作られており、master の HEAD とは別系統なので必ず commit を指定する)
-git clone --branch ciao https://github.com/themactep/thingino-firmware
-cd thingino-firmware
-git checkout da40db6
-git submodule update --init          # buildroot をピン位置で checkout
+## (任意) 映像に任意のテキストを重ねる
 
-# 2. RTMPS 対応パッチを適用
-git apply ../patches/thingino-ffmpeg-rtmps.diff
-
-# 3. 公式ビルダーイメージと DL キャッシュを取得
-WORKFLOW=1 make -f Makefile.container container-pull
-#    以前のイメージがローカルに残っていると container-pull は更新しない。古いままだと
-#    "Dependency check failed" (libgmp-dev / python3-gmpy2 不足) になるので明示的に更新する
-docker pull ghcr.io/themactep/thingino-builder-image:latest
-
-# 4. DL キャッシュボリュームを書き込み可能にする(root所有のため。初回のみ)
-docker run --rm --user 0:0 --volumes-from thingino-dl-cache \
-  ghcr.io/themactep/thingino-builder-image:latest chmod -R a+rwX /dl
-
-# 5. ffmpeg パッケージだけビルド(toolchain と mbedtls は自動で用意される)
-docker run --rm --user $(id -u):$(id -g) --network=host \
-  --volumes-from thingino-dl-cache \
-  -v "$PWD":/workspace -v "$PWD/overrides":/overrides -w /workspace \
-  -e BR2_DL_DIR=/dl \
-  ghcr.io/themactep/thingino-builder-image:latest \
-  bash -c "sudo update-alternatives --install /usr/bin/install install /usr/bin/gnuinstall 100 2>/dev/null; \
-           make CAMERA=wyze_cam3_t31x_gc2053_atbm6031 br-thingino-ffmpeg"
-```
-
-成果物:
-
-```text
-output/HEAD/wyze_cam3_t31x_gc2053_atbm6031-3.10.14-uclibc/per-package/thingino-ffmpeg/target/usr/bin/ffmpeg
-```
-
-### (任意) 実機に入れる前に QEMU で検証
-
-```sh
-SYSROOT=output/HEAD/wyze_cam3_t31x_gc2053_atbm6031-3.10.14-uclibc/per-package/thingino-ffmpeg/target
-docker run --rm -v "$PWD/$SYSROOT":/sysroot:ro debian:stable-slim bash -c \
-  "apt-get update -qq && apt-get install -qq -y qemu-user-static >/dev/null && \
-   qemu-mipsel-static -L /sysroot /sysroot/usr/bin/ffmpeg -protocols"
-# 出力に rtmps / tls が含まれていれば OK
-```
-
-## (任意) 映像に任意のテキストを重ねる — prudynt の OSD パッチ
-
-配信映像に、時刻以外の**任意の複数行テキスト** (プログレスバーなどの ASCII アート) を 3 か所まで
-(既定は左下・右上・右下) 焼き込み、
-カメラ上の別のプログラムから 0.5 秒単位で更新できるようにするパッチです。ffmpeg は stream copy
-なので、文字を載せられるのはエンコーダより前の prudynt (Thingino のストリーマ) だけです。
-標準の prudynt の burn-in OSD は時刻表示専用 (1 行・1 秒更新・大文字と数字だけの 5x7 フォント) なので、
-`patches/prudynt-osd-textfile.diff` で「tmpfs 上のテキストファイルの中身を映す OSD リージョン」を足します。
-設計と実測値は [NOTES.md](NOTES.md) の「OSD テキストオーバーレイ」、経緯は #17 / #19。
-
-```sh
-# 操作側 (カメラ上) がやることは「一時ファイルに書いて mv で置き換える」だけ
-printf 'UPLOAD job-42\n[##########----------] 50%%\n' > /run/prudynt/osd-text.tmp \
-  && mv /run/prudynt/osd-text.tmp /run/prudynt/osd-text
-```
-
-### ビルド
-
-上の「ビルド手順」の 1〜4 を済ませた `thingino-firmware/` で:
-
-```sh
-# prudynt のソースに当てるパッチは、Buildroot のパッケージディレクトリに置けば自動で適用される
-cp ../patches/prudynt-osd-textfile.diff package/prudynt-t/0001-osd-textfile.patch
-
-# フル ASCII の 8x8 フォントを有効にする (既定の 5x7 は大文字・数字と一部の記号だけ)。
-# user/ は Thingino のユーザー設定用ディレクトリで、Thingino 側でも git 管理外
-mkdir -p user/wyze_cam3_t31x_gc2053_atbm6031
-echo 'BR2_PACKAGE_PRUDYNT_T_OSD_FONT_8X8=y' >> user/wyze_cam3_t31x_gc2053_atbm6031/local.fragment
-
-# prudynt パッケージだけビルド (依存パッケージも育つので、初回は ffmpeg より時間がかかる)
-docker run --rm --user $(id -u):$(id -g) --network=host \
-  --volumes-from thingino-dl-cache \
-  -v "$PWD":/workspace -v "$PWD/overrides":/overrides -w /workspace \
-  -e BR2_DL_DIR=/dl \
-  ghcr.io/themactep/thingino-builder-image:latest \
-  bash -c "sudo update-alternatives --install /usr/bin/install install /usr/bin/gnuinstall 100 2>/dev/null; \
-           make CAMERA=wyze_cam3_t31x_gc2053_atbm6031 br-prudynt-t"
-# パッチやフォント設定を変えた後は br-prudynt-t-dirclean br-prudynt-t
-```
-
-成果物: `output/HEAD/wyze_cam3_t31x_gc2053_atbm6031-3.10.14-uclibc/per-package/prudynt-t/target/usr/bin/prudynt`
-
-### カメラへ入れる・使う
-
-ファームの焼き直しは不要です。手順と設定項目は [device/README.md](device/README.md) の
-「OSD テキストオーバーレイ」を参照:
-
-```sh
-device/install-prudynt-osd.sh root@<camera-ip> path/to/prudynt   # prudynt が再起動し、配信が数秒切れる
-ssh root@<camera-ip> osd-progress-demo 20                        # プログレスバーのデモ
-```
-
-## カメラでの使い方
-
-まず `/tmp` で動作確認する (**`/tmp` は RAM 上なので再起動で消える = PoC 専用**。
-常設する場合は overlay で永続化される `/usr/bin/ffmpeg` へ —
-場所の選び方と手順は [device/README.md](device/README.md) 参照):
-
-```sh
-# 転送 (Thingino は SFTP 非対応なので -O が必要。だめなら ssh + cat)
-scp -O ffmpeg root@<camera-ip>:/tmp/
-#   または: cat ffmpeg | ssh root@<camera-ip> 'cat > /tmp/ffmpeg && chmod +x /tmp/ffmpeg'
-
-# 実機で起動確認
-/tmp/ffmpeg -version
-# もし libatomic.so.1 が無いというエラーが出たら(標準の Thingino には入っています):
-#   ビルド出力の per-package/.../target/usr/lib/libatomic.so.1.2.0 を /tmp に転送し
-#   ln -s /tmp/libatomic.so.1.2.0 /tmp/libatomic.so.1
-#   LD_LIBRARY_PATH=/tmp /tmp/ffmpeg -version
-
-# YouTube Live へ配信
-/tmp/ffmpeg -loglevel error -rtsp_transport tcp \
-  -i 'rtsp://thingino:thingino@127.0.0.1:554/ch0' \
-  -c copy -f flv \
-  'rtmps://a.rtmps.youtube.com:443/live2/<STREAM_KEY>'
-```
-
-- RTSP の認証・パスは Thingino のデフォルト (`thingino:thingino`, `/ch0`)。環境に合わせて変更
-- `/tmp` は RAM 上なので再起動で消えます (PoC 用途としては安全)
-- `Invalid DTS ... replacing by guess` 警告は prudynt 側のタイムスタンプ癖によるもので実害なし
-  (`-loglevel error` で抑制)
+prudynt (Thingino のストリーマ) へのパッチ `patches/prudynt-osd-textfile.diff` で、配信映像に任意の複数行テキスト
+(プログレスバーなどの ASCII アート) を 3 か所 (既定は左下・右上・右下) まで焼き込み、カメラ上の別のプログラムから
+0.5 秒単位で更新できます。操作側は tmpfs 上のファイルを `mv` で置き換えるだけで、ファームの焼き直しは不要です。
+使い方と設定は [docs/osd.md](docs/osd.md)、ビルドは [docs/build.md](docs/build.md)。
 
 ## 補足
 
@@ -270,26 +162,12 @@ scp -O ffmpeg root@<camera-ip>:/tmp/
 - **ストリームキー**: シェル履歴やログに残ります。露出した場合は YouTube Studio で再生成を
 - 実装の詳細・経緯・ハマりどころは [NOTES.md](NOTES.md) を参照
 
-## ステータス / ロードマップ
+## ステータス
 
-- [x] minimal FFmpeg ビルド (RTSP → FLV/RTMPS, mbedTLS)
-- [x] QEMU 検証・実機動作確認・YouTube Live 配信成功
-- [x] 負荷測定 (prudynt / ISP 処理への影響なしを確認)
-- [x] 自動再起動 (supervisor) スクリプト — [device/](device/) 参照
-  (SD カード設定 + 再起動からの自動配信開始を実機確認済み)
-- [x] 長時間安定性試験 — 約4時間の連続配信でリーク・劣化・A/V ズレなし (`c334a03`)
-- [x] Thingino `ciao+da40db6` (GCC16) への追従 — 再ビルド、実機で YouTube Live 配信を確認
-- [x] インストーラ (`install.sh`)、netwatch 無効化、SD カードからの Wi-Fi 設定 (複数可)
-- [x] `install.sh` / `disable-netwatch.sh` の実機確認 (`da40db6`。新規インストール、配信中の再実行、
-  netwatch 無効化後の状態)
-- [x] `da40db6` での長時間試験
-- [x] 映像に任意のテキストを重ねる prudynt の OSD パッチ (#17、3 か所化 #19) — 実機 (720p) で確認: 3 か所同時の 0.5 秒更新、
-  再起動後の自動有効化、OSD プールの上限。1 時間の連続動作は 1 か所の版 (#17) で確認。1080p・サブストリーム・
-  3 か所での長時間動作は未確認
-- [ ] `S37wifi-from-sd` の実機確認
-- [ ] Thingino パッケージとしての統合 / ファームウェア組み込み
-  (将来的には Thingino の新ストリーマ [Raptor](https://github.com/gtxaspec/raptor) の
-  RTMPS push 機能 (RSP) への移行も選択肢)
+実機 (Wyze Cam v3、Thingino `ciao+da40db6`) で、YouTube Live への直接配信、supervisor による自動復帰、
+SD カードでのスタンドアロン運用、長時間配信、OSD テキストオーバーレイ (720p) まで確認済み。
+残っているのは `S37wifi-from-sd` の実機確認と、Thingino パッケージとしての統合。
+確認の経緯と残タスクの一覧は [NOTES.md](NOTES.md) の「残タスク」。
 
 ## 謝辞
 
