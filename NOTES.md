@@ -313,9 +313,9 @@ QEMU 検証 (新 sysroot = uClibc 1.0.59 + 4KB バッファの mbedTLS):
   ビデオ DTS が不正」節は live555 時代の観測であり、現行での再確認が必要 (#3)
 - **アップグレードは overlay を消去する**。設定は 64KB の backup パーティション経由で
   `S37cfg-autorestore` が復元するが、`sysupgrade -B` を付けたときだけで、2.5MB の ffmpeg は
-  入らない。さらに素のファームには prudynt 依存で RTMPS 非対応の `/usr/bin/ffmpeg` が
-  入っているため、supervisor だけ復元されるとそれを拾って即死ループする
-  → supervisor に `-protocols` チェックを追加、`device/install.sh` を用意
+  入らない (公式イメージに `/usr/bin/ffmpeg` は無い。`BR2_PACKAGE_PRUDYNT_T_FFMPEG` は opt-in)
+  → supervisor に「起動できて rtmps を持つか」の `-protocols` チェックを追加、
+  `device/install.sh` を用意
 - 変わっていなかったもの: `jct` (1.2.0→1.2.1)、`/run/sync_success`、`/run/portal_mode`、
   `service enable|disable`、SD の自動マウント (`/mnt/mmcblk0p1`)、`/etc/cfg-backup.list`、
   デフォルト streamer (prudynt。Raptor / timps / Strero は選択肢として追加されただけ)
