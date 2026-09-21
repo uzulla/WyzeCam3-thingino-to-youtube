@@ -172,6 +172,9 @@ rm /run/prudynt/osd-text
 | `background_color` | `#00000080` | 背景ボックスの色。alpha が 0 なら背景なし |
 
 - リージョンが映像からはみ出す設定は、scale → 桁数 → 行数の順に自動で縮める (`logread` に警告が出る)
+- prudynt は `osd.sei.enabled` と `osd.burnin.enabled` が**両方 false** だと OSD の処理自体を起動しない。その構成で
+  テキストだけ出したい時は、`/etc/prudynt.json` に `osd.textfile.enabled: true` を書いて起動する必要がある
+  (実行中に `prudyntctl json` で有効化しても出ない)。どちらかが true なら (既定は両方 true) 実行中に有効化できる
 - 常用するなら `/etc/prudynt.json` の `osd.textfile` に書く。このリポジトリのスクリプトは prudynt の
   設定ファイルを書き換えない (`prudyntctl json` に `save_config` を送ればフラッシュに保存されるが、
   スクリプトからは送っていない)

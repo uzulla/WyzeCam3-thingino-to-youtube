@@ -128,6 +128,23 @@ index fb883cc..e679ae6 100644
  }
  
  void handle_audio(JsonValue *obj, std::string &out, bool &sep) {
+diff --git c/src/video/IMPEncoder.cpp i/src/video/IMPEncoder.cpp
+index 4e49062..16b11b8 100644
+--- c/src/video/IMPEncoder.cpp
++++ i/src/video/IMPEncoder.cpp
+@@ -498,7 +498,11 @@ int IMPEncoder::init() {
+       return ret;
+     }
+ 
+-    if (cfg->osd.sei.enabled || cfg->osd.burnin.enabled) {
++    // The text-file overlay lives in the OSD object as well. With SEI and the
++    // burn-in timestamp both off, it has to be enabled in the config file:
++    // there is no OSD object to enable it on at run time.
++    if (cfg->osd.sei.enabled || cfg->osd.burnin.enabled ||
++        cfg->osd.textfile.enabled) {
+       LOG_INFO("stream " << name
+                << ": binding FS->OSD->ENC, OSD via hardware + SEI");
+       osd = OSD::createNew(cfg->osd, encGrp, encChn, name);
 diff --git c/src/video/OSD.cpp i/src/video/OSD.cpp
 index 500c5fb..dca76d2 100644
 --- c/src/video/OSD.cpp
