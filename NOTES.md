@@ -241,11 +241,10 @@ B フレームなしの H.264 なので DTS=PTS 補正で正しく、FLV 出力�
 ### 実行コマンド (確定版)
 
 ```sh
-/tmp/ffmpeg -rtsp_transport tcp \
+/tmp/ffmpeg -loglevel error -rtsp_transport tcp \
   -i 'rtsp://thingino:thingino@127.0.0.1:554/ch0' \
   -c copy -f flv \
-  'rtmps://a.rtmps.youtube.com:443/live2/<STREAM_KEY>' \
-  -loglevel error
+  'rtmps://a.rtmps.youtube.com:443/live2/<STREAM_KEY>'
 ```
 
 - RTSP 認証は Thingino デフォルト `thingino:thingino`、パス `/ch0` (メイン) / `/ch1` (サブ)
@@ -319,6 +318,24 @@ QEMU 検証 (新 sysroot = uClibc 1.0.59 + 4KB バッファの mbedTLS):
 - 変わっていなかったもの: `jct` (1.2.0→1.2.1)、`/run/sync_success`、`/run/portal_mode`、
   `service enable|disable`、SD の自動マウント (`/mnt/mmcblk0p1`)、`/etc/cfg-backup.list`、
   デフォルト streamer (prudynt。Raptor / timps / Strero は選択肢として追加されただけ)
+
+### 実機確認 (`ciao+da40db6`, 2026-09-21)
+
+- GCC16 ビルドのバイナリは実機で起動。mbedTLS soname・libatomic とも実機に存在 (同梱不要)
+- RTSP は `thingino:thingino` / `/ch0` のまま。h264 (Main) + aac 16kHz mono が 1 本ずつ。
+  SDP に sprop があり (デコーダ無しでも解像度が取れる)、`extract_extradata` は保険のまま
+- **`Invalid DTS` は自前 RTSP 実装になっても出る。** DTS が PTS より 106ms 進んで始まり、
+  約 2 秒後 (最初の RTCP SR で同期し直した時点) に 28ms に縮む。B フレーム無しなので補正結果は
+  正しく、2 分超の FLV が正常に再生できた。加えて先頭で 1 回
+  `[flv] Timestamps are unset in a packet for stream 0. This is deprecated` が出るようになった。
+  今は警告だけだが、FFmpeg のバージョンを上げるときは要注意
+- **ファーム更新で prudynt の設定が初期値に戻り 1920x1080 / 25fps / 約 2.1Mbps になった。**
+  旧計測 (720p15 / 約 330kbps で ffmpeg CPU 3.3%) はこのビットレートには当てはまらない。
+  TLS の負荷はビットレートにほぼ比例するので再計測が必要 (#3)
+- **ffmpeg のオプションは出力 URL より前に置く。** 後ろに置いた `-t 10` は
+  `Trailing option(s) found in the command: may be ignored.` の警告とともに本当に無視され、
+  tmpfs に 37MB 書き込む事故になった。旧版のコマンド例は `-loglevel error` を末尾に置いていた
+  (`-loglevel` だけは先読みされるので効いていたが、警告は出る) ため先頭へ移した
 
 ### 調査のやり方メモ
 

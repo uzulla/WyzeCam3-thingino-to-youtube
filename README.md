@@ -159,11 +159,10 @@ scp -O ffmpeg root@<camera-ip>:/tmp/
 #   LD_LIBRARY_PATH=/tmp /tmp/ffmpeg -version
 
 # YouTube Live へ配信
-/tmp/ffmpeg -rtsp_transport tcp \
+/tmp/ffmpeg -loglevel error -rtsp_transport tcp \
   -i 'rtsp://thingino:thingino@127.0.0.1:554/ch0' \
   -c copy -f flv \
-  'rtmps://a.rtmps.youtube.com:443/live2/<STREAM_KEY>' \
-  -loglevel error
+  'rtmps://a.rtmps.youtube.com:443/live2/<STREAM_KEY>'
 ```
 
 - RTSP の認証・パスは Thingino のデフォルト (`thingino:thingino`, `/ch0`)。環境に合わせて変更
