@@ -28,7 +28,7 @@ cat ffmpeg | ssh root@<camera-ip> 'cat > /tmp/ffmpeg && chmod +x /tmp/ffmpeg'
 
 - `{KEY}` は YouTube Studio のライブ配信設定にあるストリームキー
 - RTSP の認証 (`thingino:thingino`) とパス (`/ch0`) は Thingino のデフォルト。変更していれば合わせる
-- 再エンコードなし (stream copy) なので、カメラの負荷は CPU 約3% / RAM 3MB 程度
+- 再エンコードなし (stream copy) なので、カメラの負荷は CPU 3〜10% (ビットレート次第) / RAM 3MB 程度
 - `/tmp` は再起動で消える。常設・自動起動・自動復帰したくなったら
   [device/](device/) の supervisor を導入する (おまけ)
 
@@ -67,7 +67,9 @@ git 管理外です。必要な変更はすべて `patches/` に分離してあ�
 - **ファームウェア書き換え不要** — `/tmp` に転送して実行するだけ (PoC 用途)
 - **SD カードが物理スイッチになるスタンドアロンモード** — 設定 (ストリームキー) を書いた
   SD を挿すと配信開始、抜くと停止 ([device/](device/) の supervisor が提供)
-- 実測負荷: ffmpeg CPU **3.3%** / RSS **3.3MB**(720p15 / ~330kbps 配信時、CPU idle 81%→73%)
+- 実測負荷: ffmpeg CPU **3.3%** / RSS **3.3MB**(720p15 / ~330kbps 配信時、CPU idle 81%→73%)。
+  TLS の負荷はビットレートにほぼ比例する: 720p10 / 1Mbps で 4.8%、1080p25 / 2.1Mbps で約 10%
+  (2026-09 以降の Thingino は既定が 1080p25 / 約 2.1Mbps)
 
 ## 動作確認環境
 
