@@ -7,7 +7,7 @@
 # (the streamer) at run time. Thingino's own /usr/bin/prudynt is NOT overwritten:
 # the new binary is stored as /usr/bin/prudynt-osd and S30prudynt-osd bind-mounts
 # it over /usr/bin/prudynt at boot. Undo:
-#   ssh root@<camera-ip> 'rm /etc/init.d/S30prudynt-osd /usr/bin/prudynt-osd /usr/bin/prudynt-osd.build; reboot'
+#   ssh root@<camera-ip> 'rm /etc/init.d/S30prudynt-osd /etc/init.d/S93osd-config /usr/bin/prudynt-osd /usr/bin/prudynt-osd.build /usr/sbin/osd-config; reboot'
 #
 # prudynt is restarted at the end, which interrupts the stream for a few seconds
 # (the youtube-relay supervisor reconnects by itself).
@@ -53,6 +53,11 @@ fi
 ssh "$CAM" "echo '$SUPPORTED_BUILD' > /usr/bin/prudynt-osd.build"
 push "$HERE/S30prudynt-osd" /etc/init.d/S30prudynt-osd 755
 push "$HERE/osd-progress-demo" /usr/sbin/osd-progress-demo 755
+# osd-config re-sends the OSD settings from prudynt-osd.json (SD card, then /etc)
+# after every prudynt restart. It does nothing until such a file exists.
+ssh "$CAM" '[ -x /etc/init.d/S93osd-config ] && /etc/init.d/S93osd-config stop >/dev/null 2>&1; true'
+push "$HERE/osd-config" /usr/sbin/osd-config 755
+push "$HERE/S93osd-config" /etc/init.d/S93osd-config 755
 
 echo "Switching prudynt (the stream drops for a few seconds)"
 # Failures here are not fatal on purpose: the check below decides, and rolls back.
@@ -76,4 +81,6 @@ if [ -z "$ok" ]; then
 	ssh "$CAM" '/etc/init.d/S31prudynt stop; /etc/init.d/S30prudynt-osd stop; chmod -x /etc/init.d/S30prudynt-osd; /etc/init.d/S31prudynt start' || true
 	exit 1
 fi
+ssh "$CAM" '/etc/init.d/S93osd-config start'
 echo "Done. Try it:  ssh $CAM osd-progress-demo 20"
+echo "Settings that survive restarts: put prudynt-osd.json on the SD card (see device/README.md)"

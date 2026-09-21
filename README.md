@@ -79,6 +79,8 @@ device/    カメラ側の常設運用一式 (詳細は device/README.md)
                                                 任意: SD の wpa_supplicant.conf (複数 Wi-Fi 可) を起動時に適用
              install-prudynt-osd.sh / S30prudynt-osd / osd-progress-demo
                                                 任意: 上記 OSD パッチ入りの prudynt を入れる、操作側のサンプル
+             osd-config / S93osd-config / prudynt-osd.json.example
+                                                任意: OSD の設定を SD カードのファイルから読んで prudynt に送り直す
              common.sh                          対応ファームの判定 (違えば何も変更せず中止)
 NOTES.md   実装の詳細・設計判断・ハマりどころ・実測値の記録 (手順は書かない)
 dist/      ビルド成果物 (git 管理外)。配布は GitHub Releases (ffmpeg バイナリ単体) で行う

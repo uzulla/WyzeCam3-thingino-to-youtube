@@ -1,0 +1,88 @@
+#!/bin/sh
+# osd-config - keep prudynt's OSD settings in sync with a config file (SD card first)
+# Install to /usr/sbin/osd-config (chmod +x). Started by /etc/init.d/S93osd-config.
+#
+# Settings changed with "prudyntctl json" live only in the running prudynt: they are
+# gone after a prudynt restart or a reboot. This sends them again whenever needed,
+# without ever writing prudynt's own config to flash (no save_config).
+#
+# Config search order (first match wins):
+#   /mnt/mmcblk0p1/prudynt-osd.json   (SD card)
+#   /etc/prudynt-osd.json             (built-in)
+# The file is what you would pass to "prudyntctl json", e.g.
+#   {"osd":{"textfile":{"enabled":true,"rows":10},"textfile2":{"enabled":true}}}
+# Only its "osd" section is sent; anything else in the file is ignored.
+#
+# Re-sent when prudynt was restarted (new pid) or the file changed / appeared /
+# moved (SD inserted). File gone (SD pulled) -> the text overlays this script had
+# turned on are turned off again. No config file ever seen -> prudynt is left alone.
+
+CONFIG_CANDIDATES=${OSD_CONFIG_CANDIDATES:-"/mnt/mmcblk0p1/prudynt-osd.json /etc/prudynt-osd.json"}
+POLL=${OSD_CONFIG_POLL:-5}
+TAG="osd-config"
+ALL_OFF='{"textfile":{"enabled":false},"textfile2":{"enabled":false},"textfile3":{"enabled":false}}'
+
+log() {
+	logger -p daemon.info -t $TAG "$1"
+}
+
+find_config() {
+	for c in $CONFIG_CANDIDATES; do
+		if [ -f "$c" ]; then
+			echo "$c"
+			return 0
+		fi
+	done
+	return 1
+}
+
+# send <osd-object-json> - returns 0 when prudynt took it. prudynt answers an osd
+# request with the current values of the sections it was given ({"textfile":{...}});
+# no socket yet, or nothing it understood, gives an empty answer or {}.
+send() {
+	case $(prudyntctl json "{\"osd\":$1}" 2>/dev/null) in
+	"" | "{}"*) return 1 ;;
+	"{"*) return 0 ;;
+	esac
+	return 1
+}
+
+applied=""  # "pid|file|checksum" of what the running prudynt has been sent
+active=""   # non-empty once a config has been applied to this prudynt
+complained=""
+
+while :; do
+	pid=$(pidof prudynt | cut -d' ' -f1)
+	if [ -z "$pid" ]; then
+		sleep "$POLL"
+		continue
+	fi
+	case "$applied" in "$pid|"*) ;; *) active="" ;; esac # new prudynt: nothing of ours is on
+
+	if cfg=$(find_config); then
+		body=$(jct "$cfg" get osd 2>/dev/null)
+		case "$body" in
+		"{"*)
+			want="$pid|$cfg|$(echo "$body" | md5sum | cut -d' ' -f1)"
+			if [ "$want" != "$applied" ] && send "$body"; then
+				log "Applied $cfg to prudynt (pid $pid)"
+				applied=$want
+				active=1
+				complained=""
+			fi
+			;;
+		*)
+			# Broken JSON or no "osd" object: change nothing, say so once per file
+			if [ "$complained" != "$cfg" ]; then
+				log "$cfg has no usable \"osd\" object - ignored"
+				complained=$cfg
+			fi
+			;;
+		esac
+	elif [ -n "$active" ] && send "$ALL_OFF"; then
+		log "Config file is gone - text overlays turned off"
+		applied="$pid|none"
+		active=""
+	fi
+	sleep "$POLL"
+done
