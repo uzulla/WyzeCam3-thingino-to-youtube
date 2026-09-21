@@ -308,7 +308,7 @@ QEMU 検証 (新 sysroot = uClibc 1.0.59 + 4KB バッファの mbedTLS):
   ハードウェアリセット)。旧ファームには無かった。supervisor は「ICMP を落とすルーターがあるので
   ping しない。ネットワークが戻るのを待って再開する」設計なので、配信用途では再起動は欠損を
   延ばすだけになる。このため配信用途では無効化することにした
-  (手順は README / device/README.md)
+  (手順は docs/netwatch.md)
 - **prudynt が `ad6294e` → `354b1b4` (142 コミット) に更新され、既定値が変わった。**
   全ストリームの既定サイズがセンサー解像度になり (`9f3d309`。以前 stream1 / JPEG は 640x360)、
   bitrate 0 = 約 1Mbps/メガピクセルの自動値になった (`3188189`)。ファーム更新で設定が初期化
@@ -323,7 +323,7 @@ QEMU 検証 (新 sysroot = uClibc 1.0.59 + 4KB バッファの mbedTLS):
   置くだけにした。supervisor には「起動できて rtmps を持つか」の `-protocols` チェックを追加
 - `S41ifplugd` が `overlay/` から消えたのは `package/thingino-ethernet` へ移っただけで、もともと
   有線 (`eth0`) 専用。Wi-Fi 側の DHCP (`S38wpa_supplicant` の udhcpc まわり) は新旧で同一なので、
-  device/README の「デフォルトルートが戻らないときの cron 回避策」はそのまま有効
+  docs/troubleshooting.md の「デフォルトルートが戻らないときの cron 回避策」はそのまま有効
 - 変わっていなかったもの: `jct` (1.2.0→1.2.1)、`/run/sync_success`、`/run/portal_mode`、
   `service enable|disable`、SD の自動マウント (`/mnt/mmcblk0p1`)、
   デフォルト streamer (prudynt。Raptor / timps / Strero は選択肢として追加されただけ)
