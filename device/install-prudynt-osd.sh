@@ -41,12 +41,15 @@ check_camera "$CAM"
 
 echo "Installing prudynt-osd"
 ssh "$CAM" 'df -h /overlay | tail -1'
-# The running prudynt may be executing the old copy through the bind mount.
-# push() replaces the file by rename, so the running process keeps its inode.
-push "$BIN" /usr/bin/prudynt-osd 755
+# Upload next to the final name first: the slow part happens while the stream is
+# still up, and the file prudynt is running from (bind-mounted over
+# /usr/bin/prudynt) is not touched while it is mounted. Replacing a mounted file
+# leaves a stale "(deleted)" mount behind.
+push "$BIN" /usr/bin/prudynt-osd.upload 755
 want=$(local_md5 "$BIN")
-got=$(ssh "$CAM" 'md5sum </usr/bin/prudynt-osd' | cut -d' ' -f1)
+got=$(ssh "$CAM" 'md5sum </usr/bin/prudynt-osd.upload' | cut -d' ' -f1)
 if [ -z "$want" ] || [ "$want" != "$got" ]; then
+	ssh "$CAM" 'rm -f /usr/bin/prudynt-osd.upload' || true
 	echo "md5 mismatch after transfer (overlay full?)" >&2
 	exit 1
 fi
@@ -61,7 +64,13 @@ push "$HERE/S93osd-config" /etc/init.d/S93osd-config 755
 
 echo "Switching prudynt (the stream drops for a few seconds)"
 # Failures here are not fatal on purpose: the check below decides, and rolls back.
-ssh "$CAM" '/etc/init.d/S31prudynt stop; /etc/init.d/S30prudynt-osd restart && /etc/init.d/S31prudynt start' || true
+# "S31prudynt stop" returns before prudynt is gone; starting too early makes the new
+# one quit with "Another Prudynt instance appears to be running".
+STOP_PRUDYNT='/etc/init.d/S31prudynt stop; n=0; while pidof prudynt >/dev/null && [ $n -lt 20 ]; do n=$((n + 1)); sleep 1; done'
+ssh "$CAM" "$STOP_PRUDYNT"'
+	/etc/init.d/S30prudynt-osd stop
+	mv /usr/bin/prudynt-osd.upload /usr/bin/prudynt-osd
+	/etc/init.d/S30prudynt-osd start && /etc/init.d/S31prudynt start' || true
 
 # The patched build answers the osd.textfile query with its settings; stock prudynt returns {}.
 i=0
@@ -79,7 +88,7 @@ done
 if [ -z "$ok" ]; then
 	echo "prudynt did not come up with osd.textfile support - going back to the stock prudynt" >&2
 	# osd-config is pointless (and would keep poking the stock prudynt) without the patch
-	ssh "$CAM" 'chmod -x /etc/init.d/S93osd-config; /etc/init.d/S31prudynt stop; /etc/init.d/S30prudynt-osd stop; chmod -x /etc/init.d/S30prudynt-osd; /etc/init.d/S31prudynt start' || true
+	ssh "$CAM" 'chmod -x /etc/init.d/S93osd-config; '"$STOP_PRUDYNT"'; /etc/init.d/S30prudynt-osd stop; chmod -x /etc/init.d/S30prudynt-osd; /etc/init.d/S31prudynt start' || true
 	exit 1
 fi
 ssh "$CAM" '/etc/init.d/S93osd-config start' || echo "warning: osd-config did not start (prudynt itself is fine)" >&2

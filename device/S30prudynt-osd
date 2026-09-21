@@ -14,8 +14,11 @@ OURS="/usr/bin/prudynt-osd"
 STOCK="/usr/bin/prudynt"
 TAG="prudynt-osd"
 
+# If the mounted file was replaced (renamed over) while mounted, the kernel lists
+# the mount point as "/usr/bin/prudynt\040(deleted)": match that too, or a stale
+# mount could be neither detected nor removed.
 mounted() {
-	grep -q " $STOCK " /proc/mounts
+	awk -v m="$STOCK" '$2 == m || $2 == m "\\040(deleted)" { found = 1 } END { exit !found }' /proc/mounts
 }
 
 start() {
@@ -45,7 +48,11 @@ start() {
 stop() {
 	echo -n "Stopping $TAG: "
 	if mounted; then
-		umount "$STOCK" && echo "OK" || echo "FAIL"
+		# fails with "busy" while prudynt is running: stop it first
+		while mounted; do
+			umount "$STOCK" || break
+		done
+		if mounted; then echo "FAIL (stop prudynt first)"; else echo "OK"; fi
 	else
 		echo "SKIP (not mounted)"
 	fi
