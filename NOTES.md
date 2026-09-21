@@ -306,8 +306,9 @@ QEMU 検証 (新 sysroot = uClibc 1.0.59 + 4KB バッファの mbedTLS):
 
 - **netwatch** (`S52netwatch`, 2026-09-10 追加, デフォルト有効): ゲートウェイへの ping が
   30 秒間隔で 3 回連続失敗すると**カメラを再起動**する。supervisor が「ICMP を落とすルーターが
-  あるので ping しない」とした判断と正面衝突する。モバイルルーター運用では無効化が必要
-  (device/README.md 参照)
+  あるので ping しない」とした判断と正面衝突する。モバイルルーター運用では
+  `jct /etc/thingino.json set netwatch.enabled false` で無効化するか、`netwatch.target` を
+  ping に応答するホストにする (詳細は device/README.md の netwatch 節)
 - **prudynt が live555 をやめ自前 RTSP 実装になった** (2026-09-13)。下の「prudynt の RTSP は
   ビデオ DTS が不正」節は live555 時代の観測であり、現行での再確認が必要 (#3)
 - **アップグレードは overlay を消去する**。設定は 64KB の backup パーティション経由で
