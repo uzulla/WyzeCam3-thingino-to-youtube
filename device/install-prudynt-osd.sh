@@ -67,7 +67,14 @@ echo "Switching prudynt (the stream drops for a few seconds)"
 # "S31prudynt stop" returns before prudynt is gone; starting too early makes the new
 # one quit with "Another Prudynt instance appears to be running".
 STOP_PRUDYNT='/etc/init.d/S31prudynt stop; n=0; while pidof prudynt >/dev/null && [ $n -lt 20 ]; do n=$((n + 1)); sleep 1; done'
-ssh "$CAM" "$STOP_PRUDYNT"'
+# If prudynt cannot be stopped, the old binary stays mounted and running, and the
+# check below would happily report success for it: give up instead.
+if ! ssh "$CAM" "$STOP_PRUDYNT"'; ! pidof prudynt >/dev/null'; then
+	ssh "$CAM" 'rm -f /usr/bin/prudynt-osd.upload; /etc/init.d/S31prudynt start; /etc/init.d/S93osd-config start' >/dev/null 2>&1 || true
+	echo "prudynt did not stop (or the camera could not be reached) - nothing was switched" >&2
+	exit 1
+fi
+ssh "$CAM" '
 	/etc/init.d/S30prudynt-osd stop
 	mv /usr/bin/prudynt-osd.upload /usr/bin/prudynt-osd
 	/etc/init.d/S30prudynt-osd start && /etc/init.d/S31prudynt start' || true
