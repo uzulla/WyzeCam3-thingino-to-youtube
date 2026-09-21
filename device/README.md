@@ -313,8 +313,11 @@ youtube-relay: ffmpeg: [out#0/flv @ ...] Error opening output rtmps://.../REDACT
   YouTube が publish を拒否している**状態。キー違い、配信枠が終了済み、同じキーで別のエンコーダが
   配信中、など YouTube 側を確認する。`Successfully connected ... port 443` まで行かなければ
   ネットワーク/DNS、`Handshaking...` の前後で止まれば TLS の問題
-- ストリームキーと RTSP の認証情報は `REDACTED` に置き換えてから記録する
-- 1 回の ffmpeg 起動につき最大 60 行 (超えた分は捨てる)。`ffmpeg_loglevel` を `warning` 以上に
+- `[rtsp @ ...] Failed reading RTSP data: End of file` は入力側 (prudynt) が切れたもの。WebUI で映像設定を
+  変えた・prudynt が再起動した直後に出る。YouTube 側の問題ではなく、次の再試行で復帰する
+- ストリームキーと RTSP の認証情報は `REDACTED` に置き換えてから記録する。ただし `ffmpeg_loglevel` に
+  `trace` は使わないこと (パケットのダンプまでは伏せられない)
+- 1 回の ffmpeg 起動につき最大 60 行 (超えた分は捨て、その旨を 1 行出す)。`ffmpeg_loglevel` を `warning` 以上に
   すると `Invalid DTS` 警告で枠がすぐ埋まる点に注意
 
 最終確認は YouTube Studio のプレビュー (映像と音声メーターが動いていること)。
