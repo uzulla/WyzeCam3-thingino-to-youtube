@@ -281,7 +281,9 @@ scp -O ffmpeg root@<camera-ip>:/tmp/
 - [x] `install.sh` / `disable-netwatch.sh` の実機確認 (`da40db6`。新規インストール、配信中の再実行、
   netwatch 無効化後の状態)
 - [x] `da40db6` での長時間試験
-- [x] 映像に任意のテキストを重ねる prudynt の OSD パッチ (#17、3 か所化 #19) — 実機で 0.5 秒更新・1 時間連続・再起動後の自動有効化・OSD プールの上限まで確認
+- [x] 映像に任意のテキストを重ねる prudynt の OSD パッチ (#17、3 か所化 #19) — 実機 (720p) で確認: 3 か所同時の 0.5 秒更新、
+  再起動後の自動有効化、OSD プールの上限。1 時間の連続動作は 1 か所の版 (#17) で確認。1080p・サブストリーム・
+  3 か所での長時間動作は未確認
 - [ ] `S37wifi-from-sd` の実機確認
 - [ ] Thingino パッケージとしての統合 / ファームウェア組み込み
   (将来的には Thingino の新ストリーマ [Raptor](https://github.com/gtxaspec/raptor) の

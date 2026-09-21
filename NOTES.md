@@ -486,7 +486,7 @@ pin は `git ls-tree <commit> buildroot` で見る)。
 
 | リージョン | サイズ | 結果 |
 |---|---|---|
-| 972x148 (scale 3、40x5) | 562KB | 表示される |
+| 972x148 (scale 3、40x5) | 562KB | 表示される (この測定は予算の処理を入れる前。今のパッチは予算 約 535KB を超える設定として自動で縮める) |
 | 972x174 (scale 3、40x6) | 660KB | **表示されない** (エラーなし) |
 | 972x228 / 1028x292 | 866KB / 1173KB | 表示されない。小さいサイズに戻せば復帰する |
 
@@ -515,9 +515,10 @@ prudynt の設定機構が固定キーの表で、可変長の配列を素直に
   日時のサイズが変わった周回では、テキスト側が譲った後で日時の `IMP_OSD_SetRgnAttr` をもう一度呼ぶ
   (upstream の関数は変えず、テキスト側のコードから呼ぶ)。実機で、テキスト 476KB を出した状態から日時を
   scale 5 にして、日時が表示されテキストが scale 1 に縮むことを確認
-- `path` と色は 1 秒に 1 回だけ読み直してコピーを持つ。これらは JSON API のスレッドがロックなしで free して
-  差し替えるポインタで (upstream の `osd.burnin.format` と同じ構造)、100ms ごとに 3 スロット分読むと
-  競合の窓が upstream の約 40 倍になるため
+- `path` と色は 1 秒に 1 回だけ、ロックを取って読み直してコピーを持つ。これらは JSON API のスレッドが free して
+  差し替えるポインタで、upstream はロックなしで読んでいる (`osd.burnin.format`)。頻度を下げるだけでは同期に
+  ならないので、`Config.hpp` の `set<const char *>` が差し替える箇所に `stringMutex` を足し、テキスト側は同じロックの
+  中でコピーする (upstream のコードへの変更はこの 4 行だけ。upstream 自身の読み取りは元のまま)
 - prudynt は `osd.sei.enabled || osd.burnin.enabled` の時しか OSD オブジェクトを作らない (`IMPEncoder.cpp`)。
   作成条件に `osd.textfile*.enabled` を足したが、両方オフの構成では実行中の有効化はできない (相手がいない)
 - 無効にしたスロット、予算が尽きて出せないスロットは、非表示ではなくリージョンごと破棄する。非表示のままだと
@@ -558,8 +559,8 @@ prudynt を再起動して測った (720p10、配信中)。各サイズで 52 �
 - 1080p での負荷とプール境界、サブストリームへの表示 (`substream_disabled: false`) は未確認
 - `osd.textfile.path` の読み込みは OSD スレッドで同期的に行う。tmpfs 前提で、固まるファイルシステム
   (NFS 等) を指すと時刻表示ごと止まる
-- 設定文字列 (`path` や色) を `prudyntctl json` で書き換えた瞬間に OSD スレッドが古いポインタを読む競合は、
-  upstream の `osd.burnin.format` と同じ構造のまま残っている (読む頻度は upstream と同じ 1 秒に 1 回に抑えてある)
+- upstream 自身の `osd.burnin.format` などの読み取りはロックなしのまま (テキストオーバーレイの `path` と色は
+  `stringMutex` で保護した)
 - 測定中、標準の prudynt の時点から `video channel:0 - msgChannel sink clogged, 5x frames dropped in last 5s`
   の警告が 5 秒ごとに出続けていた。このパッチとは無関係 (パッチ前の prudynt でも同じ頻度)。配信は流れている
 

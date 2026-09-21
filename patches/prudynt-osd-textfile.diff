@@ -87,7 +87,7 @@ index cefac45..4865291 100644
        {"image.ae_compensation", image.ae_compensation, 128, validateInt255},
        /* Expert overrides preserved for backward compatibility */
 diff --git a/src/config/Config.hpp b/src/config/Config.hpp
-index fb30ab0..1b678df 100644
+index fb30ab0..2d8bf1a 100644
 --- a/src/config/Config.hpp
 +++ b/src/config/Config.hpp
 @@ -206,6 +206,23 @@ struct _privacy {
@@ -127,6 +127,26 @@ index fb30ab0..1b678df 100644
  };
  struct _recorder {
    bool enabled;
+@@ -338,6 +361,9 @@ public:
+   bool config_loaded = false;
+   bool config_corrupted = false;
+   bool dirty_ = false; // set when set<T>() actually changes a value
++  // Held by set<const char *>() while it frees and replaces a string value.
++  // Take it to copy string settings out safely from another thread.
++  std::mutex stringMutex;
+   mutable std::string serialized_cache_; // cached json_to_string(jsonConfig)
+   JsonValue *jsonConfig = nullptr;
+   std::string filePath{};
+@@ -449,6 +475,9 @@ public:
+           }
+ 
+           if constexpr (std::is_same_v<T, const char *>) {
++            // Readers on other threads that take stringMutex (the text-file
++            // OSD overlays) never see a freed or half-replaced pointer.
++            std::lock_guard<std::mutex> lk(stringMutex);
+             if (item.value) free((void *)item.value);
+             item.value = value ? strdup(value) : nullptr;
+           } else {
 diff --git a/src/config/JsonAPI.cpp b/src/config/JsonAPI.cpp
 index fb883cc..21fa555 100644
 --- a/src/config/JsonAPI.cpp
@@ -532,10 +552,10 @@ index 0000000..ea05235
 +} // namespace osdtext
 diff --git a/src/video/OSDTextfile.cpp b/src/video/OSDTextfile.cpp
 new file mode 100644
-index 0000000..71f6be7
+index 0000000..b4e65fb
 --- /dev/null
 +++ b/src/video/OSDTextfile.cpp
-@@ -0,0 +1,413 @@
+@@ -0,0 +1,414 @@
 +// -- text-file overlay --------------------------------------------------
 +// Extra burned-in OSD regions ("slots": osd.textfile, osd.textfile2,
 +// osd.textfile3) that each show the contents of a text file (the slot's
@@ -754,10 +774,11 @@ index 0000000..71f6be7
 +      continue;
 +    // Snapshot the settings; everything below works on the copies. The
 +    // string settings are plain pointers that the JSON API thread frees and
-+    // replaces without a lock (as for osd.burnin.format), so they are only
-+    // touched once per second like upstream does, not on every 100 ms tick.
++    // replaces: copy them out under the lock that set<const char *>() holds
++    // while doing so, and only once per second rather than on every tick.
 +    TextfileSlot &s = tf_slots_[i];
 +    if (once_per_second || !s.conf_valid) {
++      std::lock_guard<std::mutex> lk(cfg->stringMutex);
 +      s.conf_path = c.path ? c.path : "";
 +      s.conf_colors = osdtext::Colors{};
 +      parseColor(c.fill_color, s.conf_colors.fill);
