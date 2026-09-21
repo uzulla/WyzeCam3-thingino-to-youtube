@@ -100,4 +100,4 @@ if [ -z "$ok" ]; then
 fi
 ssh "$CAM" '/etc/init.d/S93osd-config start' || echo "warning: osd-config did not start (prudynt itself is fine)" >&2
 echo "Done. Try it:  ssh $CAM osd-progress-demo 20"
-echo "Settings that survive restarts: put prudynt-osd.json on the SD card (see device/README.md)"
+echo "Settings that survive restarts: put prudynt-osd.json on the SD card (see docs/osd.md)"
