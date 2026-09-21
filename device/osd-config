@@ -4,14 +4,26 @@
 #
 # Settings changed with "prudyntctl json" live only in the running prudynt: they are
 # gone after a prudynt restart or a reboot. This sends them again whenever needed,
-# without ever writing prudynt's own config to flash (no save_config).
+# without writing prudynt's own config to flash (no save_config) - with one
+# exception, "general.osd_pool_size", see below.
 #
 # Config search order (first match wins):
 #   /mnt/mmcblk0p1/prudynt-osd.json   (SD card)
 #   /etc/prudynt-osd.json             (built-in)
 # The file is what you would pass to "prudyntctl json", e.g.
 #   {"osd":{"textfile":{"enabled":true,"rows":10},"textfile2":{"enabled":true}}}
-# Only its "osd" section is sent; anything else in the file is ignored.
+# Only its "osd" section is sent; anything else in the file is ignored, except:
+#
+#   {"general":{"osd_pool_size":2048}, "osd":{...}}
+#
+# The OSD pool (KB, 0 = prudynt's default) is only allocated when prudynt starts,
+# so it cannot be sent at runtime. When the file names a size that differs from
+# /etc/prudynt.json, it is written there with jct (the one write to flash this
+# script does; same as the manual procedure in docs/osd.md) and prudynt is
+# restarted (the stream drops for a few seconds). Nothing happens while the two
+# agree, so this is normally a one-off. The value stays when the file goes away
+# (it only reserves memory, it shows nothing); write 0 to go back to the default.
+# If prudynt does not come back up with the new size, the old one is restored.
 #
 # Re-sent when prudynt was restarted (new pid) or the file changed / appeared /
 # moved (SD inserted). File gone (SD pulled), or a text overlay block removed from
@@ -79,6 +91,74 @@ save_state() {
 complained="" # last problem reported, so each one is logged once
 fails=0
 
+# Values above what a T31 with 720p streams could reserve (32768 does not start,
+# 16384 does; docs/osd.md) are refused rather than tried.
+POOL_MAX=16384
+PRUDYNT_CONFIG=/etc/prudynt.json
+PRUDYNT_INIT=/etc/init.d/S31prudynt
+
+prudynt_up() {
+	case $(prudyntctl json '{"general":{"loglevel":null}}' 2>/dev/null) in
+	"{"*) return 0 ;;
+	esac
+	return 1
+}
+
+# restart_prudynt - returns 0 once the new prudynt answers, 1 if it is gone.
+# "S31prudynt stop" (and so its restart) can return before prudynt is gone, and
+# the new one then quits with "Another Prudynt instance appears to be running":
+# wait for the old one ourselves.
+restart_prudynt() {
+	"$PRUDYNT_INIT" stop >/dev/null 2>&1
+	i=0
+	while pidof prudynt >/dev/null && [ $i -lt 20 ]; do
+		sleep 1
+		i=$((i + 1))
+	done
+	"$PRUDYNT_INIT" start >/dev/null 2>&1
+	i=0
+	while [ $i -lt 30 ]; do
+		sleep 1
+		prudynt_up && return 0
+		[ $i -ge 5 ] && [ -z "$(pidof prudynt)" ] && return 1
+		i=$((i + 1))
+	done
+	# Alive but silent after 30 s: leave it, the osd loop will keep retrying
+	[ -n "$(pidof prudynt)" ]
+}
+
+# apply_pool <cfg> - general.osd_pool_size from the config file into
+# /etc/prudynt.json + prudynt restart, when they differ. Returns 0 when prudynt
+# was restarted (the caller then starts over with the new pid).
+pool_bad="" # "file:value" refused or failed, not tried again until it changes
+apply_pool() {
+	want=$(jct "$1" get general.osd_pool_size 2>/dev/null) || return 1
+	[ "$1:$want" = "$pool_bad" ] && return 1
+	case "$want" in
+	"" | *[!0-9]*) ;;
+	*) [ "$want" -le "$POOL_MAX" ] || want="" ;;
+	esac
+	if [ -z "$want" ]; then
+		log "general.osd_pool_size in $1 must be 0..$POOL_MAX (KB) - ignored"
+		pool_bad="$1:$(jct "$1" get general.osd_pool_size 2>/dev/null)"
+		return 1
+	fi
+	have=$(jct "$PRUDYNT_CONFIG" get general.osd_pool_size 2>/dev/null) || have=0
+	[ "$want" = "$have" ] && return 1
+	if ! jct "$PRUDYNT_CONFIG" set general.osd_pool_size "$want" >/dev/null 2>&1; then
+		log "cannot write general.osd_pool_size=$want to $PRUDYNT_CONFIG"
+		pool_bad="$1:$want"
+		return 1
+	fi
+	log "general.osd_pool_size $have -> $want KB in $PRUDYNT_CONFIG (from $1) - restarting prudynt"
+	restart_prudynt && return 0
+	jct "$PRUDYNT_CONFIG" set general.osd_pool_size "$have" >/dev/null 2>&1
+	log "prudynt did not come up with osd_pool_size=$want - restored $have"
+	restart_prudynt
+	pool_bad="$1:$want"
+	return 0
+}
+
 while :; do
 	pid=$(pidof prudynt | cut -d' ' -f1)
 	if [ -z "$pid" ]; then
@@ -89,6 +169,7 @@ while :; do
 	case "$applied" in "$pid|"*) ;; *) managed="" ;; esac
 
 	if cfg=$(find_config); then
+		apply_pool "$cfg" && continue
 		body=$(jct "$cfg" get osd 2>/dev/null)
 		case "$body" in
 		"{"*)

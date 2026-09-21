@@ -596,6 +596,32 @@ prudynt (`354b1b4`) が RTSP クライアントの接続中、5 秒ごとに
   `logread | grep -v 'sink clogged'` で読み飛ばせば足りる (`general.loglevel` を `ERROR` にしても消えるが、
   他の警告も消える)
 
+### SD カードの設定ファイル (`osd-config`, #22) の実機確認と、OSD プールを SD から指定する仕組み
+
+2026-09-22、本物の SD カード (exFAT) で確認:
+
+- SD 直下に `prudynt-osd.json` を書く → 2 秒後に `osd-config: Applied ...`、3 スロット表示
+- SD を抜く → 10 秒以内に `Config file is gone - turned off: textfile textfile2 textfile3`、表示が消える
+- 挿し直す → 自動マウント後 10 秒以内に再適用
+- 挿したまま再起動 → 起動から約 24 秒で自動適用 (`S30prudynt-osd` の bind mount も自動)。テキスト本体は
+  tmpfs なので消えており、書き直せば表示される
+
+**`general.osd_pool_size` を SD から指定する。** プールは prudynt の起動時にしか確保されないので、
+`prudyntctl json` では変えられない。`osd-config` は設定ファイルの `general.osd_pool_size` が `/etc/prudynt.json` と
+違う時だけ、`jct` でそこに書いて prudynt を再起動する (このリポジトリのスクリプトがフラッシュの prudynt 設定を
+書く唯一の箇所。ユーザーの判断で例外にした)。設計上の選択と実測:
+
+- tmpfs のコピーを bind mount する案 (フラッシュ無傷) は採らなかった。bind mount 中に WebUI や `save_config` で
+  保存した prudynt の設定が tmpfs 側に書かれて再起動で消える罠があるため
+- `S31prudynt restart` は stop が返ってから prudynt が消えるまで待たないので、そのまま使うと新しい prudynt が
+  `Another Prudynt instance appears to be running` で終了する (実機で 1 回踏んだ)。stop → `pidof` が空になるまで
+  待つ → start にした (インストーラと同じ)
+- 新しい値で起動しなかった時は元の値に戻して起動し直す。上の失敗がちょうどこの経路を通り、復元が動くことを確認した
+- 値の変更から `Applied` まで約 4〜5 秒 (prudynt の再起動込み)。ffmpeg は RTSP 切断で終了し 4 秒後に再接続
+- 2048KB で 40×10 + 24×2 + 24×2 が 3 つとも scale 2 で出ることをスナップショットで確認。4096 → 2048 の変更も
+  同じ経路で動作。範囲外 (99999) は 1 回ログして無視、`osd` の部分は普通に適用される
+- SD を抜いてもプールの値は戻さない (戻すたびに再起動 + フラッシュ書き込みになる)。0 を書けば既定に戻る
+
 ### SD カードからの Wi-Fi 設定: 未検証の点
 
 A (`uenv.txt`)・B (`wpa_supplicant.conf`) とも、ソース `ciao+da40db6` の読解と PC 上の busybox でのテストに基づく。
@@ -626,7 +652,8 @@ A (`uenv.txt`)・B (`wpa_supplicant.conf`) とも、ソース `ciao+da40db6` の
 - [x] インストーラ (`install.sh`)、netwatch 無効化 (`disable-netwatch.sh`)、SD カードからの Wi-Fi 設定 (複数可)
 - [x] 映像に任意のテキストを重ねる prudynt の OSD パッチ (#17、3 か所化 #19、SD からの設定 #22) — 実機 (720p) で確認:
   3 か所同時の 0.5 秒更新、再起動後の自動有効化、OSD プールの上限、サブストリームへの表示、プライバシーカバーとの共存。
-  連続動作は 1 か所の版 (#17) で 1 時間、3 か所の版で 15 分。1080p と、本物の SD カードでの `osd-config` は未確認
+  連続動作は 1 か所の版 (#17) で 1 時間、3 か所の版で 15 分。本物の SD カードでの `osd-config` (抜き差し・再起動) と
+  `general.osd_pool_size` の SD からの指定も確認。1080p は未確認 (この運用では使わない)
 - [ ] `S37wifi-from-sd` の実機確認 (#10)
 - [ ] Thingino パッケージとしての統合 / ファームウェア組み込み (Config.in オプション化、stream key の安全な保持)。
   将来的には Thingino の新ストリーマ [Raptor](https://github.com/gtxaspec/raptor) の RTMPS push 機能 (RSP) への

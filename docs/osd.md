@@ -22,7 +22,8 @@ device/install-prudynt-osd.sh root@<camera-ip> path/to/prudynt
   `/usr/sbin/osd-progress-demo` `/usr/sbin/osd-config` `/etc/init.d/S93osd-config` と、置いていれば
   設定ファイル (`/etc/prudynt-osd.json` と、SD カード直下の `prudynt-osd.json` = カメラ上では
   `/mnt/mmcblk0p1/prudynt-osd.json`) を削除する。どちらかが残っていると、入れ直した時や `osd-config` を
-  有効に戻した時に、古い OSD 設定が自動で反映される
+  有効に戻した時に、古い OSD 設定が自動で反映される。設定ファイルで `general.osd_pool_size` を使っていた場合は
+  `/etc/prudynt.json` にその値が残っているので、`jct /etc/prudynt.json set general.osd_pool_size 0` で戻す
 - Thingino を入れ直した/更新した後は、他のファイルと同じく入れ直しが必要 (新しいファームに合わせて
   prudynt をビルドし直す)
 
@@ -83,9 +84,10 @@ echo 'REC' > /run/prudynt/osd-text2.tmp && mv /run/prudynt/osd-text2.tmp /run/pr
   実行中に有効化できる
 - `path` と色の変更が映像に出るまで最大 1 秒かかる (文字列の設定は 1 秒に 1 回だけ読み直す。ファイルの中身の
   更新は 0.1 秒以内)
-- 常用するなら `/etc/prudynt.json` の `osd.textfile` 等に書く。このリポジトリのスクリプトは prudynt の
-  設定ファイルを書き換えない (`prudyntctl json` に `save_config` を送ればフラッシュに保存されるが、
-  スクリプトからは送っていない)。**`prudyntctl json` での変更は prudynt の再起動で消える**
+- 常用するなら次の節のとおり SD カードに設定ファイルを置く (または `/etc/prudynt.json` の `osd.textfile` 等に書く)。
+  このリポジトリのスクリプトは、`general.osd_pool_size` (後述) 以外は prudynt の設定ファイルを書き換えない
+  (`prudyntctl json` に `save_config` を送ればフラッシュに保存されるが、スクリプトからは送っていない)。
+  **`prudyntctl json` での変更は prudynt の再起動で消える**
   (再起動後に何も出なくなったら、まず `enabled` が false に戻っていないか見る)
 
 ## 設定を SD カードに置く (再起動しても消えないようにする)
@@ -96,6 +98,7 @@ echo 'REC' > /run/prudynt/osd-text2.tmp && mv /run/prudynt/osd-text2.tmp /run/pr
 
 ```json
 {
+  "general": { "osd_pool_size": 2048 },
   "osd": {
     "textfile":  { "enabled": true, "cols": 40, "rows": 10 },
     "textfile2": { "enabled": true },
@@ -105,7 +108,9 @@ echo 'REC' > /run/prudynt/osd-text2.tmp && mv /run/prudynt/osd-text2.tmp /run/pr
 ```
 
 - 中身は `prudyntctl json` に渡す JSON と同じ形。**送られるのは `osd` の部分だけ**で、それ以外のキー
-  (`action` や映像の設定など) は無視される。`osd.burnin` (日時の書式や大きさ) も書ける
+  (`action` や映像の設定など) は無視される。`osd.burnin` (日時の書式や大きさ) も書ける。
+  例外は `general.osd_pool_size` (OSD プールの大きさ、KB) で、これだけは prudynt に送るのではなく
+  `/etc/prudynt.json` に書く (下記)
 - 送り直すのは、prudynt が再起動した時 (WebUI で設定を変えた後など) と、ファイルの中身が変わった時
   (SD を挿した、書き換えた)。5 秒間隔で見ているので、カメラの再起動は要らない
 - ファイルが無くなると (SD を抜くと)、**そのファイルに書いてあったテキストの矩形だけ**を無効に戻す
@@ -120,9 +125,16 @@ echo 'REC' > /run/prudynt/osd-text2.tmp && mv /run/prudynt/osd-text2.tmp /run/pr
 - JSON が壊れている時は `logread | grep osd-config` に理由を 1 回出す。反映済みのファイルを編集して壊した時は
   表示を変えない (直せば反映される)。別のファイルに切り替わった先が壊れていた時 (SD を抜いたら内蔵の設定が
   壊れていた、など) は、前のファイルが有効にした矩形を無効に戻す
-- フラッシュには何も書かない (`save_config` を送らない、`/etc/prudynt.json` に触らない)
-- **OSD プールのサイズ (`general.osd_pool_size`) はこの方法では変えられない** (prudynt の起動時にしか確保されない)。
-  大きくしたい時は次の節の手順で `/etc/prudynt.json` に 1 回だけ書く
+- `general.osd_pool_size` 以外はフラッシュに何も書かない (`save_config` を送らない、`/etc/prudynt.json` に触らない)
+- **`general.osd_pool_size`** (OSD プールの大きさ、KB、0 = 既定。次の節) は prudynt の起動時にしか確保されないので、
+  他のキーと違って `/etc/prudynt.json` に `jct` で書いて **prudynt を再起動する** (配信が数秒切れる)。
+  やるのはファイルの値と `/etc/prudynt.json` の値が違う時だけなので、普通は最初の 1 回 (ファイルを置いた時、
+  または値を変えた時) だけ。`logread` に `general.osd_pool_size 0 -> 2048 KB ... restarting prudynt` と出る
+  - 受け付ける値は 0〜16384。範囲外や数字でないものは `logread` に 1 回出して無視する
+  - 新しい値で prudynt が起動しなかった時は元の値に戻して起動し直す (`... restored 0`)。その値はファイルを
+    書き換えるまで再試行しない
+  - ファイルが無くなっても (SD を抜いても) この値は戻さない (メモリを予約するだけで、何も表示しない。
+    戻すたびに再起動と書き込みをする方が害が大きい)。既定に戻したい時はファイルに 0 を書く
 - ログ: `logread | grep osd-config`。止めて、次回の起動でも動かないようにする:
   `service stop osd-config; service disable osd-config`
 
@@ -137,14 +149,14 @@ echo 'REC' > /run/prudynt/osd-text2.tmp && mv /run/prudynt/osd-text2.tmp /run/pr
 - 既定のプールは 720p で約 616KB (テキストに使えるのは約 535KB)。**40 桁×10 行 (scale 2、476KB) だけで
   ほぼ使い切る**ので、3 つとも既定の大きさで出すにはプールを上げる
 - プールは `/etc/prudynt.json` の `general.osd_pool_size` (KB、0 = 自動)。起動時にしか確保されないので、
-  変えたら `service restart prudynt`:
+  変えたら prudynt の再起動が要る。SD カードの `prudynt-osd.json` に `"general": {"osd_pool_size": 2048}` と
+  書けば `osd-config` がやる (前の節)。手でやるなら:
 
   ```sh
   jct /etc/prudynt.json set general.osd_pool_size 2048 && service restart prudynt
   ```
 
-  これは prudynt (Thingino) の設定ファイルをフラッシュに書き換える操作なので、このリポジトリのスクリプトでは
-  行わない。戻すには 0 を設定する
+  どちらも prudynt (Thingino) の設定ファイルをフラッシュに書き換える操作 (値が変わる時だけ)。戻すには 0 を設定する
 
 720p での目安 (測定の詳細は [NOTES.md](../NOTES.md) の「OSD プールの上限」):
 
