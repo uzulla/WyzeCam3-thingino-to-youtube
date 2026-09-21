@@ -68,13 +68,17 @@ localhost RTSP (prudynt) → H.264/AAC stream copy → FLV mux → RTMPS/TLS →
 ## リポジトリ構成
 
 ```text
-patches/   このリポジトリの本体。Thingino の thingino-ffmpeg パッケージへ当てる差分
+patches/   このリポジトリの本体。Thingino に当てる差分
+             thingino-ffmpeg-rtmps.diff         thingino-ffmpeg パッケージを RTMPS 対応にする
+             prudynt-osd-textfile.diff          任意: prudynt (ストリーマ) に「テキストファイルを映像へ重ねる OSD」を足す
 device/    カメラ側の常設運用一式 (詳細は device/README.md)
              youtube-relay / S93youtube-relay   supervisor と起動スクリプト
              install.sh                         上記と ffmpeg をカメラへ入れる (自前のファイルを置くだけ)
              disable-netwatch.sh                Thingino の netwatch (OS 自動再起動) を無効化する
              install-wifi-from-sd.sh / S37wifi-from-sd
                                                 任意: SD の wpa_supplicant.conf (複数 Wi-Fi 可) を起動時に適用
+             install-prudynt-osd.sh / S30prudynt-osd / osd-progress-demo
+                                                任意: 上記 OSD パッチ入りの prudynt を入れる、操作側のサンプル
              common.sh                          対応ファームの判定 (違えば何も変更せず中止)
 NOTES.md   実装の詳細・設計判断・ハマりどころ・実測値の記録 (手順は書かない)
 dist/      ビルド成果物 (git 管理外)。配布は GitHub Releases (ffmpeg バイナリ単体) で行う
@@ -172,6 +176,57 @@ docker run --rm -v "$PWD/$SYSROOT":/sysroot:ro debian:stable-slim bash -c \
 # 出力に rtmps / tls が含まれていれば OK
 ```
 
+## (任意) 映像に任意のテキストを重ねる — prudynt の OSD パッチ
+
+配信映像に、時刻以外の**任意の複数行テキスト** (プログレスバーなどの ASCII アート) を焼き込み、
+カメラ上の別のプログラムから 0.5 秒単位で更新できるようにするパッチです。ffmpeg は stream copy
+なので、文字を載せられるのはエンコーダより前の prudynt (Thingino のストリーマ) だけです。
+標準の prudynt の burn-in OSD は時刻表示専用 (1 行・1 秒更新・大文字と数字だけの 5x7 フォント) なので、
+`patches/prudynt-osd-textfile.diff` で「tmpfs 上のテキストファイルの中身を映す OSD リージョン」を足します。
+設計と実測値は [NOTES.md](NOTES.md) の「OSD テキストオーバーレイ」、経緯は #17。
+
+```sh
+# 操作側 (カメラ上) がやることは「一時ファイルに書いて mv で置き換える」だけ
+printf 'UPLOAD job-42\n[##########----------] 50%%\n' > /run/prudynt/osd-text.tmp \
+  && mv /run/prudynt/osd-text.tmp /run/prudynt/osd-text
+```
+
+### ビルド
+
+上の「ビルド手順」の 1〜4 を済ませた `thingino-firmware/` で:
+
+```sh
+# prudynt のソースに当てるパッチは、Buildroot のパッケージディレクトリに置けば自動で適用される
+cp ../patches/prudynt-osd-textfile.diff package/prudynt-t/0001-osd-textfile.patch
+
+# フル ASCII の 8x8 フォントを有効にする (既定の 5x7 は大文字・数字と一部の記号だけ)。
+# user/ は Thingino のユーザー設定用ディレクトリで、Thingino 側でも git 管理外
+mkdir -p user/wyze_cam3_t31x_gc2053_atbm6031
+echo 'BR2_PACKAGE_PRUDYNT_T_OSD_FONT_8X8=y' >> user/wyze_cam3_t31x_gc2053_atbm6031/local.fragment
+
+# prudynt パッケージだけビルド (依存パッケージも育つので、初回は ffmpeg より時間がかかる)
+docker run --rm --user $(id -u):$(id -g) --network=host \
+  --volumes-from thingino-dl-cache \
+  -v "$PWD":/workspace -v "$PWD/overrides":/overrides -w /workspace \
+  -e BR2_DL_DIR=/dl \
+  ghcr.io/themactep/thingino-builder-image:latest \
+  bash -c "sudo update-alternatives --install /usr/bin/install install /usr/bin/gnuinstall 100 2>/dev/null; \
+           make CAMERA=wyze_cam3_t31x_gc2053_atbm6031 br-prudynt-t"
+# パッチやフォント設定を変えた後は br-prudynt-t-dirclean br-prudynt-t
+```
+
+成果物: `output/HEAD/wyze_cam3_t31x_gc2053_atbm6031-3.10.14-uclibc/per-package/prudynt-t/target/usr/bin/prudynt`
+
+### カメラへ入れる・使う
+
+ファームの焼き直しは不要です。手順と設定項目は [device/README.md](device/README.md) の
+「OSD テキストオーバーレイ」を参照:
+
+```sh
+device/install-prudynt-osd.sh root@<camera-ip> path/to/prudynt   # prudynt が再起動し、配信が数秒切れる
+ssh root@<camera-ip> osd-progress-demo 20                        # プログレスバーのデモ
+```
+
 ## カメラでの使い方
 
 まず `/tmp` で動作確認する (**`/tmp` は RAM 上なので再起動で消える = PoC 専用**。
@@ -225,6 +280,7 @@ scp -O ffmpeg root@<camera-ip>:/tmp/
 - [x] `install.sh` / `disable-netwatch.sh` の実機確認 (`da40db6`。新規インストール、配信中の再実行、
   netwatch 無効化後の状態)
 - [x] `da40db6` での長時間試験
+- [x] 映像に任意のテキストを重ねる prudynt の OSD パッチ (#17) — 実機で 0.5 秒更新・再起動後の自動有効化まで確認
 - [ ] `S37wifi-from-sd` の実機確認
 - [ ] Thingino パッケージとしての統合 / ファームウェア組み込み
   (将来的には Thingino の新ストリーマ [Raptor](https://github.com/gtxaspec/raptor) の

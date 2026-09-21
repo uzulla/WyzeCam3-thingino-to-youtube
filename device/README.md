@@ -11,6 +11,7 @@ Thingino 実機に置く supervisor 一式。`/etc` 以下は overlayfs でフ�
 | `install.sh` | (PC 側で実行) | 上記と ffmpeg を SSH 経由でまとめて入れるインストーラ。再実行可能。**このリポジトリのファイルを置くだけで、Thingino 側の設定やファーム更新には触らない** |
 | `disable-netwatch.sh` | (PC 側で実行) | Thingino の netwatch (ping 失敗で OS を再起動) を無効化する。OS 設定の変更なので `install.sh` とは別 (下記「netwatch」参照) |
 | `install-wifi-from-sd.sh` / `S37wifi-from-sd` | (PC 側で実行) / `/etc/init.d/S37wifi-from-sd` | **任意**。SD の `wpa_supplicant.conf` (複数の Wi-Fi 可) を起動時に適用する。OS 設定を書き換えるので `install.sh` とは別 (下記「Wi-Fi 設定も SD カードで運ぶ」参照) |
+| `install-prudynt-osd.sh` / `S30prudynt-osd` / `osd-progress-demo` | (PC 側で実行) / `/etc/init.d/S30prudynt-osd` / `/usr/sbin/osd-progress-demo` | **任意**。映像に任意のテキストを重ねられる prudynt (パッチ入り) を入れる。Thingino のストリーマを差し替えるので `install.sh` とは別 (下記「OSD テキストオーバーレイ」参照) |
 | `common.sh` | (PC 側の各スクリプトが読み込む) | 対応ファームの判定。カメラの `/etc/os-release` の `BUILD_ID` が **`ciao+da40db6`** でなければ何も変更せず中止する |
 
 ## 設定ファイルの探索順と「SD カードモード」
@@ -107,6 +108,76 @@ network={
 >   B は `S38` より前にファイルを置くのでこの問題は起きないはず
 > - 起動スクリプトの時点で SD がマウント済みか (B は最大 10 秒待つ)
 > - A は Thingino の公式ドキュメントに記載が無く、将来のファームで変わりうる
+
+## OSD テキストオーバーレイ (任意)
+
+配信映像に任意の複数行テキスト (プログレスバー等) を焼き込み、カメラ上の別のプログラムから
+更新する機能。`patches/prudynt-osd-textfile.diff` を当ててビルドした prudynt が必要
+(ビルド手順はトップの README)。
+
+```sh
+./install-prudynt-osd.sh root@<camera-ip> path/to/prudynt
+```
+
+- **Thingino の `/usr/bin/prudynt` は上書きしない。** パッチ入りのバイナリを `/usr/bin/prudynt-osd` に
+  置き、起動スクリプト `S30prudynt-osd` (`S31prudynt` の直前) が `/usr/bin/prudynt` の上に bind mount する。
+  ファームの焼き直しは不要
+- インストール時に prudynt を再起動するので、**配信が数秒切れる** (supervisor が自動で再接続する)
+- バイナリはビルドしたファーム専用。`/etc/os-release` の `BUILD_ID` がインストール時と違っていたら
+  bind mount せず、標準の prudynt のまま起動する
+- 元に戻す: `service disable prudynt-osd` して再起動 (すぐ戻すなら
+  `service stop prudynt; /etc/init.d/S30prudynt-osd stop; service start prudynt`)。
+  完全に消すなら `/etc/init.d/S30prudynt-osd` `/usr/bin/prudynt-osd` `/usr/bin/prudynt-osd.build`
+  `/usr/sbin/osd-progress-demo` を削除する
+- Thingino を入れ直した/更新した後は、他のファイルと同じく入れ直しが必要 (新しいファームに合わせて
+  prudynt をビルドし直す)
+
+### 使い方
+
+```sh
+# 1. 有効化 (実行中の prudynt にだけ反映。再起動で無効に戻る)
+prudyntctl json '{"osd":{"textfile":{"enabled":true}}}'
+
+# 2. テキストを出す/書き換える: 一時ファイルに書いて mv で置き換える (0.1 秒以内に反映)
+printf 'UPLOAD job-42\n[##########----------] 50%%\n' > /run/prudynt/osd-text.tmp \
+  && mv /run/prudynt/osd-text.tmp /run/prudynt/osd-text
+
+# 3. 消す: ファイルを消す (空にしても同じ)
+rm /run/prudynt/osd-text
+```
+
+- `/run` は tmpfs なので、何度書き換えてもフラッシュは減らない。**必ず `mv` で置き換える**
+  (直接 `>` で書くと、書きかけの内容が一瞬映ることがある)
+- prudynt は 0.1 秒ごとにファイルの inode / mtime / サイズを見て、変わった時だけ描き直す。
+  内容が同じなら描き直さない
+- 表示できるのは ASCII (8x8 フォント)。桁数・行数を超えた分は切り捨て。タブや制御文字は空白になる
+- `osd-progress-demo [秒数]` が 0.5 秒更新のプログレスバーのサンプル (`osd_text` / `osd_clear` / `bar` の
+  シェル関数はそのまま流用できる)
+
+### 設定 (`osd.textfile.*`)
+
+`prudyntctl json '{"osd":{"textfile":{...}}}'` で実行中に変えられる。現在値は
+`prudyntctl json '{"osd":{"textfile":null}}'`。
+
+| キー | 既定値 | 意味 |
+|---|---|---|
+| `enabled` | `false` | 表示する |
+| `substream_disabled` | `true` | サブストリーム (ch1) には出さない |
+| `path` | `/run/prudynt/osd-text` | 映すファイル |
+| `scale` | `0` | 文字の倍率 1〜10。0 = 自動 (映像の幅 / 480。720p で 2、1080p で 4) |
+| `cols` / `rows` | `40` / `4` | 最大の桁数 / 行数 (1〜128 / 1〜32)。**リージョンは常にこのサイズで確保される** |
+| `pos_x` / `pos_y` | `8` / `-8` | 位置 (px)。0 以上は左/上端から、負の値は右/下端からの距離。既定は左下 |
+| `fill_color` | `#ffffffff` | 文字色 `#RRGGBBAA` |
+| `outline_color` | `#00000000` | 縁取りの色。alpha が 0 なら縁取りなし (既定) |
+| `background_color` | `#00000080` | 背景ボックスの色。alpha が 0 なら背景なし |
+
+- リージョンが映像からはみ出す設定は、scale → 桁数 → 行数の順に自動で縮める (`logread` に警告が出る)
+- 常用するなら `/etc/prudynt.json` の `osd.textfile` に書く。このリポジトリのスクリプトは prudynt の
+  設定ファイルを書き換えない (`prudyntctl json` に `save_config` を送ればフラッシュに保存されるが、
+  スクリプトからは送っていない)
+- リージョンが大きすぎて OSD プールに入らないと `logread` に `IMP_OSD_SetRgnAttr failed` が出て
+  表示されない。`scale` / `cols` / `rows` を下げるか、`/etc/prudynt.json` の `general.osd_pool_size`
+  (KB) を上げて prudynt を再起動する
 
 ## 設計 (Thingino の流儀に準拠)
 

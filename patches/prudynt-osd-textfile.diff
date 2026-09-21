@@ -1,0 +1,742 @@
+diff --git c/src/config/Config.cpp i/src/config/Config.cpp
+index cefac45..f29e75d 100644
+--- c/src/config/Config.cpp
++++ i/src/config/Config.cpp
+@@ -332,6 +332,9 @@ std::vector<ConfigItem<bool>> CFG::getBoolItems() {
+       {"osd.burnin.enabled", osd.burnin.enabled, true, validateBool},
+       {"osd.burnin.substream_disabled", osd.burnin.substream_disabled, false,
+        validateBool},
++      {"osd.textfile.enabled", osd.textfile.enabled, false, validateBool},
++      {"osd.textfile.substream_disabled", osd.textfile.substream_disabled,
++       true, validateBool},
+       {"stream1.audio_enabled", stream1.audio_enabled, true, validateBool},
+       {"stream1.enabled", stream1.enabled, true, validateBool},
+       {"stream1.allow_shared", stream1.allow_shared, true, validateBool},
+@@ -469,6 +472,14 @@ std::vector<ConfigItem<const char *>> CFG::getCharItems() {
+        validateCharNotEmpty},
+       {"osd.burnin.background_color", osd.burnin.background_color, "#00000080",
+        validateCharNotEmpty},
++      {"osd.textfile.path", osd.textfile.path, "/run/prudynt/osd-text",
++       validateCharNotEmpty},
++      {"osd.textfile.fill_color", osd.textfile.fill_color, "#ffffffff",
++       isValidHexColor},
++      {"osd.textfile.outline_color", osd.textfile.outline_color, "#00000000",
++       isValidHexColor},
++      {"osd.textfile.background_color", osd.textfile.background_color,
++       "#00000080", isValidHexColor},
+ #if defined(WEBSOCKET_ENABLED)
+       {"websocket.name", websocket.name, "wss prudynt", validateCharNotEmpty},
+       {"websocket.token", websocket.token, "auto",
+@@ -520,6 +531,16 @@ std::vector<ConfigItem<int>> CFG::getIntItems() {
+        [](const int &v) { return v >= 0 && v <= 65536; }},
+       {"osd.burnin.scale", osd.burnin.scale, 0,
+        [](const int &v) { return v >= 0 && v <= kBurninMaxScale; }},
++      {"osd.textfile.scale", osd.textfile.scale, 0,
++       [](const int &v) { return v >= 0 && v <= kBurninMaxScale; }},
++      {"osd.textfile.cols", osd.textfile.cols, 40,
++       [](const int &v) { return v >= 1 && v <= kTextfileMaxCols; }},
++      {"osd.textfile.rows", osd.textfile.rows, 4,
++       [](const int &v) { return v >= 1 && v <= kTextfileMaxRows; }},
++      {"osd.textfile.pos_x", osd.textfile.pos_x, 8,
++       [](const int &v) { return v >= -8192 && v <= 8192; }},
++      {"osd.textfile.pos_y", osd.textfile.pos_y, -8,
++       [](const int &v) { return v >= -8192 && v <= 8192; }},
+ 
+       {"image.ae_compensation", image.ae_compensation, 128, validateInt255},
+       /* Expert overrides preserved for backward compatibility */
+diff --git c/src/config/Config.hpp i/src/config/Config.hpp
+index fb30ab0..b159c73 100644
+--- c/src/config/Config.hpp
++++ i/src/config/Config.hpp
+@@ -206,6 +206,8 @@ struct _privacy {
+ };
+ 
+ constexpr int kBurninMaxScale = 10;
++constexpr int kTextfileMaxCols = 128;
++constexpr int kTextfileMaxRows = 32;
+ 
+ struct _osd {
+   _stream_stats stats;
+@@ -222,6 +224,21 @@ struct _osd {
+     const char *fill_color;
+     const char *outline_color;
+   } burnin;
++  // Text-file overlay: a second burn-in region that shows the contents of a
++  // (tmpfs) text file, re-rendered whenever the file changes. See OSD.cpp.
++  struct {
++    bool enabled;
++    bool substream_disabled;
++    const char *path;
++    int scale;
++    int cols;
++    int rows;
++    int pos_x;
++    int pos_y;
++    const char *fill_color;
++    const char *outline_color;
++    const char *background_color;
++  } textfile;
+ };
+ struct _recorder {
+   bool enabled;
+diff --git c/src/config/JsonAPI.cpp i/src/config/JsonAPI.cpp
+index fb883cc..e679ae6 100644
+--- c/src/config/JsonAPI.cpp
++++ i/src/config/JsonAPI.cpp
+@@ -507,6 +507,44 @@ void handle_osd(JsonValue *obj, int idx, std::string &sect, bool &s2,
+     sect += "}";
+     wrote = true;
+   }
++
++  // textfile (text-file overlay, see OSD::updateTextfileOverlay)
++  if (JsonValue *node = obj_get(obj, "textfile");
++      node && (node->type == JSON_OBJECT || node->type == JSON_NULL)) {
++    const std::string base = std::string(root) + ".textfile.";
++    static const char *const boolKeys[] = {"enabled", "substream_disabled"};
++    static const char *const intKeys[] = {"scale", "cols", "rows", "pos_x",
++                                          "pos_y"};
++    static const char *const strKeys[] = {"path", "fill_color", "outline_color",
++                                          "background_color"};
++    if (node->type == JSON_OBJECT) {
++      for (const char *k : boolKeys)
++        if (JsonValue *v = obj_get(node, k); v && v->type == JSON_BOOL)
++          cfg->set<bool>(base + k, v->value.boolean != 0);
++      for (const char *k : intKeys)
++        if (JsonValue *v = obj_get(node, k); v && v->type == JSON_NUMBER)
++          cfg->set<int>(base + k, (int)v->value.number.integer);
++      for (const char *k : strKeys)
++        if (JsonValue *v = obj_get(node, k); v && v->type == JSON_STRING)
++          cfg->set<const char *>(base + k, v->value.string);
++    }
++    add_key(sect, s2, "textfile", "{");
++    bool sp = false;
++    for (const char *k : boolKeys) {
++      add_key(sect, sp, k);
++      add_bool(sect, cfg->get<bool>(base + k));
++    }
++    for (const char *k : intKeys) {
++      add_key(sect, sp, k);
++      add_num(sect, cfg->get<int>(base + k));
++    }
++    for (const char *k : strKeys) {
++      add_key(sect, sp, k);
++      add_str(sect, cfg->get<const char *>(base + k));
++    }
++    sect += "}";
++    wrote = true;
++  }
+ }
+ 
+ void handle_audio(JsonValue *obj, std::string &out, bool &sep) {
+diff --git c/src/video/OSD.cpp i/src/video/OSD.cpp
+index 500c5fb..dca76d2 100644
+--- c/src/video/OSD.cpp
++++ i/src/video/OSD.cpp
+@@ -920,6 +920,7 @@ int OSD::exit() {
+     ts_rgn_ = INVHANDLE;
+     ts_region_created_ = false;
+   }
++  destroyTextfileOverlay();
+ #ifdef USE_OSD_FONT_LIBSCHRIFT
+   shutdownTimestampFont();
+ #endif
+@@ -937,6 +938,12 @@ void OSD::updateDisplayEverySecond() {
+     loadElements();
+   }
+ 
++#ifdef OSD_BURN_TIMESTAMP
++  // Text-file overlay: checked on every tick (not once per second) so an
++  // external writer can update it at sub-second rates.
++  updateTextfileOverlay();
++#endif
++
+   current = time(nullptr);
+   ltime = localtime(&current);
+ 
+diff --git c/src/video/OSD.hpp i/src/video/OSD.hpp
+index e0ba5b2..e312520 100644
+--- c/src/video/OSD.hpp
++++ i/src/video/OSD.hpp
+@@ -14,8 +14,14 @@
+ #include <netinet/in.h>
+ #include <string>
+ #include <sys/sysinfo.h>
++#include <sys/types.h>
++#include <time.h>
+ #include <vector>
+ 
++#ifdef OSD_BURN_TIMESTAMP
++#include "video/OSDTextRender.hpp"
++#endif
++
+ #if defined(OSD_BURN_TIMESTAMP) && defined(USE_OSD_FONT_LIBSCHRIFT)
+ #include "schrift.h"
+ #include <unordered_map>
+@@ -156,6 +162,34 @@ private:
+   bool osd_group_started_{false};
+   std::string last_ts_text_;
+ 
++  // Text-file overlay (OSDTextfile.cpp): a separate region showing the
++  // contents of osd.textfile.path, polled from the OSD thread tick.
++  void updateTextfileOverlay();
++  void hideTextfileOverlay();
++  void destroyTextfileOverlay();
++  bool reloadTextfile(const std::string &path, int cols, int rows, bool force);
++
++  IMPRgnHandle tf_rgn_{INVHANDLE};
++  IMPOSDRgnAttr tf_attr_{};
++  std::vector<uint8_t> tf_buf_;          // BGRA pixel buffer for the region
++  std::vector<osdtext::Line> tf_lines_;  // text currently loaded from the file
++  std::string tf_path_;
++  osdtext::Layout tf_layout_{};          // wanted geometry (last tick)
++  osdtext::Colors tf_colors_{};
++  osdtext::Layout tf_attr_layout_{};     // geometry the region actually has
++  int tf_attr_x_{0};
++  int tf_attr_y_{0};
++  bool tf_region_created_{false};
++  bool tf_attr_set_{false};
++  bool tf_shown_{false};
++  bool tf_dirty_{true};
++  bool tf_failed_{false};
++  bool tf_create_error_logged_{false};
++  bool tf_file_seen_{false};
++  ino_t tf_file_ino_{0};
++  off_t tf_file_size_{0};
++  struct timespec tf_file_mtime_{};
++
+ #ifdef USE_OSD_FONT_LIBSCHRIFT
+   // Antialiased glyph bitmap, rasterized once per character and cached
+   // until ts_scale_ changes (osd.burnin.scale takes effect live).
+diff --git c/src/video/OSDTextRender.hpp i/src/video/OSDTextRender.hpp
+new file mode 100644
+index 0000000..1d2f16c
+--- /dev/null
++++ i/src/video/OSDTextRender.hpp
+@@ -0,0 +1,215 @@
++#pragma once
++// -- text-file overlay: layout + rasterizer ---------------------------
++// Pure helpers for OSD::updateTextfileOverlay() (OSDTextfile.cpp). No IMP
++// or config dependencies, so this header can be compiled and tested on a
++// host machine. Uses the same build-time bitmap font as the timestamp
++// overlay (util/OSDFont.hpp); the libschrift build falls back to the
++// bitmap font here because a fixed cell grid is what ASCII art needs.
++
++#include "util/OSDFont.hpp"
++#include <cstdint>
++#include <cstring>
++#include <vector>
++
++namespace osdtext {
++
++// One row of text, decoded to codepoints (one cell per codepoint).
++using Line = std::vector<uint32_t>;
++
++struct Layout {
++  int scale{1};
++  int cols{1};
++  int rows{1};
++  int width{0};  // region size in pixels (both even)
++  int height{0};
++
++  bool operator==(const Layout &o) const {
++    return scale == o.scale && cols == o.cols && rows == o.rows;
++  }
++  bool operator!=(const Layout &o) const { return !(*this == o); }
++};
++
++struct Colors {
++  uint8_t fill[4]{255, 255, 255, 255}; // B, G, R, A
++  uint8_t outline[4]{0, 0, 0, 0};      // alpha 0 = no outline
++  uint8_t background[4]{0, 0, 0, 128}; // alpha 0 = no background box
++};
++
++// Cell size in font pixels. 8-pixel-wide fonts already carry their own
++// inter-glyph spacing (and bars like "####" should tile seamlessly); the
++// 5x7 font needs a spacing column. Fonts up to 8 rows tall use the full
++// glyph height (descenders), so they get one row of leading; the 8x16
++// Unifont has its leading built in.
++constexpr int kCellW = osdfont::WIDTH >= 8 ? osdfont::WIDTH : osdfont::WIDTH + 1;
++constexpr int kCellH = osdfont::HEIGHT <= 8 ? osdfont::HEIGHT + 1 : osdfont::HEIGHT;
++
++inline int padding(int scale) { return scale * 2; }
++
++inline Layout makeLayout(int scale, int cols, int rows) {
++  Layout l;
++  l.scale = scale;
++  l.cols = cols;
++  l.rows = rows;
++  l.width = cols * kCellW * scale + padding(scale) * 2;
++  l.height = rows * kCellH * scale + padding(scale) * 2;
++  l.width += l.width & 1; // IMP regions expect even dimensions
++  l.height += l.height & 1;
++  return l;
++}
++
++inline size_t layoutBytes(const Layout &l) {
++  return (size_t)l.width * l.height * 4;
++}
++
++// Largest layout not exceeding the requested one that fits in a
++// maxW x maxH frame and in maxBytes of BGRA: shrink the scale first, then
++// the grid (columns for width, rows for height and bytes).
++inline Layout fitLayout(int scale, int cols, int rows, int maxW, int maxH,
++                        size_t maxBytes) {
++  Layout l = makeLayout(scale, cols, rows);
++  auto tooBig = [&]() {
++    return l.width > maxW || l.height > maxH || layoutBytes(l) > maxBytes;
++  };
++  while (tooBig() && scale > 1)
++    l = makeLayout(--scale, cols, rows);
++  while (l.width > maxW && cols > 1)
++    l = makeLayout(scale, --cols, rows);
++  while ((l.height > maxH || layoutBytes(l) > maxBytes) && rows > 1)
++    l = makeLayout(scale, cols, --rows);
++  while (layoutBytes(l) > maxBytes && cols > 1)
++    l = makeLayout(scale, --cols, rows);
++  return l;
++}
++
++// Split raw file bytes into at most `rows` lines of at most `cols` cells.
++// Accepts LF or CRLF, decodes UTF-8 (one cell per codepoint), expands
++// nothing: tabs and other control characters become blanks. Trailing
++// blank lines are dropped, so an empty or whitespace-only file yields an
++// empty vector (= overlay hidden).
++inline std::vector<Line> parseLines(const char *data, size_t len, int cols,
++                                    int rows) {
++  std::vector<Line> lines;
++  Line cur;
++  auto flush = [&]() {
++    if ((int)lines.size() < rows)
++      lines.push_back(cur);
++    cur.clear();
++  };
++  size_t i = 0;
++  while (i < len && (int)lines.size() < rows) {
++    unsigned char c = (unsigned char)data[i];
++    uint32_t cp;
++    size_t n = 1;
++    if (c < 0x80) {
++      cp = c;
++    } else if ((c & 0xE0) == 0xC0 && i + 1 < len) {
++      cp = ((uint32_t)(c & 0x1F) << 6) | (uint32_t)(data[i + 1] & 0x3F);
++      n = 2;
++    } else if ((c & 0xF0) == 0xE0 && i + 2 < len) {
++      cp = ((uint32_t)(c & 0x0F) << 12) | ((uint32_t)(data[i + 1] & 0x3F) << 6) |
++           (uint32_t)(data[i + 2] & 0x3F);
++      n = 3;
++    } else if ((c & 0xF8) == 0xF0 && i + 3 < len) {
++      cp = ((uint32_t)(c & 0x07) << 18) | ((uint32_t)(data[i + 1] & 0x3F) << 12) |
++           ((uint32_t)(data[i + 2] & 0x3F) << 6) | (uint32_t)(data[i + 3] & 0x3F);
++      n = 4;
++    } else {
++      cp = ' '; // malformed or truncated sequence
++    }
++    i += n;
++    if (cp == '\n') {
++      flush();
++      continue;
++    }
++    if (cp == '\r')
++      continue;
++    if (cp < 0x20 || cp == 0x7F)
++      cp = ' ';
++    if ((int)cur.size() < cols)
++      cur.push_back(cp);
++  }
++  if (!cur.empty())
++    flush();
++  auto blank = [](const Line &l) {
++    for (uint32_t cp : l)
++      if (cp != ' ')
++        return false;
++    return true;
++  };
++  while (!lines.empty() && blank(lines.back()))
++    lines.pop_back();
++  return lines;
++}
++
++// Rasterize `lines` into a BGRA buffer of layout.width x layout.height.
++// Colors are written as-is (no blending inside the buffer): background
++// first, then the outline (each glyph pixel dilated by max(1, scale/2) px
++// as a square), then the fill. The per-pixel alpha is applied by the IMP
++// OSD when it composites the region onto the frame.
++inline void render(const std::vector<Line> &lines, const Layout &l,
++                   const Colors &c, std::vector<uint8_t> &buf) {
++  const int w = l.width, h = l.height, scale = l.scale;
++  buf.resize((size_t)w * h * 4);
++  uint8_t *img = buf.data();
++
++  if (c.background[3] == 0) {
++    memset(img, 0, buf.size());
++  } else {
++    for (int i = 0; i < w; ++i)
++      memcpy(img + i * 4, c.background, 4);
++    for (int y = 1; y < h; ++y)
++      memcpy(img + (size_t)y * w * 4, img, (size_t)w * 4);
++  }
++
++  auto fillRect = [&](int x0, int y0, int x1, int y1, const uint8_t *color) {
++    if (x0 < 0) x0 = 0;
++    if (y0 < 0) y0 = 0;
++    if (x1 > w) x1 = w;
++    if (y1 > h) y1 = h;
++    for (int y = y0; y < y1; ++y) {
++      uint8_t *p = img + ((size_t)y * w + x0) * 4;
++      for (int x = x0; x < x1; ++x, p += 4)
++        memcpy(p, color, 4);
++    }
++  };
++
++  const int pad = padding(scale);
++  auto pass = [&](const uint8_t *color, int grow) {
++    int row = 0;
++    for (const Line &line : lines) {
++      if (row >= l.rows)
++        break;
++      const int oy = pad + row * kCellH * scale;
++      int col = 0;
++      for (uint32_t cp : line) {
++        if (col >= l.cols)
++          break;
++        const uint8_t *g = osdfont::glyphForCp(cp);
++        if (g) {
++          const int ox = pad + col * kCellW * scale;
++          for (int ry = 0; ry < osdfont::HEIGHT; ++ry) {
++            const uint8_t bits = g[ry];
++            if (!bits)
++              continue;
++            for (int rx = 0; rx < osdfont::WIDTH; ++rx) {
++              if (bits & osdfont::columnMask(rx)) {
++                const int x = ox + rx * scale, y = oy + ry * scale;
++                fillRect(x - grow, y - grow, x + scale + grow, y + scale + grow,
++                         color);
++              }
++            }
++          }
++        }
++        ++col;
++      }
++      ++row;
++    }
++  };
++
++  if (c.outline[3] != 0)
++    pass(c.outline, scale / 2 > 1 ? scale / 2 : 1);
++  if (c.fill[3] != 0)
++    pass(c.fill, 0);
++}
++
++} // namespace osdtext
+diff --git c/src/video/OSDTextfile.cpp i/src/video/OSDTextfile.cpp
+new file mode 100644
+index 0000000..8eceb53
+--- /dev/null
++++ i/src/video/OSDTextfile.cpp
+@@ -0,0 +1,306 @@
++// -- text-file overlay --------------------------------------------------
++// A second burned-in OSD region that shows the contents of a text file
++// (osd.textfile.path, meant to live on tmpfs). Another program updates the
++// overlay by replacing that file (write a temp file, then rename); this
++// code polls the file's identity/mtime on every OSD thread tick (100 ms)
++// and re-renders only when the contents or the settings changed.
++//
++// Kept apart from the timestamp overlay (renderTimestamp() /
++// updateTimestampOverlay() in OSD.cpp) on purpose: own region, own buffer,
++// own renderer. An empty or missing file hides the region.
++
++#ifdef OSD_BURN_TIMESTAMP
++
++#include "video/OSD.hpp"
++#include "video/OSDTextRender.hpp"
++#include "config/Config.hpp"
++#include "util/Logger.hpp"
++#include <algorithm>
++#include <cerrno>
++#include <fcntl.h>
++#include <sys/stat.h>
++#include <unistd.h>
++
++namespace {
++
++// Upper bound on the bytes read from the text file: the largest grid
++// (kTextfileMaxCols x kTextfileMaxRows) of 4-byte UTF-8 plus line ends.
++constexpr size_t kMaxFileBytes =
++    (size_t)kTextfileMaxRows * (kTextfileMaxCols * 4 + 2);
++
++// Bytes of the IMP OSD pool this overlay may use. libimp gives no error when
++// a region does not fit in the pool -- IMP_OSD_SetRgnAttr() returns 0 and the
++// region just never shows up (seen on T31: with the 616 KB pool of a 720p
++// stream a 562 KB region works, a 660 KB one silently disappears) -- so the
++// size has to be limited up front. Mirrors the pool size set in
++// IMPSystem.cpp, minus this stream's timestamp region (`used`, which can be
++// most of the pool at osd.burnin.scale 10) and a fixed reserve for the
++// regions of the other stream's OSD, which this object cannot see.
++size_t textfilePoolBudget(size_t used) {
++  const size_t kReservedBytes = 48 * 1024 + used;
++  size_t pool_kb;
++  if (cfg->general.osd_pool_size > 0) {
++    pool_kb = (size_t)cfg->general.osd_pool_size;
++  } else {
++    int max_pixels = 0;
++    for (auto *s : {&cfg->stream0, &cfg->stream1, &cfg->stream2, &cfg->stream3})
++      if (s->enabled)
++        max_pixels = std::max(max_pixels, s->width * s->height);
++    pool_kb = (size_t)((max_pixels * 4 * 0.1) / 1024 + 256);
++  }
++  size_t bytes = pool_kb * 1024;
++  return bytes > kReservedBytes ? bytes - kReservedBytes : 0;
++}
++
++// "#RRGGBBAA" -> B, G, R, A. Leaves `bgra` untouched on malformed input.
++void parseColor(const char *hex, uint8_t bgra[4]) {
++  if (!hex || hex[0] != '#' || strlen(hex) != 9)
++    return;
++  int v[8];
++  for (int i = 0; i < 8; ++i) {
++    char ch = hex[i + 1];
++    if (ch >= '0' && ch <= '9') v[i] = ch - '0';
++    else if (ch >= 'a' && ch <= 'f') v[i] = ch - 'a' + 10;
++    else if (ch >= 'A' && ch <= 'F') v[i] = ch - 'A' + 10;
++    else return;
++  }
++  bgra[0] = (uint8_t)(v[4] << 4 | v[5]);
++  bgra[1] = (uint8_t)(v[2] << 4 | v[3]);
++  bgra[2] = (uint8_t)(v[0] << 4 | v[1]);
++  bgra[3] = (uint8_t)(v[6] << 4 | v[7]);
++}
++
++// pos >= 0: distance of the region's near edge from the left/top.
++// pos <  0: distance of the region's far edge from the right/bottom.
++// Clamped into the frame and rounded down to an even pixel.
++int resolvePos(int pos, int size, int frame) {
++  int p = pos >= 0 ? pos : frame + pos - size;
++  p = std::clamp(p, 0, std::max(0, frame - size));
++  return p & ~1;
++}
++
++} // namespace
++
++void OSD::hideTextfileOverlay() {
++  if (tf_region_created_ && tf_shown_) {
++    IMP_OSD_ShowRgn(tf_rgn_, osdGrp, 0);
++    tf_shown_ = false;
++  }
++}
++
++void OSD::destroyTextfileOverlay() {
++  if (tf_region_created_) {
++    IMP_OSD_ShowRgn(tf_rgn_, osdGrp, 0);
++    IMP_OSD_UnRegisterRgn(tf_rgn_, osdGrp);
++    IMP_OSD_DestroyRgn(tf_rgn_);
++    tf_rgn_ = INVHANDLE;
++    tf_region_created_ = false;
++    tf_attr_set_ = false;
++    tf_shown_ = false;
++    tf_dirty_ = true;
++  }
++}
++
++// Reload tf_lines_ from the file if its identity or mtime changed.
++// Returns true when the parsed text differs from what was loaded before.
++bool OSD::reloadTextfile(const std::string &path, int cols, int rows,
++                         bool force) {
++  struct stat st;
++  if (stat(path.c_str(), &st) != 0 || !S_ISREG(st.st_mode)) {
++    bool changed = !tf_lines_.empty();
++    tf_lines_.clear();
++    tf_file_seen_ = false;
++    return changed;
++  }
++  if (!force && tf_file_seen_ && st.st_ino == tf_file_ino_ &&
++      st.st_size == tf_file_size_ && st.st_mtim.tv_sec == tf_file_mtime_.tv_sec &&
++      st.st_mtim.tv_nsec == tf_file_mtime_.tv_nsec)
++    return false;
++
++  // Any failure below leaves the remembered identity alone, so the next
++  // tick simply tries again.
++  int fd = open(path.c_str(), O_RDONLY | O_NONBLOCK | O_CLOEXEC);
++  if (fd < 0)
++    return false;
++  // Record the identity of the file actually opened, not of the one
++  // stat()ed above: a rename may have replaced it in between.
++  if (fstat(fd, &st) != 0 || !S_ISREG(st.st_mode)) {
++    close(fd);
++    return false;
++  }
++  std::vector<char> data(kMaxFileBytes);
++  size_t got = 0;
++  bool read_ok = true;
++  while (got < data.size()) {
++    ssize_t n = read(fd, data.data() + got, data.size() - got);
++    if (n > 0) {
++      got += (size_t)n;
++    } else if (n == 0) {
++      break;
++    } else if (errno != EINTR) {
++      read_ok = false;
++      break;
++    }
++  }
++  close(fd);
++  if (!read_ok)
++    return false;
++  std::vector<osdtext::Line> lines =
++      osdtext::parseLines(data.data(), got, cols, rows);
++  tf_file_seen_ = true;
++  tf_file_ino_ = st.st_ino;
++  tf_file_size_ = st.st_size;
++  tf_file_mtime_ = st.st_mtim;
++
++  if (lines == tf_lines_)
++    return false;
++  tf_lines_ = std::move(lines);
++  return true;
++}
++
++void OSD::updateTextfileOverlay() {
++  const bool enabled = cfg && cfg->osd.textfile.enabled &&
++                       !(is_substream_ && cfg->osd.textfile.substream_disabled);
++  if (!enabled) {
++    hideTextfileOverlay();
++    return;
++  }
++
++  // Snapshot the settings; everything below works on the copies.
++  const std::string path = cfg->osd.textfile.path ? cfg->osd.textfile.path : "";
++  int scale = cfg->osd.textfile.scale;
++  if (scale <= 0)
++    scale = stream_width / 480; // same auto rule as osd.burnin.scale
++  scale = std::clamp(scale, 1, kBurninMaxScale);
++  const int cols = std::clamp(cfg->osd.textfile.cols, 1, kTextfileMaxCols);
++  const int rows = std::clamp(cfg->osd.textfile.rows, 1, kTextfileMaxRows);
++  osdtext::Colors colors;
++  parseColor(cfg->osd.textfile.fill_color, colors.fill);
++  parseColor(cfg->osd.textfile.outline_color, colors.outline);
++  parseColor(cfg->osd.textfile.background_color, colors.background);
++
++  const size_t ts_bytes =
++      ts_region_created_ ? (size_t)ts_width_ * ts_height_ * 4 : 0;
++
++  // The region is always allocated at the full cols x rows size so that a
++  // text update is only an IMP_OSD_UpdateRgnAttrData() (no reallocation).
++  const osdtext::Layout layout =
++      osdtext::fitLayout(scale, cols, rows, stream_width, stream_height,
++                         textfilePoolBudget(ts_bytes));
++  const int x = resolvePos(cfg->osd.textfile.pos_x, layout.width, stream_width);
++  const int y = resolvePos(cfg->osd.textfile.pos_y, layout.height, stream_height);
++
++  const bool layout_changed = layout != tf_layout_;
++  const bool colors_changed = memcmp(&colors, &tf_colors_, sizeof(colors)) != 0;
++  const bool path_changed = path != tf_path_;
++  if (layout_changed) {
++    // New geometry: worth another attempt, unless even the smallest grid
++    // is over the pool budget (general.osd_pool_size set absurdly low).
++    tf_failed_ = osdtext::layoutBytes(layout) > textfilePoolBudget(ts_bytes);
++    if (layout.scale != scale || layout.cols != cols || layout.rows != rows)
++      LOG_WARN("OSD: textfile overlay (scale " << scale << ", " << cols << "x"
++               << rows << " cells) does not fit the " << stream_width << "x"
++               << stream_height << " frame or the OSD pool ("
++               << (textfilePoolBudget(ts_bytes) / 1024) << " KB usable, see "
++               "general.osd_pool_size); reduced to scale " << layout.scale
++               << ", " << layout.cols << "x" << layout.rows << " cells");
++  }
++
++  const bool text_changed = reloadTextfile(path, layout.cols, layout.rows,
++                                           path_changed || layout_changed);
++  tf_path_ = path;
++  tf_layout_ = layout;
++  tf_colors_ = colors;
++  // Sticky across ticks: changes that arrive while the overlay is hidden
++  // (empty file) must still be rendered once it is shown again.
++  tf_dirty_ = tf_dirty_ || layout_changed || colors_changed || text_changed;
++
++  if (tf_lines_.empty() || tf_failed_) {
++    hideTextfileOverlay();
++    return;
++  }
++
++  const bool rendered = tf_dirty_ || tf_buf_.empty();
++  if (rendered) {
++    osdtext::render(tf_lines_, layout, colors, tf_buf_);
++    tf_dirty_ = false;
++  }
++
++  if (!tf_region_created_) {
++    // Like the timestamp overlay, the region can only be registered once
++    // IMPEncoder has created the OSD group, i.e. from the periodic update.
++    tf_rgn_ = IMP_OSD_CreateRgn(nullptr);
++    if (tf_rgn_ == INVHANDLE) {
++      // Retried on the next tick (the OSD group may not be up yet).
++      if (!tf_create_error_logged_)
++        LOG_ERROR("OSD: IMP_OSD_CreateRgn failed for textfile overlay");
++      tf_create_error_logged_ = true;
++      return;
++    }
++    tf_create_error_logged_ = false;
++    IMP_OSD_RegisterRgn(tf_rgn_, osdGrp, nullptr);
++    tf_region_created_ = true;
++  }
++
++  // Geometry the region currently has vs. the one wanted now.
++  const bool attr_stale = !tf_attr_set_ || tf_attr_layout_ != layout ||
++                          tf_attr_x_ != x || tf_attr_y_ != y;
++  if (rendered || attr_stale) {
++    if (attr_stale) {
++      memset(&tf_attr_, 0, sizeof(tf_attr_));
++      tf_attr_.type = OSD_REG_PIC;
++      tf_attr_.fmt = PIX_FMT_BGRA;
++      tf_attr_.rect.p0.x = x;
++      tf_attr_.rect.p0.y = y;
++      tf_attr_.rect.p1.x = x + layout.width - 1;
++      tf_attr_.rect.p1.y = y + layout.height - 1;
++      tf_attr_.data.picData.pData = tf_buf_.data();
++      int ret = IMP_OSD_SetRgnAttr(tf_rgn_, &tf_attr_);
++      if (ret != 0) {
++        // Most likely the OSD pool is too small for this region; see
++        // general.osd_pool_size. Do not retry until the geometry changes.
++        LOG_ERROR("OSD: IMP_OSD_SetRgnAttr failed (" << ret
++                  << ") for textfile overlay " << layout.width << "x"
++                  << layout.height << " (" << (layout.width * layout.height * 4 / 1024)
++                  << " KB); reduce osd.textfile.scale/cols/rows or raise "
++                     "general.osd_pool_size");
++        tf_failed_ = true;
++        tf_attr_set_ = false;
++        hideTextfileOverlay();
++        return;
++      }
++      if (!tf_attr_set_) {
++        IMPOSDGrpRgnAttr grp;
++        memset(&grp, 0, sizeof(grp));
++        grp.show = 1;
++        grp.layer = 3; // above the privacy cover (1) and the timestamp (2)
++        grp.gAlphaEn = 1; // per-pixel alpha blending
++        grp.fgAlhpa = 255;
++        grp.bgAlhpa = 0;
++        IMP_OSD_SetGrpRgnAttr(tf_rgn_, osdGrp, &grp);
++        if (!osd_group_started_) {
++          IMP_OSD_Start(osdGrp);
++          osd_group_started_ = true;
++        }
++        tf_shown_ = true;
++      }
++      tf_attr_set_ = true;
++      tf_attr_layout_ = layout;
++      tf_attr_x_ = x;
++      tf_attr_y_ = y;
++      LOG_INFO("OSD: textfile overlay " << layout.width << "x" << layout.height
++               << " at " << x << "," << y << " (scale " << layout.scale << ", "
++               << layout.cols << "x" << layout.rows << " cells)");
++    } else {
++      tf_attr_.data.picData.pData = tf_buf_.data();
++      IMP_OSD_UpdateRgnAttrData(tf_rgn_, &tf_attr_.data);
++    }
++  }
++
++  if (!tf_shown_) {
++    IMP_OSD_ShowRgn(tf_rgn_, osdGrp, 1);
++    tf_shown_ = true;
++  }
++}
++
++#endif // OSD_BURN_TIMESTAMP

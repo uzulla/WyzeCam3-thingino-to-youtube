@@ -1,0 +1,68 @@
+#!/bin/sh
+# osd-progress-demo - example writer for the prudynt text-file overlay.
+# Runs ON THE CAMERA (busybox sh). Needs a prudynt built with
+# patches/prudynt-osd-textfile.diff (see the top-level README).
+#
+#   osd-progress-demo [seconds]     # default 30; draws a progress bar, then clears
+#
+# The whole contract with prudynt is: put the text in a file on tmpfs and
+# replace it atomically (write a temp file, then mv). prudynt notices the new
+# file within 100 ms and redraws. An empty or missing file hides the overlay.
+# Nothing here is written to flash (no save_config), so a prudynt restart or a
+# reboot goes back to "overlay off".
+
+OSD_FILE=${OSD_FILE:-/run/prudynt/osd-text}
+COLS=40 # must not exceed osd.textfile.cols (longer lines are cut off)
+
+# osd_text - show stdin on the overlay
+osd_text() {
+	cat >"$OSD_FILE.tmp" && mv "$OSD_FILE.tmp" "$OSD_FILE"
+}
+
+# osd_clear - hide the overlay
+osd_clear() {
+	rm -f "$OSD_FILE" "$OSD_FILE.tmp"
+}
+
+# bar <percent> <width> - print [#####-----]
+bar() {
+	filled=$(($1 * $2 / 100))
+	b=""
+	i=0
+	while [ $i -lt "$2" ]; do
+		if [ $i -lt $filled ]; then b="$b#"; else b="$b-"; fi
+		i=$((i + 1))
+	done
+	printf '[%s]' "$b"
+}
+
+TOTAL=${1:-30}
+STEPS=$((TOTAL * 2)) # one update every 0.5 s
+
+trap 'osd_clear; exit 0' INT TERM
+prudyntctl json '{"osd":{"textfile":{"enabled":true}}}' >/dev/null || {
+	echo "prudyntctl failed - is prudynt running?" >&2
+	exit 1
+}
+case $(prudyntctl json '{"osd":{"textfile":null}}') in
+*'"enabled":true'*) ;;
+*)
+	echo "this prudynt has no osd.textfile support (not built with the patch)" >&2
+	exit 1
+	;;
+esac
+
+n=0
+while [ $n -le $STEPS ]; do
+	pct=$((n * 100 / STEPS))
+	{
+		echo "DEMO JOB  $(date +%T)"
+		echo "$(bar $pct $((COLS - 8))) $pct%"
+		echo "step $n/$STEPS"
+	} | osd_text
+	n=$((n + 1))
+	usleep 500000
+done
+
+sleep 2
+osd_clear

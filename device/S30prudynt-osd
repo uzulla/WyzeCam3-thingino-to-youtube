@@ -1,0 +1,68 @@
+#!/bin/sh
+# Swap in the prudynt build with the text-file OSD overlay (patches/prudynt-osd-textfile.diff).
+# Install to /etc/init.d/S30prudynt-osd (chmod +x) - runs just before S31prudynt.
+#
+# Thingino's own /usr/bin/prudynt is left untouched: our binary lives next to it
+# as /usr/bin/prudynt-osd and is bind-mounted over it at boot. To go back to the
+# stock prudynt: "service disable prudynt-osd" (or delete this file) and reboot,
+# or right away:  /etc/init.d/S30prudynt-osd stop && service restart prudynt
+#
+# The binary only fits the firmware it was built for, so it is used only while
+# /etc/os-release still shows the BUILD_ID recorded at install time.
+
+OURS="/usr/bin/prudynt-osd"
+STOCK="/usr/bin/prudynt"
+TAG="prudynt-osd"
+
+mounted() {
+	grep -q " $STOCK " /proc/mounts
+}
+
+start() {
+	echo -n "Starting $TAG: "
+	if mounted; then
+		echo "SKIP (already mounted)"
+		return 0
+	fi
+	if [ ! -x "$OURS" ] || [ ! -f "$OURS.build" ]; then
+		echo "SKIP ($OURS not installed)"
+		return 0
+	fi
+	build=$(. /etc/os-release && echo "${BUILD_ID%%,*}")
+	if [ "$build" != "$(cat "$OURS.build")" ]; then
+		echo "SKIP (built for $(cat "$OURS.build"), firmware is $build)"
+		logger -p daemon.warning -t "$TAG" "firmware is $build, binary was built for $(cat "$OURS.build"): using stock prudynt"
+		return 0
+	fi
+	if mount --bind "$OURS" "$STOCK"; then
+		echo "OK"
+	else
+		echo "FAIL"
+		logger -p daemon.err -t "$TAG" "bind mount failed: using stock prudynt"
+	fi
+}
+
+stop() {
+	echo -n "Stopping $TAG: "
+	if mounted; then
+		umount "$STOCK" && echo "OK" || echo "FAIL"
+	else
+		echo "SKIP (not mounted)"
+	fi
+}
+
+case "$1" in
+	start) start ;;
+	stop) stop ;;
+	restart)
+		stop
+		start
+		;;
+	status)
+		if mounted; then echo "$TAG: active ($OURS is mounted over $STOCK)"; else echo "$TAG: inactive (stock prudynt)"; fi
+		;;
+	*)
+		echo "Usage: $0 {start|stop|restart|status}"
+		exit 1
+		;;
+esac
