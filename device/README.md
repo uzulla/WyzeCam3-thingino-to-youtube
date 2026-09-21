@@ -183,6 +183,7 @@ Thingino はルート全体が overlayfs (SquashFS + JFFS2 データパーティ
 |---|---|---|
 | `ffmpeg_opts` | `-i` の**前** (入力オプション) | `-timeout 5000000` |
 | `ffmpeg_out_opts` | `-i` の**後** (出力オプション) | `-map 0:v:0 -map 0:a:0` |
+| `ffmpeg_loglevel` | `-loglevel` の値 (省略時 `error`) | `warning` |
 
 `install.sh` / `disable-netwatch.sh` は**特定のファーム (`ciao+da40db6`) 決め打ち**で、カメラの
 `/etc/os-release` が違えば何も変更せずに止まる。ffmpeg はそのファームの toolchain でビルドした
@@ -293,6 +294,29 @@ youtube-relay: Started, watching for config: /mnt/mmcblk0p1/youtube-relay.json /
 youtube-relay: Starting ffmpeg -> rtmps://.../REDACTED (config: ..., ffmpeg: ...)
 ```
 
+ffmpeg 自身の出力 (stderr) も `youtube-relay: ffmpeg: ...` として同じログに出る。通常は
+`-loglevel error` なのでエラー時だけ。**起動から 60 秒もたずに落ちた場合は、次の 1 回だけ
+`-loglevel debug` で起動し直し、接続まわりの行 (`[tcp]` / `[tls]` / `[rtmps]` とエラー行) だけを
+記録する** (失敗が続いても 1 回だけ。60 秒以上配信できたらリセット)。どこまで進んで切られたかが分かる:
+
+```text
+youtube-relay: ffmpeg exited (rc=251) after 6s, restarting in 4s
+youtube-relay: Starting ffmpeg -> rtmps://.../REDACTED (config: ..., ffmpeg: ..., loglevel debug to diagnose the failure)
+youtube-relay: ffmpeg: [tcp @ ...] Successfully connected to 2404:6800:... port 443
+youtube-relay: ffmpeg: [rtmps @ ...] Handshaking...
+youtube-relay: ffmpeg: [rtmps @ ...] Server version 4.0.0.1
+youtube-relay: ffmpeg: [rtmps @ ...] Sending publish command for 'REDACTED'
+youtube-relay: ffmpeg: [out#0/flv @ ...] Error opening output rtmps://.../REDACTED: Input/output error
+```
+
+- 上の例 (`Sending publish command` の直後に `Input/output error`) は、**TLS も RTMP も通っていて
+  YouTube が publish を拒否している**状態。キー違い、配信枠が終了済み、同じキーで別のエンコーダが
+  配信中、など YouTube 側を確認する。`Successfully connected ... port 443` まで行かなければ
+  ネットワーク/DNS、`Handshaking...` の前後で止まれば TLS の問題
+- ストリームキーと RTSP の認証情報は `REDACTED` に置き換えてから記録する
+- 1 回の ffmpeg 起動につき最大 60 行 (超えた分は捨てる)。`ffmpeg_loglevel` を `warning` 以上に
+  すると `Invalid DTS` 警告で枠がすぐ埋まる点に注意
+
 最終確認は YouTube Studio のプレビュー (映像と音声メーターが動いていること)。
 
 ### 症状別
@@ -301,7 +325,7 @@ youtube-relay: Starting ffmpeg -> rtmps://.../REDACTED (config: ..., ffmpeg: ...
 |---|---|
 | `No usable config, standing by` | 設定が見つからない。`mount \| grep mmcblk` で SD がマウントされているか、`ls /mnt/mmcblk0p1/` にファイルがあるか、ファイル名が `youtube-relay.json` か、`jct <path> get stream_key` で読めるか (JSON 構文エラーだと読めない)、`"enabled": false` になっていないかを順に確認 |
 | `No ffmpeg binary with rtmps support found, standing by` | Thingino を入れ直した/更新した後なら `/usr/bin/ffmpeg` ごと消えている → `install.sh` で入れ直す。ファイルはあるのにこれが出る場合は、そのバイナリが今のファームで起動できていない (toolchain 世代の不一致。`/usr/bin/ffmpeg -version` を手で実行して確認)。また**再起動で `/tmp/ffmpeg` は消える**。`/usr/bin/ffmpeg` へ常設するか SD に置く。設定の `ffmpeg_bin` が存在しないパスを指している場合も同じ (行を消せば自動探索になる)。ffmpeg を置けば30秒以内に自動で拾う (supervisor 再起動不要) |
-| `ffmpeg exited (rc=1) after 0〜2s` を繰り返す | ffmpeg が即死している。RTSP の URL/認証ミス、YouTube 側のキー間違い、DNS/ネットワーク未接続が典型。下記「ffmpeg のエラーを直接見る」で原因を特定 |
+| `ffmpeg exited (rc=...) after 数秒` を繰り返す | ffmpeg が即死している。RTSP の URL/認証ミス、YouTube 側のキー間違い・配信枠の終了、DNS/ネットワーク未接続が典型。直前の `ffmpeg:` 行 (上記。失敗 2 回目の起動が debug で詳しい) で原因を特定。`rc=251` は I/O エラー (-5) で、YouTube に publish を拒否されたときもこれ |
 | `ffmpeg exited` が数十秒〜数分間隔 | 接続は成立するが切断されている。Wi-Fi 品質、YouTube 側の一時的な切断など。supervisor が自動復帰させるので、頻度が低ければ実害はない |
 | status が `not running` | `service enable youtube-relay` で有効化されているか (`ls -la /etc/init.d/S93youtube-relay` で実行ビット確認)、`/run/portal_mode` が無いか (Wi-Fi 未設定モード)。手動起動は `/etc/init.d/S93youtube-relay start` |
 | SD を挿してもマウントされない | `logread \| grep automount` を確認。fsck 失敗や非対応フォーマットの可能性。FAT32 でフォーマットし直す |
@@ -313,7 +337,7 @@ youtube-relay: Starting ffmpeg -> rtmps://.../REDACTED (config: ..., ffmpeg: ...
 
 ### ffmpeg のエラーを直接見る
 
-supervisor は `-loglevel error` で静かに動かすため、原因調査時は手動で1回実行する:
+supervisor のログ (`ffmpeg:` 行) で足りない場合は、手動で1回実行する:
 
 ```sh
 /etc/init.d/S93youtube-relay stop

@@ -50,6 +50,32 @@ ffmpeg_supports() {
 		END { exit !found }'
 }
 
+# ffmpeg's stderr -> syslog, so "why did it exit" is answered by logread.
+# Reads stdin; $1 = 1 for a diagnostic (-loglevel debug) run, where only the
+# connection-level lines are kept (debug prints ~100 lines per start).
+# - the stream key and RTSP credentials never reach the log
+# - at most FFMPEG_LOG_MAX lines per ffmpeg run; the rest is read and dropped
+#   (never stop reading: ffmpeg would die of SIGPIPE, or block on a full pipe)
+FFMPEG_LOG_MAX=60
+ffmpeg_log() {
+	SECRET="$STREAM_KEY" awk -v diag="$1" -v max="$FFMPEG_LOG_MAX" '
+		n > max { next }
+		diag && $0 !~ /^\[(rtmps?|tls|tcp)[^]]*\] |rror/ { next }
+		diag && / Address |list of addresses|whitelist/ { next }
+		{
+			k = ENVIRON["SECRET"]
+			if (k != "")
+				while ((i = index($0, k)) > 0)
+					$0 = substr($0, 1, i - 1) "REDACTED" substr($0, i + length(k))
+			gsub(/:\/\/[^@\/ ]*@/, "://REDACTED@")
+			if (++n > max)
+				$0 = "(more output suppressed)"
+			print "ffmpeg: " $0
+			fflush()
+		}' | logger -p daemon.warning -t $TAG
+}
+
+FIFO="/run/$TAG.stderr"
 FFMPEG_PID=""
 WATCHER_PID=""
 
@@ -65,6 +91,7 @@ cleanup() {
 		kill -9 "$FFMPEG_PID" 2>/dev/null
 		wait "$FFMPEG_PID" 2>/dev/null
 	fi
+	rm -f "$FIFO"
 	log "Stopped"
 	exit 0
 }
@@ -87,6 +114,12 @@ BACKOFF=2
 STANDBY_LOGGED=0
 NET_LOGGED=0
 FFMPEG_LOGGED=0
+# DIAG=1: run the next ffmpeg with -loglevel debug. Set once per streak of
+# quick failures (DIAG_DONE), because "Error opening output: Input/output
+# error" alone does not tell a network/TLS problem from YouTube refusing the
+# publish. Once only: retrying every 10s at debug would flood the syslog ring.
+DIAG=0
+DIAG_DONE=0
 while true; do
 	CFG=$(find_config)
 	if [ -z "$CFG" ] || ! config_ok "$CFG"; then
@@ -109,6 +142,8 @@ while true; do
 	# after it (output options, e.g. -map). ffmpeg rejects them in the wrong spot.
 	FFMPEG_OPTS=$(jct "$CFG" get ffmpeg_opts 2>/dev/null)
 	FFMPEG_OUT_OPTS=$(jct "$CFG" get ffmpeg_out_opts 2>/dev/null)
+	LOGLEVEL=$(jct "$CFG" get ffmpeg_loglevel 2>/dev/null)
+	[ -n "$LOGLEVEL" ] || LOGLEVEL="error"
 
 	# Search order: temporary/removable locations first so a test binary on
 	# the SD card or in /tmp overrides the installed one; reboot (or pulling
@@ -146,15 +181,31 @@ while true; do
 	fi
 	NET_LOGGED=0
 
-	log "Starting ffmpeg -> $RTMP_URL/REDACTED (config: $CFG, ffmpeg: $FFMPEG)"
+	if [ $DIAG -eq 1 ]; then
+		LOGLEVEL="debug"
+		log "Starting ffmpeg -> $RTMP_URL/REDACTED (config: $CFG, ffmpeg: $FFMPEG, loglevel debug to diagnose the failure)"
+	else
+		log "Starting ffmpeg -> $RTMP_URL/REDACTED (config: $CFG, ffmpeg: $FFMPEG)"
+	fi
 
 	START=$(date +%s)
 	set -f
-	set -- -nostdin -loglevel error -rtsp_transport tcp $FFMPEG_OPTS \
+	set -- -nostdin -hide_banner -loglevel "$LOGLEVEL" -rtsp_transport tcp $FFMPEG_OPTS \
 		-i "$RTSP_URL" -c copy $FFMPEG_OUT_OPTS -f flv "$RTMP_URL/$STREAM_KEY"
 	set +f
-	"$FFMPEG" "$@" &
+	# stderr goes through a FIFO rather than "ffmpeg | ffmpeg_log": $! and the
+	# exit code must stay ffmpeg's own
+	rm -f "$FIFO"
+	if mkfifo -m 600 "$FIFO" 2>/dev/null; then
+		ffmpeg_log $DIAG <"$FIFO" &
+		LOG_PID=$!
+		"$FFMPEG" "$@" 2>"$FIFO" &
+	else
+		LOG_PID=""
+		"$FFMPEG" "$@" &
+	fi
 	FFMPEG_PID=$!
+	DIAG=0
 
 	# Watcher: stop the stream if its config disappears (SD pulled) or is disabled
 	(
@@ -172,6 +223,8 @@ while true; do
 	wait $FFMPEG_PID
 	RC=$?
 	FFMPEG_PID=""
+	# Let the last stderr lines reach syslog before our own "exited" line
+	[ -n "$LOG_PID" ] && wait $LOG_PID 2>/dev/null
 	kill $WATCHER_PID 2>/dev/null
 	wait $WATCHER_PID 2>/dev/null
 	WATCHER_PID=""
@@ -183,9 +236,14 @@ while true; do
 	# Healthy run -> restart quickly; consecutive quick failures -> grow up to 10s
 	if [ $DUR -ge 60 ]; then
 		BACKOFF=2
+		DIAG_DONE=0
 	else
 		BACKOFF=$((BACKOFF * 2))
 		[ $BACKOFF -gt 10 ] && BACKOFF=10
+		if [ $DIAG_DONE -eq 0 ]; then
+			DIAG=1
+			DIAG_DONE=1
+		fi
 	fi
 	log "ffmpeg exited (rc=$RC) after ${DUR}s, restarting in ${BACKOFF}s"
 	sleep $BACKOFF
