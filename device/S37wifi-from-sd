@@ -43,12 +43,14 @@ done
 [ -f "$SRC" ] || exit 0
 
 tmp=$(mktemp) || exit 0
-trap 'rm -f "$tmp" "$tmp.h"' EXIT
+trap 'rm -f "$tmp" "$tmp.h"' EXIT # the .new beside $DST is removed where it is created
 tr -d '\r' <"$SRC" >"$tmp" # files edited on Windows
 
 # S38wpa_supplicant treats a config without ssid= and psk= as "not configured"
 # and starts the setup portal instead, so open (psk-less) networks cannot work.
-if ! grep -q '^[[:space:]]*network={' "$tmp" || ! grep -q 'ssid=' "$tmp" || ! grep -q 'psk=' "$tmp"; then
+# (Commented-out lines do not count.)
+active() { grep -v '^[[:space:]]*#' "$tmp" | grep -q "$1"; }
+if ! active '^[[:space:]]*network={' || ! active '^[[:space:]]*ssid=' || ! active '^[[:space:]]*psk='; then
 	log "ignored $SRC: needs at least one network={} block with ssid= and psk="
 	exit 0
 fi
@@ -68,7 +70,23 @@ if [ -f "$DST" ] && [ "$(md5sum <"$tmp")" = "$(md5sum <"$DST")" ]; then
 	exit 0
 fi
 
-[ -f "$DST" ] && [ ! -f "$DST.before-sd" ] && cp -p "$DST" "$DST.before-sd"
-cat "$tmp" >"$DST"
-chmod 600 "$DST"
+# Never touch the working config until the replacement is safely on flash: a
+# truncated wpa_supplicant.conf (overlay full, power cut) would lock us out of
+# a camera that is only reachable over Wi-Fi. Write beside it, verify, rename.
+new="$DST.new"
+if ! { cat "$tmp" >"$new" && chmod 600 "$new" && [ "$(md5sum <"$tmp")" = "$(md5sum <"$new")" ]; }; then
+	rm -f "$new"
+	log "FAILED to write $new (overlay full?) - keeping the current Wi-Fi config"
+	exit 0
+fi
+if [ -f "$DST" ] && [ ! -f "$DST.before-sd" ]; then
+	cp -p "$DST" "$DST.before-sd" || log "could not keep a copy of the previous config (continuing)"
+fi
+sync
+if ! mv "$new" "$DST"; then
+	rm -f "$new"
+	log "FAILED to replace $DST - keeping the current Wi-Fi config"
+	exit 0
+fi
+sync
 log "applied $SRC ($(grep -c '^[[:space:]]*network={' "$DST") network(s))"
