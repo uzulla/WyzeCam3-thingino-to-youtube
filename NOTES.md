@@ -579,4 +579,10 @@ A (`uenv.txt`)・B (`wpa_supplicant.conf`) とも、ソース `ciao+da40db6` の
   `install.sh` は新規インストールと、配信中の再実行 (旧 supervisor の停止待ち → 入れ替え → 約 5 秒で配信再開) を確認。
   ffmpeg CPU 4.8% @720p10/1Mbps。`install.sh` (新規インストール / 配信中の再実行) と
   `disable-netwatch.sh` も同日に実機で確認。長時間試験も完了。`S37wifi-from-sd` の実機確認は未実施
-- [ ] Thingino パッケージとしての統合 (Config.in オプション化、stream key の安全な保持)
+- [x] インストーラ (`install.sh`)、netwatch 無効化 (`disable-netwatch.sh`)、SD カードからの Wi-Fi 設定 (複数可)
+- [x] 映像に任意のテキストを重ねる prudynt の OSD パッチ (#17、3 か所化 #19、SD からの設定 #22) — 実機で 0.5 秒更新・
+  1 時間連続・再起動後の自動有効化・OSD プールの上限まで確認
+- [ ] `S37wifi-from-sd` の実機確認 (#10)
+- [ ] Thingino パッケージとしての統合 / ファームウェア組み込み (Config.in オプション化、stream key の安全な保持)。
+  将来的には Thingino の新ストリーマ [Raptor](https://github.com/gtxaspec/raptor) の RTMPS push 機能 (RSP) への
+  移行も選択肢

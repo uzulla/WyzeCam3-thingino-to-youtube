@@ -1,5 +1,8 @@
 # ビルド手順
 
+`thingino-firmware/` (Thingino のソースツリー、git 管理外) を**このリポジトリの直下**に clone して行う。
+手順中の `../patches/...` はその前提のパス。
+
 ## ffmpeg (RTMPS 対応の minimal build)
 
 必要なもの: Docker が使える x86_64 Linux、ディスク ~10GB。
@@ -54,7 +57,7 @@ docker run --rm -v "$PWD/$SYSROOT":/sysroot:ro debian:stable-slim bash -c \
 
 ## prudynt (OSD テキストオーバーレイのパッチ入り)
 
-上の ffmpeg の手順 1〜4 (Thingino の取得、ビルダーイメージ、DL キャッシュ) を済ませた `thingino-firmware/` で:
+上の ffmpeg の手順 1〜4 を済ませた `thingino-firmware/` で (手順 2 の ffmpeg 用パッチは prudynt のビルドには不要だが、当たっていても問題ない):
 
 ```sh
 # prudynt のソースに当てるパッチは、Buildroot のパッケージディレクトリに置けば自動で適用される

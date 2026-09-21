@@ -162,24 +162,12 @@ prudynt (Thingino のストリーマ) へのパッチ `patches/prudynt-osd-textf
 - **ストリームキー**: シェル履歴やログに残ります。露出した場合は YouTube Studio で再生成を
 - 実装の詳細・経緯・ハマりどころは [NOTES.md](NOTES.md) を参照
 
-## ステータス / ロードマップ
+## ステータス
 
-- [x] minimal FFmpeg ビルド (RTSP → FLV/RTMPS, mbedTLS)
-- [x] QEMU 検証・実機動作確認・YouTube Live 配信成功
-- [x] 負荷測定 (prudynt / ISP 処理への影響なしを確認)
-- [x] 自動再起動 (supervisor) スクリプト — [docs/relay.md](docs/relay.md) 参照
-  (SD カード設定 + 再起動からの自動配信開始を実機確認済み)
-- [x] 長時間安定性試験 — 約4時間の連続配信でリーク・劣化・A/V ズレなし (`c334a03`)
-- [x] Thingino `ciao+da40db6` (GCC16) への追従 — 再ビルド、実機で YouTube Live 配信を確認
-- [x] インストーラ (`install.sh`)、netwatch 無効化、SD カードからの Wi-Fi 設定 (複数可)
-- [x] `install.sh` / `disable-netwatch.sh` の実機確認 (`da40db6`。新規インストール、配信中の再実行、
-  netwatch 無効化後の状態)
-- [x] `da40db6` での長時間試験
-- [x] 映像に任意のテキストを重ねる prudynt の OSD パッチ (#17、3 か所化 #19) — 実機で 0.5 秒更新・1 時間連続・再起動後の自動有効化・OSD プールの上限まで確認
-- [ ] `S37wifi-from-sd` の実機確認
-- [ ] Thingino パッケージとしての統合 / ファームウェア組み込み
-  (将来的には Thingino の新ストリーマ [Raptor](https://github.com/gtxaspec/raptor) の
-  RTMPS push 機能 (RSP) への移行も選択肢)
+実機 (Wyze Cam v3、Thingino `ciao+da40db6`) で、YouTube Live への直接配信、supervisor による自動復帰、
+SD カードでのスタンドアロン運用、長時間配信、OSD テキストオーバーレイまで確認済み。
+残っているのは `S37wifi-from-sd` の実機確認と、Thingino パッケージとしての統合。
+確認の経緯と残タスクの一覧は [NOTES.md](NOTES.md) の「残タスク」。
 
 ## 謝辞
 

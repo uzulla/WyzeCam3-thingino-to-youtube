@@ -6,6 +6,7 @@
 (ビルド手順は [build.md](build.md))。
 
 ```sh
+# リポジトリのルートで
 device/install-prudynt-osd.sh root@<camera-ip> path/to/prudynt
 ```
 

@@ -12,5 +12,5 @@ Thingino 実機に置くスクリプト一式。`/etc` や `/usr` は overlayfs 
 | `install-wifi-from-sd.sh` / `S37wifi-from-sd` | (PC 側で実行) / `/etc/init.d/S37wifi-from-sd` | 任意。SD の `wpa_supplicant.conf` (複数の Wi-Fi 可) を起動時に適用する。OS 設定を書き換えるので `install.sh` とは別 | [wifi-from-sd.md](../docs/wifi-from-sd.md) |
 | `install-prudynt-osd.sh` / `S30prudynt-osd` | (PC 側で実行) / `/etc/init.d/S30prudynt-osd` | 任意。映像に任意のテキストを重ねられる prudynt (パッチ入り) を入れる。Thingino のストリーマを差し替えるので `install.sh` とは別 | [osd.md](../docs/osd.md) |
 | `osd-config` / `S93osd-config` / `prudynt-osd.json.example` | `/usr/sbin/osd-config` / `/etc/init.d/S93osd-config` / SD カード直下または `/etc/prudynt-osd.json` | 任意 (`install-prudynt-osd.sh` が入れる)。OSD の設定を SD カードのファイルから読み、prudynt に送り直す | [osd.md](../docs/osd.md) |
-| `osd-progress-demo` | `/usr/sbin/osd-progress-demo` | OSD テキストを書き換える側のサンプル (0.5 秒更新のプログレスバー) | [osd.md](../docs/osd.md) |
+| `osd-progress-demo` | `/usr/sbin/osd-progress-demo` | (`install-prudynt-osd.sh` が入れる) OSD テキストを書き換える側のサンプル (0.5 秒更新のプログレスバー) | [osd.md](../docs/osd.md) |
 | `common.sh` | (PC 側の各スクリプトが読み込む) | 対応ファームの判定。カメラの `BUILD_ID` が `ciao+da40db6` でなければ何も変更せず中止する | — |
