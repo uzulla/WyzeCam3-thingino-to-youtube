@@ -308,8 +308,13 @@ QEMU 検証 (新 sysroot = uClibc 1.0.59 + 4KB バッファの mbedTLS):
   あるので ping しない」とした判断と正面衝突する。モバイルルーター運用では
   `jct /etc/thingino.json set netwatch.enabled false` で無効化するか、`netwatch.target` を
   ping に応答するホストにする (詳細は device/README.md の netwatch 節)
-- **prudynt が live555 をやめ自前 RTSP 実装になった** (2026-09-13)。下の「prudynt の RTSP は
-  ビデオ DTS が不正」節は live555 時代の観測であり、現行での再確認が必要 (#3)
+- **prudynt が `ad6294e` → `354b1b4` (142 コミット) に更新され、既定値が変わった。**
+  全ストリームの既定サイズがセンサー解像度になり (`9f3d309`。以前 stream1 / JPEG は 640x360)、
+  bitrate 0 = 約 1Mbps/メガピクセルの自動値になった (`3188189`)。ファーム更新で設定が初期化
+  されると main が **1920x1080 / 25fps / 約 2.1Mbps**、JPEG プレビューも 1080p になる。
+  実機では prudynt の CPU が 70% 前後 (旧計測 8% は 720p15 時) まで上がり idle が尽きた。
+  切り分け中 (#3)。なお RTSP サーバは旧ピンの時点で既に自前実装 (`src/simple-rtsp`) で、
+  9/13 の "drop live555-era hybrid linking" はリンク方式の整理だけ。RTSP の挙動は変わっていない
 - **アップグレードは overlay を消去する**。設定は 64KB の backup パーティション経由で
   `S37cfg-autorestore` が復元するが、`sysupgrade -B` を付けたときだけで、2.5MB の ffmpeg は
   入らない (公式イメージに `/usr/bin/ffmpeg` は無い。`BR2_PACKAGE_PRUDYNT_T_FFMPEG` は opt-in)
@@ -324,14 +329,16 @@ QEMU 検証 (新 sysroot = uClibc 1.0.59 + 4KB バッファの mbedTLS):
 - GCC16 ビルドのバイナリは実機で起動。mbedTLS soname・libatomic とも実機に存在 (同梱不要)
 - RTSP は `thingino:thingino` / `/ch0` のまま。h264 (Main) + aac 16kHz mono が 1 本ずつ。
   SDP に sprop があり (デコーダ無しでも解像度が取れる)、`extract_extradata` は保険のまま
-- **`Invalid DTS` は自前 RTSP 実装になっても出る。** DTS が PTS より 106ms 進んで始まり、
+- **`Invalid DTS` は引き続き出る。** DTS が PTS より 106ms 進んで始まり、
   約 2 秒後 (最初の RTCP SR で同期し直した時点) に 28ms に縮む。B フレーム無しなので補正結果は
   正しく、2 分超の FLV が正常に再生できた。加えて先頭で 1 回
   `[flv] Timestamps are unset in a packet for stream 0. This is deprecated` が出るようになった。
   今は警告だけだが、FFmpeg のバージョンを上げるときは要注意
 - **ファーム更新で prudynt の設定が初期値に戻り 1920x1080 / 25fps / 約 2.1Mbps になった。**
   旧計測 (720p15 / 約 330kbps で ffmpeg CPU 3.3%) はこのビットレートには当てはまらない。
-  TLS の負荷はビットレートにほぼ比例するので再計測が必要 (#3)
+  YouTube 配信中の実測は **ffmpeg CPU 約 10% / RSS 3.4MB** (`top -n 1` の単発値なので目安)。
+  TLS の負荷はビットレートにほぼ比例するという見立てどおりで、ffmpeg 側は問題ない。
+  重いのは prudynt 側 (上記)
 - **ffmpeg のオプションは出力 URL より前に置く。** 後ろに置いた `-t 10` は
   `Trailing option(s) found in the command: may be ignored.` の警告とともに本当に無視され、
   tmpfs に 37MB 書き込む事故になった。旧版のコマンド例は `-loglevel error` を末尾に置いていた
