@@ -3,6 +3,36 @@
 カメラ上で ffmpeg を監視・再起動し、YouTube Live への配信を続けるスクリプト一式の、インストール・設定・運用。
 コマンド例はリポジトリのルートで実行する前提。うまく動かない時は [troubleshooting.md](troubleshooting.md)。
 
+## まず `/tmp` で試す (PoC)
+
+まず `/tmp` で動作確認する (**`/tmp` は RAM 上なので再起動で消える = PoC 専用**。
+常設する場合は overlay で永続化される `/usr/bin/ffmpeg` へ —
+場所の選び方は下の「ffmpeg バイナリの設置場所」):
+
+```sh
+# 転送 (Thingino は SFTP 非対応なので -O が必要。だめなら ssh + cat)
+scp -O ffmpeg root@<camera-ip>:/tmp/
+#   または: cat ffmpeg | ssh root@<camera-ip> 'cat > /tmp/ffmpeg && chmod +x /tmp/ffmpeg'
+
+# 実機で起動確認
+/tmp/ffmpeg -version
+# もし libatomic.so.1 が無いというエラーが出たら(標準の Thingino には入っています):
+#   ビルド出力の per-package/.../target/usr/lib/libatomic.so.1.2.0 を /tmp に転送し
+#   ln -s /tmp/libatomic.so.1.2.0 /tmp/libatomic.so.1
+#   LD_LIBRARY_PATH=/tmp /tmp/ffmpeg -version
+
+# YouTube Live へ配信
+/tmp/ffmpeg -loglevel error -rtsp_transport tcp \
+  -i 'rtsp://thingino:thingino@127.0.0.1:554/ch0' \
+  -c copy -f flv \
+  'rtmps://a.rtmps.youtube.com:443/live2/<STREAM_KEY>'
+```
+
+- RTSP の認証・パスは Thingino のデフォルト (`thingino:thingino`, `/ch0`)。環境に合わせて変更
+- `/tmp` は RAM 上なので再起動で消えます (PoC 用途としては安全)
+- `Invalid DTS ... replacing by guess` 警告は prudynt 側のタイムスタンプ癖によるもので実害なし
+  (`-loglevel error` で抑制)
+
 ## インストール手順
 
 ```sh
@@ -14,8 +44,8 @@ device/install.sh root@<camera-ip> dist/ffmpeg
 device/disable-netwatch.sh root@<camera-ip>
 ```
 
-> `install.sh` は `ciao+da40db6` の実機で確認済み (2026-09-21: 新規インストール、および配信中の
-> 再実行 = 旧 supervisor の停止待ち → 入れ替え → 約 5 秒で配信再開)。うまくいかない場合は下の手作業の手順で。
+配信中に再実行してもよい (旧 supervisor の停止を待って入れ替え、数秒で配信が再開する)。
+うまくいかない場合は下の手作業の手順で。
 
 追加の ffmpeg オプションは設定 JSON で渡せる。置き場所が違うと ffmpeg が起動エラーになるので注意:
 
@@ -137,7 +167,7 @@ device/install.sh root@<camera-ip> dist/ffmpeg
 
 Thingino 自体の更新や設定のバックアップはこのリポジトリの範囲外。
 
-## 設計 (Thingino の流儀に準拠)
+## 動作の仕組み (Thingino の流儀に準拠)
 
 - **systemd はない**。busybox init が `/etc/init.d/S*` を番号順に実行する。`S93` は
   ネットワーク (S40前後) と prudynt (S31) の後

@@ -131,7 +131,7 @@ echo 'REC' > /run/prudynt/osd-text2.tmp && mv /run/prudynt/osd-text2.tmp /run/pr
   これは prudynt (Thingino) の設定ファイルをフラッシュに書き換える操作なので、このリポジトリのスクリプトでは
   行わない。戻すには 0 を設定する
 
-実測 (`ciao+da40db6`、720p、2026-09-21。詳細は [NOTES.md](../NOTES.md) の「OSD プールの上限」):
+720p での目安 (測定の詳細は [NOTES.md](../NOTES.md) の「OSD プールの上限」):
 
 | `osd_pool_size` | 結果 |
 |---|---|
@@ -142,5 +142,5 @@ echo 'REC' > /run/prudynt/osd-text2.tmp && mv /run/prudynt/osd-text2.tmp /run/pr
 | 32768 | **prudynt が起動しない** (プールは予約メモリ rmem 29MB から取られるため)。設定を戻せば復旧する |
 
 上げすぎると、同じ予約メモリを使う映像バッファと取り合いになる。720p なら 2048〜4096 で足りる。
-1080p での上限は未実測。
+1080p では映像バッファが増える分だけ上限が下がるはずだが、値は測っていない。
 

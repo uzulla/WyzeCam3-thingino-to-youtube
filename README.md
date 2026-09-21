@@ -39,7 +39,7 @@ cat ffmpeg | ssh root@<camera-ip> 'cat > /tmp/ffmpeg && chmod +x /tmp/ffmpeg'
 - `{KEY}` は YouTube Studio のライブ配信設定にあるストリームキー
 - RTSP の認証 (`thingino:thingino`) とパス (`/ch0`) は Thingino のデフォルト。変更していれば合わせる
 - 再エンコードなし (stream copy) なので、カメラの負荷は CPU 3〜10% (ビットレート次第) / RAM 3MB 程度
-- `/tmp` は再起動で消える。常設・自動起動・自動復帰したくなったら
+- `/tmp` は再起動で消える。`/tmp` で試す時の細かい注意 (scp が使えない、libatomic など) と、常設・自動起動・自動復帰は
   supervisor を導入する ([docs/relay.md](docs/relay.md)、おまけ)
 - **2026-09 以降の Thingino は、ゲートウェイへの ping が約 90 秒通らないとカメラを OS ごと
   再起動する (netwatch、デフォルト有効)。** 配信が切れるので、長時間配信する前に無効化しておく:
@@ -145,64 +145,12 @@ git 管理外です。必要な変更はすべて `patches/` に分離してあ�
 自分でビルドする場合の手順 (ffmpeg、OSD パッチ入りの prudynt) は [docs/build.md](docs/build.md)。
 必要なもの: Docker が使える x86_64 Linux、ディスク ~10GB。
 
-## (任意) 映像に任意のテキストを重ねる — prudynt の OSD パッチ
+## (任意) 映像に任意のテキストを重ねる
 
-配信映像に、時刻以外の**任意の複数行テキスト** (プログレスバーなどの ASCII アート) を 3 か所まで
-(既定は左下・右上・右下) 焼き込み、
-カメラ上の別のプログラムから 0.5 秒単位で更新できるようにするパッチです。ffmpeg は stream copy
-なので、文字を載せられるのはエンコーダより前の prudynt (Thingino のストリーマ) だけです。
-標準の prudynt の burn-in OSD は時刻表示専用 (1 行・1 秒更新・大文字と数字だけの 5x7 フォント) なので、
-`patches/prudynt-osd-textfile.diff` で「tmpfs 上のテキストファイルの中身を映す OSD リージョン」を足します。
-設計と実測値は [NOTES.md](NOTES.md) の「OSD テキストオーバーレイ」、経緯は #17 / #19。
-
-```sh
-# 操作側 (カメラ上) がやることは「一時ファイルに書いて mv で置き換える」だけ
-printf 'UPLOAD job-42\n[##########----------] 50%%\n' > /run/prudynt/osd-text.tmp \
-  && mv /run/prudynt/osd-text.tmp /run/prudynt/osd-text
-```
-
-### ビルド
-
-[docs/build.md](docs/build.md) の「prudynt」の節。
-
-### カメラへ入れる・使う
-
-ファームの焼き直しは不要です。手順と設定項目は [docs/osd.md](docs/osd.md):
-
-```sh
-device/install-prudynt-osd.sh root@<camera-ip> path/to/prudynt   # prudynt が再起動し、配信が数秒切れる
-ssh root@<camera-ip> osd-progress-demo 20                        # プログレスバーのデモ
-```
-
-## カメラでの使い方
-
-まず `/tmp` で動作確認する (**`/tmp` は RAM 上なので再起動で消える = PoC 専用**。
-常設する場合は overlay で永続化される `/usr/bin/ffmpeg` へ —
-場所の選び方と手順は [docs/relay.md](docs/relay.md) 参照):
-
-```sh
-# 転送 (Thingino は SFTP 非対応なので -O が必要。だめなら ssh + cat)
-scp -O ffmpeg root@<camera-ip>:/tmp/
-#   または: cat ffmpeg | ssh root@<camera-ip> 'cat > /tmp/ffmpeg && chmod +x /tmp/ffmpeg'
-
-# 実機で起動確認
-/tmp/ffmpeg -version
-# もし libatomic.so.1 が無いというエラーが出たら(標準の Thingino には入っています):
-#   ビルド出力の per-package/.../target/usr/lib/libatomic.so.1.2.0 を /tmp に転送し
-#   ln -s /tmp/libatomic.so.1.2.0 /tmp/libatomic.so.1
-#   LD_LIBRARY_PATH=/tmp /tmp/ffmpeg -version
-
-# YouTube Live へ配信
-/tmp/ffmpeg -loglevel error -rtsp_transport tcp \
-  -i 'rtsp://thingino:thingino@127.0.0.1:554/ch0' \
-  -c copy -f flv \
-  'rtmps://a.rtmps.youtube.com:443/live2/<STREAM_KEY>'
-```
-
-- RTSP の認証・パスは Thingino のデフォルト (`thingino:thingino`, `/ch0`)。環境に合わせて変更
-- `/tmp` は RAM 上なので再起動で消えます (PoC 用途としては安全)
-- `Invalid DTS ... replacing by guess` 警告は prudynt 側のタイムスタンプ癖によるもので実害なし
-  (`-loglevel error` で抑制)
+prudynt (Thingino のストリーマ) へのパッチ `patches/prudynt-osd-textfile.diff` で、配信映像に任意の複数行テキスト
+(プログレスバーなどの ASCII アート) を 3 か所 (既定は左下・右上・右下) まで焼き込み、カメラ上の別のプログラムから
+0.5 秒単位で更新できます。操作側は tmpfs 上のファイルを `mv` で置き換えるだけで、ファームの焼き直しは不要です。
+使い方と設定は [docs/osd.md](docs/osd.md)、ビルドは [docs/build.md](docs/build.md)。
 
 ## 補足
 
