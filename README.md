@@ -31,6 +31,16 @@ cat ffmpeg | ssh root@<camera-ip> 'cat > /tmp/ffmpeg && chmod +x /tmp/ffmpeg'
 - 再エンコードなし (stream copy) なので、カメラの負荷は CPU 3〜10% (ビットレート次第) / RAM 3MB 程度
 - `/tmp` は再起動で消える。常設・自動起動・自動復帰したくなったら
   [device/](device/) の supervisor を導入する (おまけ)
+- **2026-09 以降の Thingino は、ゲートウェイへの ping が約 90 秒通らないとカメラを OS ごと
+  再起動する (netwatch、デフォルト有効)。** 配信が切れるので、長時間配信する前に無効化しておく:
+
+  ```sh
+  device/disable-netwatch.sh root@<camera-ip>
+  # カメラ上で直接やるなら: jct /etc/thingino.json set netwatch.enabled false && service restart netwatch
+  ```
+
+  Thingino の OS 設定を変えるものなので、ffmpeg やスクリプトのインストールとは別の手順にしてある。
+  理由と代償 (Wi-Fi が固まっても自動復旧しなくなる) は [device/README.md](device/README.md) の netwatch 節
 
 以降のビルド手順や起動スクリプトは、自分でビルドしたい人・常設運用したい人向けのおまけです。
 
