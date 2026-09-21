@@ -1,0 +1,92 @@
+#!/bin/sh
+# Apply a Wi-Fi config carried on the SD card, right before Thingino's
+# S38wpa_supplicant starts. Optional add-on; install with install-wifi-from-sd.sh.
+#
+# Put a normal wpa_supplicant.conf in the SD card's top directory. Unlike
+# Thingino's own uenv.txt (wlan_ssid= / wlan_pass=, one network only) it may
+# hold several network={} blocks, e.g. home + mobile router:
+#
+#   network={
+#           ssid="Home"
+#           psk="home-password"
+#           priority=10
+#   }
+#   network={
+#           ssid="Pocket-WiFi"
+#           psk="pocket-password"
+#           scan_ssid=1
+#   }
+#
+# Applied on every boot, only when the content changed (no needless flash
+# writes). The card is the source of truth: fix the file and reboot to recover
+# from a typo. Pulling the card does NOT restore the previous config; that one
+# is kept once as /etc/wpa_supplicant.conf.before-sd.
+
+SRC="${WIFI_SD_SRC:-/mnt/mmcblk0p1/wpa_supplicant.conf}"
+DST="${WIFI_SD_DST:-/etc/wpa_supplicant.conf}"
+UENV="${WIFI_SD_UENV:-/mnt/mmcblk0p1/uenv.txt}"
+TAG="wifi-from-sd"
+
+log() {
+	echo "$TAG: $1"
+	logger -p daemon.info -t $TAG "$1" 2>/dev/null
+}
+
+[ "$1" = "start" ] || exit 0
+
+# The card is mounted asynchronously by mdev; give it a moment if one is present
+i=0
+while [ ! -f "$SRC" ] && [ -b /dev/mmcblk0p1 ] && ! grep -q ' /mnt/mmcblk0p1 ' /proc/mounts && [ $i -lt 10 ]; do
+	i=$((i + 1))
+	sleep 1
+done
+[ -f "$SRC" ] || exit 0
+
+tmp=$(mktemp) || exit 0
+trap 'rm -f "$tmp" "$tmp.h"' EXIT # the .new beside $DST is removed where it is created
+tr -d '\r' <"$SRC" >"$tmp" # files edited on Windows
+
+# S38wpa_supplicant treats a config without ssid= and psk= as "not configured"
+# and starts the setup portal instead, so open (psk-less) networks cannot work.
+# (Commented-out lines do not count.)
+active() { grep -v '^[[:space:]]*#' "$tmp" | grep -q "$1"; }
+if ! active '^[[:space:]]*network={' || ! active '^[[:space:]]*ssid=' || ! active '^[[:space:]]*psk='; then
+	log "ignored $SRC: needs at least one network={} block with ssid= and psk="
+	exit 0
+fi
+
+# Thingino's tools expect the control socket in /run/wpa_supplicant
+if ! grep -q '^ctrl_interface=' "$tmp"; then
+	printf 'ctrl_interface=/run/wpa_supplicant\nupdate_config=1\nap_scan=1\n\n' >"$tmp.h"
+	cat "$tmp" >>"$tmp.h"
+	cat "$tmp.h" >"$tmp"
+fi
+
+if [ -f "$UENV" ] && grep -q '^wlan_ssid=' "$UENV"; then
+	log "WARNING: $UENV also sets wlan_ssid - Thingino applies it after this and overwrites the result. Remove one of the two."
+fi
+
+if [ -f "$DST" ] && [ "$(md5sum <"$tmp")" = "$(md5sum <"$DST")" ]; then
+	exit 0
+fi
+
+# Never touch the working config until the replacement is safely on flash: a
+# truncated wpa_supplicant.conf (overlay full, power cut) would lock us out of
+# a camera that is only reachable over Wi-Fi. Write beside it, verify, rename.
+new="$DST.new"
+if ! { cat "$tmp" >"$new" && chmod 600 "$new" && [ "$(md5sum <"$tmp")" = "$(md5sum <"$new")" ]; }; then
+	rm -f "$new"
+	log "FAILED to write $new (overlay full?) - keeping the current Wi-Fi config"
+	exit 0
+fi
+if [ -f "$DST" ] && [ ! -f "$DST.before-sd" ]; then
+	cp -p "$DST" "$DST.before-sd" || log "could not keep a copy of the previous config (continuing)"
+fi
+sync
+if ! mv "$new" "$DST"; then
+	rm -f "$new"
+	log "FAILED to replace $DST - keeping the current Wi-Fi config"
+	exit 0
+fi
+sync
+log "applied $SRC ($(grep -c '^[[:space:]]*network={' "$DST") network(s))"
