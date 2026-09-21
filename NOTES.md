@@ -400,6 +400,6 @@ pin は `git ls-tree <commit> buildroot` で見る)。
   クラッシュ再起動・ネットワーク断の待機と復帰後の自動再開まで実機の障害試験で確認済み。
   復帰しないケースが今後見つかればバグとして対応する
 - [x] `ciao+da40db6` での実機確認 — YouTube Live へ映像・音声とも配信成功 (2026-09-21)。
-  ffmpeg CPU 4.8% @720p10/1Mbps。長時間試験と `install.sh` / `disable-netwatch.sh` /
-  `S37wifi-from-sd` の実機通し実行は未実施
+  ffmpeg CPU 4.8% @720p10/1Mbps。`install.sh` (新規インストール / 配信中の再実行) と
+  `disable-netwatch.sh` も同日に実機で確認。長時間試験と `S37wifi-from-sd` の実機確認は未実施
 - [ ] Thingino パッケージとしての統合 (Config.in オプション化、stream key の安全な保持)
