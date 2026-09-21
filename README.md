@@ -165,7 +165,7 @@ prudynt (Thingino のストリーマ) へのパッチ `patches/prudynt-osd-textf
 ## ステータス
 
 実機 (Wyze Cam v3、Thingino `ciao+da40db6`) で、YouTube Live への直接配信、supervisor による自動復帰、
-SD カードでのスタンドアロン運用、長時間配信、OSD テキストオーバーレイまで確認済み。
+SD カードでのスタンドアロン運用、長時間配信、OSD テキストオーバーレイ (720p) まで確認済み。
 残っているのは `S37wifi-from-sd` の実機確認と、Thingino パッケージとしての統合。
 確認の経緯と残タスクの一覧は [NOTES.md](NOTES.md) の「残タスク」。
 
