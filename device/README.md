@@ -9,6 +9,7 @@ Thingino 実機に置く supervisor 一式。`/etc` 以下は overlayfs でフ�
 | `S93youtube-relay` | `/etc/init.d/S93youtube-relay` | 起動スクリプト (boot 時に自動開始) |
 | `youtube-relay.json.example` | `/etc/youtube-relay.json` または SD カード直下 | 設定ファイル (下記「SD カードモード」参照) |
 | `install.sh` | (PC 側で実行) | 上記と ffmpeg を SSH 経由でまとめて入れるインストーラ。再実行可能。**このリポジトリのファイルを置くだけで、Thingino 側の設定やファーム更新には触らない** |
+| `disable-netwatch.sh` | (PC 側で実行) | Thingino の netwatch (ping 失敗で OS を再起動) を無効化する。OS 設定の変更なので `install.sh` とは別 (下記「netwatch」参照) |
 
 ## 設定ファイルの探索順と「SD カードモード」
 
@@ -91,6 +92,9 @@ Thingino はルート全体が overlayfs (SquashFS + JFFS2 データパーティ
 # まとめて入れる (再実行可能。既存の /etc/youtube-relay.json は上書きしない)
 ./install.sh root@<camera-ip> ../dist/ffmpeg
 # スクリプトだけ入れ直す場合は ffmpeg の引数を省略
+
+# 推奨: ping 失敗で OS ごと再起動する netwatch を止める (OS 設定の変更。下記「netwatch」参照)
+./disable-netwatch.sh root@<camera-ip>
 ```
 
 > `install.sh` は 2026-09 に追加したもので、実機での通し実行はまだ確認できていない
@@ -146,27 +150,38 @@ ssh $CAM 'logread | grep youtube-relay | tail -20'
 
 Thingino 自体の更新や設定のバックアップはこのリポジトリの範囲外。
 
-## netwatch (ネットワーク監視による自動再起動) に注意
+## netwatch (ネットワーク監視による OS 再起動) は無効化する
 
 2026-09 以降の Thingino には `S52netwatch` が入っており、**デフォルトで有効**。
 デフォルトゲートウェイへ 30 秒毎に ping し、**3 回連続で失敗するとカメラを再起動する**。
 プロセスの再起動ではなく **OS ごとの強制リブート** (`reboot -f`。効かなければ sysrq、それも
 効かなければ watchdog デーモンを止めてあるのでハードウェアリセット) で、配信は一度切れる。
-起動後は `S93youtube-relay` が supervisor を立ち上げ直し、ネットワークを待って配信を再開する。
 2026-08 以前のファームにこの仕組みは無かった (Wi-Fi が切れても待つだけで再起動はしなかった)。
 
-ICMP に応答しないモバイルルーター / テザリングでは、Wi-Fi が正常でも約 90 秒毎に再起動して
-配信が成立しない。supervisor が gateway ping をしないのと同じ理由で、該当環境では止めるか
-宛先を変える:
+ライブ配信用途では**無効化を推奨**する:
+
+- ネットワーク断からの復帰は supervisor が担う (デフォルトルートが戻るのを待って配信を再開)。
+  OS ごと再起動しても復帰は早くならず、起動時間の分だけ配信の欠損が延びる
+- ICMP に応答しないモバイルルーター / テザリングでは、Wi-Fi が正常でも約 90 秒毎に再起動して
+  配信が成立しない
 
 ```sh
-ping -c 1 $(ip route | awk '/^default/{print $3; exit}')   # これが通らない環境は要対処
-jct /etc/thingino.json set netwatch.enabled false           # 無効化
-jct /etc/thingino.json set netwatch.target 1.1.1.1          # または応答するホストを監視
-service restart netwatch
+./disable-netwatch.sh root@<camera-ip>
 ```
 
-逆に ping が通る環境では、Wi-Fi が固まったときの最終手段として有効なままが望ましい。
+これは Thingino の OS 設定 (`/etc/thingino.json` の `netwatch.enabled`) を変えるものなので、
+`install.sh` とは別のスクリプトにしてある (`install.sh` は OS の設定に触らない)。
+設定は再起動後も残るが、**Thingino を入れ直した/更新した後は初期値 (有効) に戻ることがある**ので、
+`install.sh` と合わせて実行し直す。手作業なら:
+
+```sh
+jct /etc/thingino.json set netwatch.enabled false && service restart netwatch
+jct /etc/thingino.json set netwatch.enabled true  && service restart netwatch   # 元に戻す
+```
+
+無効化の代償: Wi-Fi ドライバが固まって復帰しなくなった場合に自動では直らなくなる
+(電源の入れ直しが必要)。無人・遠隔設置でそちらの方が困る場合は、無効化せず
+`netwatch.target` を確実に ping に応答するホストにする手もある。
 
 ## 運用
 
@@ -210,7 +225,7 @@ youtube-relay: Starting ffmpeg -> rtmps://.../REDACTED (config: ..., ffmpeg: ...
 | SD を挿してもマウントされない | `logread \| grep automount` を確認。fsck 失敗や非対応フォーマットの可能性。FAT32 でフォーマットし直す |
 | `Waiting for network` / `Network down` のまま復帰しない | `ip -4 route show default` が空ならデフォルトルート喪失 (SSH は同一セグメントなので通る点に注意)。`killall -USR1 udhcpc` で DHCP 再取得 → だめなら `service restart network`。リンク断で udhcpc がルートを再設置しないことがあるため、保険として cron に `* * * * * ip -4 route show default \| grep -q . \|\| killall -USR1 udhcpc` を入れておくとよい (`/etc/cron/crontabs/root` に追記) |
 | CPU が張り付く (`top` で prudynt が 50% 超) / 配信がカクつく・カメラが固まる | **WebUI で解像度や fps を変えた後は `service restart prudynt`**。2026-09 時点の prudynt は動的な再構成のあと映像パイプライン (libimp の `group_update` スレッド) が高負荷のまま回り続けることがある。再起動すれば 720p10 で prudynt 2% / ffmpeg 5% 程度に戻る。ffmpeg や配信とは無関係 (ffmpeg を止めても下がらない) |
-| カメラが約 90 秒毎に再起動する | netwatch がゲートウェイへの ping 失敗で再起動している (`logread \| grep netwatch`)。上記「netwatch」参照 |
+| カメラが勝手に再起動する (約 90 秒毎、または Wi-Fi 断のたび) | netwatch がゲートウェイへの ping 失敗で OS を再起動している。`./disable-netwatch.sh` で無効化する (上記「netwatch」参照)。Thingino を更新した後に再発したら設定が初期値に戻っている |
 | YouTube Studio に何も出ない (ログは Starting ffmpeg) | ストリームキーの間違いが最有力。YouTube 側は間違ったキーでも接続を受けてから切断するため、`ffmpeg exited` の繰り返しになっていないかログを確認 |
 | 映像は出るが音が出ない | RTSP に複数の音声トラックが載っている可能性。設定の **`ffmpeg_out_opts`** に `-map 0:v:0 -map 0:a:0` を指定して (`-map` は出力オプションなので `-i` の前に展開される `ffmpeg_opts` に書くと ffmpeg が起動エラーになる)。 AAC トラックを明示する |
 
