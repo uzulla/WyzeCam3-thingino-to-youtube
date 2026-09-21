@@ -3,7 +3,9 @@
 > **English summary**: Build recipe for a minimal FFmpeg binary (2.5MB) that runs on a
 > Wyze Cam v3 flashed with [Thingino](https://thingino.com/), letting the camera push its
 > H.264/AAC stream **directly to YouTube Live over RTMPS** — no relay PC required.
-> Pure stream copy (no re-encoding): measured load on the Ingenic T31 is ~3.3% CPU / 3.3MB RSS.
+> Pure stream copy (no re-encoding): measured load on the Ingenic T31 is 3-10% CPU depending on
+> bitrate (3.3% at 330kbps, 4.8% at 1Mbps, ~10% at 1080p25 / 2.1Mbps) and ~3.4MB RSS.
+> Binaries are specific to a Thingino build; pick the Release matching your camera's `BUILD_ID`.
 > See [NOTES.md](NOTES.md) for implementation details (Japanese).
 
 Thingino 化した Wyze Cam v3 から、中継マシンなしで YouTube Live へ直接配信するための
