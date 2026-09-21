@@ -44,7 +44,10 @@ network_ready() {
 # card after an upgrade, and Thingino's own recording-only ffmpeg (no RTMPS;
 # present only in images built with BR2_PACKAGE_PRUDYNT_T_FFMPEG).
 ffmpeg_supports() {
-	"$1" -hide_banner -protocols 2>/dev/null | grep -q "^ *$2\$"
+	"$1" -hide_banner -protocols 2>/dev/null | awk -v proto="$2" '
+		$0 == "Output:" { out = 1; next }
+		out && $1 == proto { found = 1 }
+		END { exit !found }'
 }
 
 FFMPEG_PID=""

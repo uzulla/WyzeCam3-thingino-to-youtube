@@ -59,7 +59,8 @@ if [ -n "$FFMPEG" ]; then
 		echo "md5 mismatch after transfer (overlay full?)" >&2
 		exit 1
 	fi
-	if ! ssh "$CAM" '/usr/bin/ffmpeg -hide_banner -protocols 2>/dev/null' | grep -q '^ *rtmps$'; then
+	if ! ssh "$CAM" '/usr/bin/ffmpeg -hide_banner -protocols 2>/dev/null' |
+		awk '$0 == "Output:" { out = 1; next } out && $1 == "rtmps" { found = 1 } END { exit !found }'; then
 		echo "WARNING: installed ffmpeg does not run or lacks rtmps" >&2
 		echo "         (toolchain/mbedTLS mismatch with this firmware? see README)" >&2
 	fi
