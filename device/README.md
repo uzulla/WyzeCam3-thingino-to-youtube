@@ -131,7 +131,9 @@ network={
   `service stop osd-config; service stop prudynt; /etc/init.d/S30prudynt-osd stop; service start prudynt`)。
   完全に消すなら `/etc/init.d/S30prudynt-osd` `/usr/bin/prudynt-osd` `/usr/bin/prudynt-osd.build`
   `/usr/sbin/osd-progress-demo` `/usr/sbin/osd-config` `/etc/init.d/S93osd-config` と、置いていれば
-  `/etc/prudynt-osd.json` を削除する (残っていると、入れ直した時に古い OSD 設定が自動で反映される)
+  設定ファイル (`/etc/prudynt-osd.json` と、SD カード直下の `prudynt-osd.json` = カメラ上では
+  `/mnt/mmcblk0p1/prudynt-osd.json`) を削除する。どちらかが残っていると、入れ直した時や `osd-config` を
+  有効に戻した時に、古い OSD 設定が自動で反映される
 - Thingino を入れ直した/更新した後は、他のファイルと同じく入れ直しが必要 (新しいファームに合わせて
   prudynt をビルドし直す)
 
