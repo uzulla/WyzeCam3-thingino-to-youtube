@@ -154,7 +154,7 @@ index 500c5fb..dca76d2 100644
    ltime = localtime(&current);
  
 diff --git c/src/video/OSD.hpp i/src/video/OSD.hpp
-index e0ba5b2..e312520 100644
+index e0ba5b2..c0d1bfe 100644
 --- c/src/video/OSD.hpp
 +++ i/src/video/OSD.hpp
 @@ -14,8 +14,14 @@
@@ -172,7 +172,7 @@ index e0ba5b2..e312520 100644
  #if defined(OSD_BURN_TIMESTAMP) && defined(USE_OSD_FONT_LIBSCHRIFT)
  #include "schrift.h"
  #include <unordered_map>
-@@ -156,6 +162,34 @@ private:
+@@ -156,6 +162,36 @@ private:
    bool osd_group_started_{false};
    std::string last_ts_text_;
  
@@ -188,7 +188,9 @@ index e0ba5b2..e312520 100644
 +  std::vector<uint8_t> tf_buf_;          // BGRA pixel buffer for the region
 +  std::vector<osdtext::Line> tf_lines_;  // text currently loaded from the file
 +  std::string tf_path_;
-+  osdtext::Layout tf_layout_{};          // wanted geometry (last tick)
++  // Wanted geometry (last tick). Starts as an impossible layout so that the
++  // first tick always counts as a geometry change.
++  osdtext::Layout tf_layout_{0, 0, 0, 0, 0};
 +  osdtext::Colors tf_colors_{};
 +  osdtext::Layout tf_attr_layout_{};     // geometry the region actually has
 +  int tf_attr_x_{0};
@@ -430,10 +432,10 @@ index 0000000..1d2f16c
 +} // namespace osdtext
 diff --git c/src/video/OSDTextfile.cpp i/src/video/OSDTextfile.cpp
 new file mode 100644
-index 0000000..8eceb53
+index 0000000..b2923b6
 --- /dev/null
 +++ i/src/video/OSDTextfile.cpp
-@@ -0,0 +1,306 @@
+@@ -0,0 +1,311 @@
 +// -- text-file overlay --------------------------------------------------
 +// A second burned-in OSD region that shows the contents of a text file
 +// (osd.textfile.path, meant to live on tmpfs). Another program updates the
@@ -485,7 +487,12 @@ index 0000000..8eceb53
 +    pool_kb = (size_t)((max_pixels * 4 * 0.1) / 1024 + 256);
 +  }
 +  size_t bytes = pool_kb * 1024;
-+  return bytes > kReservedBytes ? bytes - kReservedBytes : 0;
++  bytes = bytes > kReservedBytes ? bytes - kReservedBytes : 0;
++  // With the overlay on both streams, two OSD objects size their regions
++  // independently out of the same pool: give each one half.
++  if (!cfg->osd.textfile.substream_disabled && cfg->stream1.enabled)
++    bytes /= 2;
++  return bytes;
 +}
 +
 +// "#RRGGBBAA" -> B, G, R, A. Leaves `bgra` untouched on malformed input.
