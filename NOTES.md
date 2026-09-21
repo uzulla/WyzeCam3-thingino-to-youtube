@@ -556,13 +556,45 @@ prudynt を再起動して測った (720p10、配信中)。各サイズで 52 �
 
 **未確認 / 既知の制約:**
 
-- 1080p での負荷とプール境界、サブストリームへの表示 (`substream_disabled: false`) は未確認
+- 1080p での負荷とプール境界は未確認 (この運用は 720p10 固定なので確認しない)
+- サブストリームへの表示 (`substream_disabled: false`) は 2026-09-22 に確認: 640x360 に 3 つとも scale 1 で出る。
+  メイン側の予算が半分になるので、既定のプールではメインの右上・右下が scale 1 に縮む (設定を戻すと scale 2 に戻る)
+- 3 スロット版でのプライバシーカバーとの共存、3 つとも 0.5 秒更新での 15 分連続動作 (RSS 7208KB で不変、fd 24、
+  スレッド 36、prudynt / ffmpeg の再起動なし、prudynt 約 6.7%) も同日に確認
 - `osd.textfile.path` の読み込みは OSD スレッドで同期的に行う。tmpfs 前提で、固まるファイルシステム
   (NFS 等) を指すと時刻表示ごと止まる
 - upstream 自身の `osd.burnin.format` などの読み取りはロックなしのまま (テキストオーバーレイの `path` と色は
   `stringMutex` で保護した)
 - 測定中、標準の prudynt の時点から `video channel:0 - msgChannel sink clogged, 5x frames dropped in last 5s`
-  の警告が 5 秒ごとに出続けていた。このパッチとは無関係 (パッチ前の prudynt でも同じ頻度)。配信は流れている
+  の警告が 5 秒ごとに出続けていた。このパッチとは無関係 (パッチ前の prudynt でも同じ頻度)。配信は流れている。
+  原因は次の節
+
+### `msgChannel sink clogged` の警告は誤報 (#21)
+
+prudynt (`354b1b4`) が RTSP クライアントの接続中、5 秒ごとに
+`video channel:N - msgChannel sink clogged, 5x frames dropped in last 5s` を出し続ける。**フレームは落ちていない。
+警告のカウンタが、キューに書かなかった NAL を「落とした」と数えているだけ。**
+
+- `VideoWorker.cpp` は NAL ごとに `bool delivered = false` で始め、`onDataCallback != nullptr` (= `msgChannel` を
+  読む側がいる) の時だけ `msgChannel->write()` の結果を `delivered` に入れる。読む側がいない時はバッファを
+  プールに返して何も書かないが、**`delivered` は false のまま**なので、その下の「`!delivered` なら clog として数える」に
+  毎回入る
+- このバージョンには `onDataCallback` に代入している箇所が**どこにも無い** (宣言と nullptr での初期化、
+  nullptr かどうかの判定だけ)。RTSP は tap (`video_taps`) 経由に移っていて、`msgChannel` は使われていない。
+  つまり「読む側がいない」が常に成り立ち、`msgChannel` には 1 個も書かれず、キューは空のまま
+  (#21 を立てた時の「キューが満杯に張り付いている」という読みは誤り)
+- この処理全体が `hasDataCallback` (クライアント接続中) の内側にあるので、警告が出るのはクライアントがいる
+  チャンネルだけ。ch0 は youtube-relay の ffmpeg が常時つないでいるので出続ける
+- 実機での裏付け (2026-09-22): 普段は ch1 の警告は出ていない。ch1 に RTSP クライアントを 17 秒つなぐと、その間だけ
+  `video channel:1 - ... 53 frames dropped in last 5s` が 5 秒ごとに出て、切断すると止まった。数は ch0 と同じく
+  5 秒間の NAL の個数とほぼ一致。受信側の ffmpeg にエラーなし
+- 影響はログだけ: 5 秒に 1 行 (1 時間で 720 行) 出るので `logread` のリングバッファが早く流れる。メモリや CPU の
+  無駄は無い (バッファは即座にプールへ返している)
+- 対処: `patches/prudynt-msgchannel-warning.diff` (読む側がいない時は `delivered = true` にする 1 行)。OSD のパッチとは
+  独立。2026-09-22 に両方のパッチを当ててビルドし直して実機に入れ、配信中 (ch0 に ffmpeg が接続中) に警告が
+  出なくなったこと、OSD テキストと配信がそのまま動くことを確認した。パッチを当てない場合は
+  `logread | grep -v 'sink clogged'` で読み飛ばせば足りる (`general.loglevel` を `ERROR` にしても消えるが、
+  他の警告も消える)
 
 ### SD カードからの Wi-Fi 設定: 未検証の点
 
@@ -593,8 +625,8 @@ A (`uenv.txt`)・B (`wpa_supplicant.conf`) とも、ソース `ciao+da40db6` の
   `disable-netwatch.sh` も同日に実機で確認。長時間試験も完了。`S37wifi-from-sd` の実機確認は未実施
 - [x] インストーラ (`install.sh`)、netwatch 無効化 (`disable-netwatch.sh`)、SD カードからの Wi-Fi 設定 (複数可)
 - [x] 映像に任意のテキストを重ねる prudynt の OSD パッチ (#17、3 か所化 #19、SD からの設定 #22) — 実機 (720p) で確認:
-  3 か所同時の 0.5 秒更新、再起動後の自動有効化、OSD プールの上限。1 時間の連続動作は 1 か所の版 (#17) で確認。
-  1080p・サブストリーム・3 か所での長時間動作・本物の SD カードでの `osd-config` は未確認
+  3 か所同時の 0.5 秒更新、再起動後の自動有効化、OSD プールの上限、サブストリームへの表示、プライバシーカバーとの共存。
+  連続動作は 1 か所の版 (#17) で 1 時間、3 か所の版で 15 分。1080p と、本物の SD カードでの `osd-config` は未確認
 - [ ] `S37wifi-from-sd` の実機確認 (#10)
 - [ ] Thingino パッケージとしての統合 / ファームウェア組み込み (Config.in オプション化、stream key の安全な保持)。
   将来的には Thingino の新ストリーマ [Raptor](https://github.com/gtxaspec/raptor) の RTMPS push 機能 (RSP) への
