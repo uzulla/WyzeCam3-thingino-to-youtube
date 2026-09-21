@@ -71,18 +71,22 @@ if [ -n "$FFMPEG" ]; then
 fi
 
 echo "Installing scripts"
-# stop only signals the supervisor; it exits after its current sleep and after
+# TERM only asks the supervisor to stop; it exits after its current sleep and after
 # reaping ffmpeg. Wait for that, or the new instance would briefly publish to
 # the same stream key alongside the old one.
 ssh "$CAM" '
+	# Only trust the pidfile if that PID really is the supervisor (PIDs get reused)
+	is_relay() { [ -n "$1" ] && grep -q youtube-relay "/proc/$1/cmdline" 2>/dev/null; }
 	pid=$(cat /run/youtube-relay.pid 2>/dev/null)
-	/etc/init.d/S93youtube-relay stop >/dev/null 2>&1
+	is_relay "$pid" || pid=""
+	[ -n "$pid" ] && kill "$pid" 2>/dev/null
+	rm -f /run/youtube-relay.pid
 	i=0
-	while [ -n "$pid" ] && [ -d "/proc/$pid" ] && [ $i -lt 45 ]; do
+	while is_relay "$pid" && [ $i -lt 45 ]; do
 		i=$((i + 1))
 		sleep 1
 	done
-	if [ -n "$pid" ] && [ -d "/proc/$pid" ]; then
+	if is_relay "$pid"; then
 		echo "old supervisor (pid $pid) did not exit, killing it" >&2
 		pkill -P "$pid" 2>/dev/null # its ffmpeg child first, or it would be orphaned
 		kill -9 "$pid" 2>/dev/null
