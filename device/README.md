@@ -125,10 +125,8 @@ ssh $CAM 'vi /etc/youtube-relay.json'    # stream_key を記入
 #  b) SD カードに置く (スタンドアロン運用)
 #     PC で SD 直下に youtube-relay.json を書いてカメラに挿すだけ。手順 4 は不要
 
-# 4. ファーム更新時のバックアップ対象に登録 (設定 + スクリプト 2 本。下記「ファームウェア更新」参照)
-for p in /etc/youtube-relay.json /usr/sbin/youtube-relay /etc/init.d/S93youtube-relay; do
-  ssh $CAM "grep -qxF $p /etc/cfg-backup.list || echo $p >> /etc/cfg-backup.list"
-done
+# 4. 設定をファーム更新時のバックアップ対象に登録 (下記「ファームウェアを更新した後は…」参照)
+ssh $CAM 'grep -qxF /etc/youtube-relay.json /etc/cfg-backup.list || echo /etc/youtube-relay.json >> /etc/cfg-backup.list'
 
 # 5. 起動
 ssh $CAM '/etc/init.d/S93youtube-relay start'
@@ -138,29 +136,34 @@ ssh $CAM '/etc/init.d/S93youtube-relay status'
 ssh $CAM 'logread | grep youtube-relay | tail -20'
 ```
 
-## ファームウェア更新 (重要: overlay は消える)
+## ファームウェアを更新した後は入れ直しが必要
 
-Thingino の rootfs / full アップグレードは **overlay を消去する**。つまりこのディレクトリの
-ファイルと `/usr/bin/ffmpeg` は全部消える (公式イメージに ffmpeg は入っていない —
-`ciao+da40db6` 実機で確認)。残せるのは 64KB の backup パーティションに入る分だけ:
+ファームウェア更新そのものはこのリポジトリの範囲外 (やり方は
+[Thingino のドキュメント](https://github.com/themactep/thingino-firmware/blob/master/docs/firmware/sysupgrade.md) を参照)。
+ここで知っておくべきことは 1 つだけ:
 
-- `/etc/cfg-backup.list` に載っているパスが、**`sysupgrade -B` (`--backup`) を付けたときだけ**
-  退避され、更新後の初回起動で `S37cfg-autorestore` が自動復元する (`-B` はデフォルト無効)
-- 無圧縮 tar で上限 65472 バイト。設定とスクリプト 2 本 (約 9KB) は入るが、
-  **ffmpeg (2.5MB) は入らない**。`install.sh` が登録と収支チェックをする
-- 手元で確認するには `cfg-backup write` (収まらなければ `backup too large` で失敗する)
+**Thingino を更新すると、カメラ上の書き込み領域 (overlayfs の data パーティション。`/overlay`)
+ごと、このディレクトリから入れたファイルと `/usr/bin/ffmpeg` は消える。**
+※ ここでの overlay は映像の OSD ではなくファイルシステムの話。
 
-更新の流れ:
+更新が終わったら入れ直す:
 
 ```sh
-ssh $CAM 'sysupgrade -B -f'                       # 設定を退避して更新
-# 更新後のファーム (toolchain 世代) に合わせてビルドし直した ffmpeg を入れる
+# ffmpeg は更新後のファーム (toolchain 世代) に合わせてビルドし直したものを使う
+# (対応表はトップの README)
 ./install.sh root@<camera-ip> ../dist/ffmpeg
 ```
 
-ffmpeg を SD カード (`/mnt/mmcblk0p1/ffmpeg`) に置く運用なら、更新後も `-B` の復元だけで
-配信が再開する。復元後に ffmpeg が無い間は supervisor が
-`No ffmpeg binary with rtmps support found` を出して待機する。
+- 入れ直すまでの間、supervisor も消えているので配信は止まる。supervisor だけ残っていて
+  ffmpeg が無い場合は `No ffmpeg binary with rtmps support found` を出して待機する
+- `/etc/youtube-relay.json` (ストリームキー) だけは Thingino のバックアップ対象リスト
+  `/etc/cfg-backup.list` に登録してある。Thingino 側で設定バックアップを有効にして更新
+  (`sysupgrade` なら `-B`) すれば Wi-Fi 設定などと一緒に復元される。バックアップなしで
+  更新した場合は `install.sh` の後でキーを書き直す
+- スクリプトや ffmpeg はあえてこのリストに入れていない。バックアップ領域は 64KB しかなく、
+  溢れると Wi-Fi 設定を含むバックアップ全体が失敗する (しかも更新は続行される) ため
+- SD カードに設定と ffmpeg を置く運用でも、supervisor と init スクリプトは内蔵側なので
+  入れ直しは必要
 
 ## netwatch (ネットワーク監視による自動再起動) に注意
 
@@ -216,7 +219,7 @@ youtube-relay: Starting ffmpeg -> rtmps://.../REDACTED (config: ..., ffmpeg: ...
 | ログ / 症状 | 原因と対処 |
 |---|---|
 | `No usable config, standing by` | 設定が見つからない。`mount \| grep mmcblk` で SD がマウントされているか、`ls /mnt/mmcblk0p1/` にファイルがあるか、ファイル名が `youtube-relay.json` か、`jct <path> get stream_key` で読めるか (JSON 構文エラーだと読めない)、`"enabled": false` になっていないかを順に確認 |
-| `No ffmpeg binary with rtmps support found, standing by` | ファーム更新で overlay ごと `/usr/bin/ffmpeg` が消えた可能性が高い → `install.sh` で入れ直す。ファイルはあるのにこれが出る場合は、そのバイナリが今のファームで起動できていない (toolchain 世代の不一致。`/usr/bin/ffmpeg -version` を手で実行して確認)。また**再起動で `/tmp/ffmpeg` は消える**。`/usr/bin/ffmpeg` へ常設するか SD に置く。設定の `ffmpeg_bin` が存在しないパスを指している場合も同じ (行を消せば自動探索になる)。ffmpeg を置けば30秒以内に自動で拾う (supervisor 再起動不要) |
+| `No ffmpeg binary with rtmps support found, standing by` | ファーム更新で `/usr/bin/ffmpeg` が消えた可能性が高い → `install.sh` で入れ直す。ファイルはあるのにこれが出る場合は、そのバイナリが今のファームで起動できていない (toolchain 世代の不一致。`/usr/bin/ffmpeg -version` を手で実行して確認)。また**再起動で `/tmp/ffmpeg` は消える**。`/usr/bin/ffmpeg` へ常設するか SD に置く。設定の `ffmpeg_bin` が存在しないパスを指している場合も同じ (行を消せば自動探索になる)。ffmpeg を置けば30秒以内に自動で拾う (supervisor 再起動不要) |
 | `ffmpeg exited (rc=1) after 0〜2s` を繰り返す | ffmpeg が即死している。RTSP の URL/認証ミス、YouTube 側のキー間違い、DNS/ネットワーク未接続が典型。下記「ffmpeg のエラーを直接見る」で原因を特定 |
 | `ffmpeg exited` が数十秒〜数分間隔 | 接続は成立するが切断されている。Wi-Fi 品質、YouTube 側の一時的な切断など。supervisor が自動復帰させるので、頻度が低ければ実害はない |
 | status が `not running` | `service enable youtube-relay` で有効化されているか (`ls -la /etc/init.d/S93youtube-relay` で実行ビット確認)、`/run/portal_mode` が無いか (Wi-Fi 未設定モード)。手動起動は `/etc/init.d/S93youtube-relay start` |

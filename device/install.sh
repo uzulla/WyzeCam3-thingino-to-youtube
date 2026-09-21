@@ -4,8 +4,8 @@
 #   device/install.sh root@<camera-ip> [path/to/ffmpeg]
 #
 # Safe to re-run. Meant for the first install AND for after a firmware upgrade:
-# rootfs/full upgrades wipe the overlay, which takes /usr/bin/ffmpeg and
-# (unless restored from the config backup) the scripts with it.
+# upgrades wipe the camera's writable area, so everything installed here is
+# gone afterwards. Upgrading itself is up to you (see Thingino's docs).
 #
 # The ffmpeg argument is optional; without it only scripts are (re)installed.
 # An existing /etc/youtube-relay.json on the camera is never overwritten.
@@ -16,9 +16,13 @@ CAM=$1
 FFMPEG=$2
 HERE=$(cd "$(dirname "$0")" && pwd)
 
-# Paths kept across upgrades via Thingino's cfg-backup (64KB raw partition).
-# ffmpeg itself (2.5MB) cannot fit there - it must be re-pushed or live on SD.
-BACKUP_PATHS="/etc/youtube-relay.json /usr/sbin/youtube-relay /etc/init.d/S93youtube-relay"
+# Firmware upgrades are the user's business, not ours: we only keep the (tiny)
+# config in Thingino's cfg-backup list so the stream key survives an upgrade
+# done with backup enabled. Scripts and ffmpeg are simply re-installed by
+# re-running this script. Deliberately NOT adding the scripts to the list:
+# the backup area is 64KB and an oversized list makes the whole backup
+# (Wi-Fi settings included) fail, which sysupgrade treats as non-fatal.
+BACKUP_PATHS="/etc/youtube-relay.json"
 
 if [ -z "$CAM" ]; then
 	echo "Usage: $0 root@<camera-ip> [path/to/ffmpeg]" >&2
@@ -91,9 +95,8 @@ done
 size=$(ssh "$CAM" 'tar cf - /etc/cfg-backup.list $(for p in $(grep -v "^#" /etc/cfg-backup.list); do [ -e "$p" ] && echo "$p"; done) 2>/dev/null | wc -c')
 echo "Config backup payload: $size / 65472 bytes"
 if [ "$size" -gt 65472 ]; then
-	echo "WARNING: too large - 'sysupgrade -B' will refuse to back up." >&2
-	echo "         Remove the two script paths from /etc/cfg-backup.list and" >&2
-	echo "         re-run this installer after each upgrade instead." >&2
+	echo "WARNING: /etc/cfg-backup.list exceeds the 64KB backup area - Thingino's" >&2
+	echo "         config backup will fail on upgrade. Trim the list." >&2
 fi
 
 ssh "$CAM" '/etc/init.d/S93youtube-relay start'
