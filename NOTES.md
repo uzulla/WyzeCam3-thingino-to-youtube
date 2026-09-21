@@ -321,6 +321,9 @@ QEMU 検証 (新 sysroot = uClibc 1.0.59 + 4KB バッファの mbedTLS):
   (公式イメージに `/usr/bin/ffmpeg` は無い。`BR2_PACKAGE_PRUDYNT_T_FFMPEG` は opt-in)。
   OS の更新や設定バックアップ自体はこのリポジトリの範囲外とし、インストーラは自前のファイルを
   置くだけにした。supervisor には「起動できて rtmps を持つか」の `-protocols` チェックを追加
+- `S41ifplugd` が `overlay/` から消えたのは `package/thingino-ethernet` へ移っただけで、もともと
+  有線 (`eth0`) 専用。Wi-Fi 側の DHCP (`S38wpa_supplicant` の udhcpc まわり) は新旧で同一なので、
+  device/README の「デフォルトルートが戻らないときの cron 回避策」はそのまま有効
 - 変わっていなかったもの: `jct` (1.2.0→1.2.1)、`/run/sync_success`、`/run/portal_mode`、
   `service enable|disable`、SD の自動マウント (`/mnt/mmcblk0p1`)、
   デフォルト streamer (prudynt。Raptor / timps / Strero は選択肢として追加されただけ)
@@ -397,6 +400,7 @@ pin は `git ls-tree <commit> buildroot` で見る)。
   クラッシュ再起動・ネットワーク断の待機と復帰後の自動再開まで実機の障害試験で確認済み。
   復帰しないケースが今後見つかればバグとして対応する
 - [x] `ciao+da40db6` での実機確認 — YouTube Live へ映像・音声とも配信成功 (2026-09-21)。
-  ffmpeg CPU 4.8% @720p10/1Mbps。長時間試験と `install.sh` の通し実行は未実施
+  ffmpeg CPU 4.8% @720p10/1Mbps。長時間試験と `install.sh` / `disable-netwatch.sh` /
+  `S37wifi-from-sd` の実機通し実行は未実施
 - [ ] Thingino パッケージとしての統合 (Config.in オプション化、stream key の安全な保持)
 - [ ] typo 修正 (`aac_adtastoasc`) の upstream PR

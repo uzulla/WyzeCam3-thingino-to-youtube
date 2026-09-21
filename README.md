@@ -12,7 +12,15 @@ minimal FFmpeg バイナリと、その周辺ツールです。
 ## 典型的な使い方
 
 [Releases](https://github.com/uzulla/WyzeCam3-thingino-to-youtube/releases) からバイナリを取得し、
-カメラに転送して実行するだけです:
+カメラに転送して実行するだけです。**バイナリはカメラの Thingino のビルドごとに別物**なので、
+カメラで `grep BUILD_ID /etc/os-release` を見て、対応する Release のものを使ってください
+(違うものは起動しません):
+
+| カメラの `BUILD_ID` | Release |
+|---|---|
+| `ciao+da40db6` (2026-09-14) | [v1.1.0](https://github.com/uzulla/WyzeCam3-thingino-to-youtube/releases/tag/v1.1.0) |
+| `ciao+c334a03` (2026-08-01) | [v1.0.0](https://github.com/uzulla/WyzeCam3-thingino-to-youtube/releases/tag/v1.0.0) |
+| それ以外 | 下の「ビルド手順」で、その commit に合わせて自分でビルドする |
 
 ```sh
 # PC 側: ダウンロードしてリネームし、カメラへ転送
@@ -59,10 +67,20 @@ localhost RTSP (prudynt) → H.264/AAC stream copy → FLV mux → RTMPS/TLS →
 
 ```text
 patches/   このリポジトリの本体。Thingino の thingino-ffmpeg パッケージへ当てる差分
-device/    カメラに置くファイル (supervisor スクリプト・init スクリプト・設定例)
-NOTES.md   実装の詳細・設計判断・ハマりどころの記録
-dist/      ビルド成果物 (git 管理外)。配布は GitHub Releases の tarball で行う
+device/    カメラ側の常設運用一式 (詳細は device/README.md)
+             youtube-relay / S93youtube-relay   supervisor と起動スクリプト
+             install.sh                         上記と ffmpeg をカメラへ入れる (自前のファイルを置くだけ)
+             disable-netwatch.sh                Thingino の netwatch (OS 自動再起動) を無効化する
+             install-wifi-from-sd.sh / S37wifi-from-sd
+                                                任意: SD の wpa_supplicant.conf (複数 Wi-Fi 可) を起動時に適用
+             common.sh                          対応ファームの判定 (違えば何も変更せず中止)
+NOTES.md   実装の詳細・設計判断・ハマりどころ・実測値の記録 (手順は書かない)
+dist/      ビルド成果物 (git 管理外)。配布は GitHub Releases (ffmpeg バイナリ単体) で行う
 ```
+
+OS (Thingino) の更新・バックアップ・設定変更と、このリポジトリの成果物のインストールは分けてあります。
+`install.sh` は自前のファイルを置くだけで、OS の設定を変えるもの (`disable-netwatch.sh`、
+`install-wifi-from-sd.sh`) は別のスクリプトです。
 
 `thingino-firmware/` (Thingino のソースツリー) はビルド時にこの直下へ clone しますが、
 git 管理外です。必要な変更はすべて `patches/` に分離してあります。
@@ -90,10 +108,10 @@ git 管理外です。必要な変更はすべて `patches/` に分離してあ�
 | ABI | mipsel / MIPS32 o32 / hard-float / uClibc-ng |
 | ビルドホスト | x86_64 Linux + Docker |
 
-| Thingino | toolchain | uClibc-ng | mbedTLS | 状態 |
-|---|---|---|---|---|
-| `ciao+c334a03` (2026-08-01) | GCC 15 | 1.0.57 | 3.6.6 | 実機で長時間配信まで確認済み |
-| `ciao+da40db6` (2026-09-14) | GCC 16.2 | 1.0.59 | 3.6.6 | 実機で YouTube Live 配信 (映像・音声) まで確認済み |
+| Thingino | toolchain | uClibc-ng | mbedTLS | Release | 状態 |
+|---|---|---|---|---|---|
+| `ciao+c334a03` (2026-08-01) | GCC 15 | 1.0.57 | 3.6.6 | v1.0.0 | 実機で長時間配信まで確認済み |
+| `ciao+da40db6` (2026-09-14) | GCC 16.2 | 1.0.59 | 3.6.6 | v1.1.0 | 実機で YouTube Live 配信 (映像・音声) まで確認済み。`device/` のスクリプトはこのビルド専用 |
 
 > **注意**: バイナリは実機ファームと同じ toolchain 世代・同じ mbedTLS soname に依存します。
 > 実機の `/etc/os-release` の `BUILD_ID` (`ciao+<commit>`) と `TOOLCHAIN_GCC`、および
@@ -199,7 +217,10 @@ scp -O ffmpeg root@<camera-ip>:/tmp/
 - [x] 負荷測定 (prudynt / ISP 処理への影響なしを確認)
 - [x] 自動再起動 (supervisor) スクリプト — [device/](device/) 参照
   (SD カード設定 + 再起動からの自動配信開始を実機確認済み)
-- [x] 長時間安定性試験 — 約4時間の連続配信でリーク・劣化・A/V ズレなし
+- [x] 長時間安定性試験 — 約4時間の連続配信でリーク・劣化・A/V ズレなし (`c334a03`)
+- [x] Thingino `ciao+da40db6` (GCC16) への追従 — 再ビルド、実機で YouTube Live 配信を確認
+- [x] インストーラ (`install.sh`)、netwatch 無効化、SD カードからの Wi-Fi 設定 (複数可)
+- [ ] `da40db6` での長時間試験、`install.sh` / `disable-netwatch.sh` / `S37wifi-from-sd` の実機通し確認
 - [ ] Thingino パッケージとしての統合 / ファームウェア組み込み
   (将来的には Thingino の新ストリーマ [Raptor](https://github.com/gtxaspec/raptor) の
   RTMPS push 機能 (RSP) への移行も選択肢)
