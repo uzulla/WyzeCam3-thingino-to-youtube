@@ -178,8 +178,26 @@ index fb883cc..21fa555 100644
  }
  
  void handle_audio(JsonValue *obj, std::string &out, bool &sep) {
+diff --git a/src/video/IMPEncoder.cpp b/src/video/IMPEncoder.cpp
+index 4e49062..feaa211 100644
+--- a/src/video/IMPEncoder.cpp
++++ b/src/video/IMPEncoder.cpp
+@@ -498,7 +498,12 @@ int IMPEncoder::init() {
+       return ret;
+     }
+ 
+-    if (cfg->osd.sei.enabled || cfg->osd.burnin.enabled) {
++    // The text-file overlays live in the OSD object as well. With SEI and the
++    // burn-in timestamp both off, they have to be enabled in the config file:
++    // there is no OSD object to enable them on at run time.
++    if (cfg->osd.sei.enabled || cfg->osd.burnin.enabled ||
++        cfg->osd.textfile.enabled || cfg->osd.textfile2.enabled ||
++        cfg->osd.textfile3.enabled) {
+       LOG_INFO("stream " << name
+                << ": binding FS->OSD->ENC, OSD via hardware + SEI");
+       osd = OSD::createNew(cfg->osd, encGrp, encChn, name);
 diff --git a/src/video/OSD.cpp b/src/video/OSD.cpp
-index 500c5fb..925a3ee 100644
+index 500c5fb..18dc2b6 100644
 --- a/src/video/OSD.cpp
 +++ b/src/video/OSD.cpp
 @@ -920,6 +920,7 @@ int OSD::exit() {
@@ -190,21 +208,34 @@ index 500c5fb..925a3ee 100644
  #ifdef USE_OSD_FONT_LIBSCHRIFT
    shutdownTimestampFont();
  #endif
-@@ -937,6 +938,12 @@ void OSD::updateDisplayEverySecond() {
-     loadElements();
-   }
- 
-+#ifdef OSD_BURN_TIMESTAMP
-+  // Text-file overlay: checked on every tick (not once per second) so an
-+  // external writer can update it at sub-second rates.
-+  updateTextfileOverlay();
-+#endif
-+
+@@ -940,8 +941,14 @@ void OSD::updateDisplayEverySecond() {
    current = time(nullptr);
    ltime = localtime(&current);
  
+-  if (ltime->tm_sec == last_updated_second)
++  if (ltime->tm_sec == last_updated_second) {
++#ifdef OSD_BURN_TIMESTAMP
++    // Text-file overlays are checked on every tick (not once per second) so
++    // an external writer can update them at sub-second rates.
++    updateTextfileOverlay(false);
++#endif
+     return; // already updated this second
++  }
+ 
+   last_updated_second = ltime->tm_sec;
+ 
+@@ -968,6 +975,9 @@ void OSD::updateDisplayEverySecond() {
+     IMP_OSD_ShowRgn(ts_rgn_, osdGrp, 0);
+     ts_region_created_ = false;
+   }
++  // On this tick the text-file overlays go after the timestamp, so that
++  // their pool budget is computed from the timestamp's current size.
++  updateTextfileOverlay(true);
+ #endif
+ }
+ 
 diff --git a/src/video/OSD.hpp b/src/video/OSD.hpp
-index e0ba5b2..b182778 100644
+index e0ba5b2..9ce21a1 100644
 --- a/src/video/OSD.hpp
 +++ b/src/video/OSD.hpp
 @@ -14,8 +14,14 @@
@@ -222,7 +253,7 @@ index e0ba5b2..b182778 100644
  #if defined(OSD_BURN_TIMESTAMP) && defined(USE_OSD_FONT_LIBSCHRIFT)
  #include "schrift.h"
  #include <unordered_map>
-@@ -156,6 +162,44 @@ private:
+@@ -156,6 +162,48 @@ private:
    bool osd_group_started_{false};
    std::string last_ts_text_;
  
@@ -233,7 +264,10 @@ index e0ba5b2..b182778 100644
 +    IMPOSDRgnAttr attr{};
 +    std::vector<uint8_t> buf;          // BGRA pixel buffer for the region
 +    std::vector<osdtext::Line> lines;  // text currently loaded from the file
-+    std::string path;
++    std::string path;              // file currently shown
++    std::string conf_path;         // string settings, re-read once per second
++    osdtext::Colors conf_colors{};
++    bool conf_valid{false};
 +    // Wanted geometry (last tick). Starts as an impossible layout so that
 +    // the first tick always counts as a geometry change.
 +    osdtext::Layout layout{0, 0, 0, 0, 0};
@@ -254,7 +288,7 @@ index e0ba5b2..b182778 100644
 +    struct timespec file_mtime{};
 +  };
 +  struct TextfilePlan;
-+  void updateTextfileOverlay();
++  void updateTextfileOverlay(bool once_per_second);
 +  void applyTextfileSlot(int index, const TextfilePlan &plan);
 +  void hideTextfileSlot(TextfileSlot &s);
 +  void destroyTextfileSlot(TextfileSlot &s);
@@ -263,6 +297,7 @@ index e0ba5b2..b182778 100644
 +                      int rows, bool force);
 +
 +  std::array<TextfileSlot, kTextfileSlots> tf_slots_;
++  size_t tf_ts_bytes_{0}; // timestamp region size the slots were last laid out for
 +
  #ifdef USE_OSD_FONT_LIBSCHRIFT
    // Antialiased glyph bitmap, rasterized once per character and cached
@@ -497,10 +532,10 @@ index 0000000..ea05235
 +} // namespace osdtext
 diff --git a/src/video/OSDTextfile.cpp b/src/video/OSDTextfile.cpp
 new file mode 100644
-index 0000000..4c8a1ff
+index 0000000..71f6be7
 --- /dev/null
 +++ b/src/video/OSDTextfile.cpp
-@@ -0,0 +1,388 @@
+@@ -0,0 +1,413 @@
 +// -- text-file overlay --------------------------------------------------
 +// Extra burned-in OSD regions ("slots": osd.textfile, osd.textfile2,
 +// osd.textfile3) that each show the contents of a text file (the slot's
@@ -696,7 +731,7 @@ index 0000000..4c8a1ff
 +  return true;
 +}
 +
-+void OSD::updateTextfileOverlay() {
++void OSD::updateTextfileOverlay(bool once_per_second) {
 +  if (!cfg)
 +    return;
 +  const _osd_textfile *conf[kTextfileSlots] = {
@@ -717,15 +752,25 @@ index 0000000..4c8a1ff
 +    p.enabled = c.enabled && !(is_substream_ && c.substream_disabled);
 +    if (!p.enabled)
 +      continue;
-+    // Snapshot the settings; everything below works on the copies.
-+    p.path = c.path ? c.path : "";
++    // Snapshot the settings; everything below works on the copies. The
++    // string settings are plain pointers that the JSON API thread frees and
++    // replaces without a lock (as for osd.burnin.format), so they are only
++    // touched once per second like upstream does, not on every 100 ms tick.
++    TextfileSlot &s = tf_slots_[i];
++    if (once_per_second || !s.conf_valid) {
++      s.conf_path = c.path ? c.path : "";
++      s.conf_colors = osdtext::Colors{};
++      parseColor(c.fill_color, s.conf_colors.fill);
++      parseColor(c.outline_color, s.conf_colors.outline);
++      parseColor(c.background_color, s.conf_colors.background);
++      s.conf_valid = true;
++    }
++    p.path = s.conf_path;
++    p.colors = s.conf_colors;
 +    p.scale = c.scale > 0 ? c.scale : stream_width / 480; // auto: as osd.burnin.scale
 +    p.scale = std::clamp(p.scale, 1, kBurninMaxScale);
 +    p.cols = std::clamp(c.cols, 1, kTextfileMaxCols);
 +    p.rows = std::clamp(c.rows, 1, kTextfileMaxRows);
-+    parseColor(c.fill_color, p.colors.fill);
-+    parseColor(c.outline_color, p.colors.outline);
-+    parseColor(c.background_color, p.colors.background);
 +    p.budget = remaining;
 +    p.layout = osdtext::fitLayout(p.scale, p.cols, p.rows, stream_width,
 +                                  stream_height, remaining);
@@ -749,6 +794,21 @@ index 0000000..4c8a1ff
 +      if (grows == (pass == 1))
 +        applyTextfileSlot(i, plans[i]);
 +    }
++  }
++
++  // The timestamp region changed size (osd.burnin.scale, or it was just
++  // created): upstream set its new size before the slots above gave way, and
++  // a region that did not fit at that moment stays invisible without any
++  // error. Now that there is room, set its attributes once more.
++  if (ts_bytes != tf_ts_bytes_) {
++    bool any = false;
++    for (const auto &s : tf_slots_)
++      any = any || s.attr_set;
++    if (any && ts_region_created_ && !ts_buf_.empty()) {
++      ts_attr_.data.picData.pData = ts_buf_.data();
++      IMP_OSD_SetRgnAttr(ts_rgn_, &ts_attr_);
++    }
++    tf_ts_bytes_ = ts_bytes;
 +  }
 +}
 +
