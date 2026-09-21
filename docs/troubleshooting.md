@@ -81,10 +81,12 @@ RTMP_URL=$(jct "$CFG" get rtmp_url 2>/dev/null); [ -n "$RTMP_URL" ] || RTMP_URL=
 # -loglevel だけは設定の ffmpeg_loglevel ではなく info に固定している (診断のために出力を増やすのが目的)
 FFMPEG_OPTS=$(jct "$CFG" get ffmpeg_opts 2>/dev/null)
 FFMPEG_OUT_OPTS=$(jct "$CFG" get ffmpeg_out_opts 2>/dev/null)
+set -f   # supervisor と同じ: オプション中の * (例: -map 0:*) をファイル名に展開させない
 "$FFMPEG" -loglevel info -rtsp_transport tcp $FFMPEG_OPTS \
   -i "$RTSP_URL" \
   -c copy $FFMPEG_OUT_OPTS -f flv \
   "$RTMP_URL/$(jct "$CFG" get stream_key)"
+set +f
 # (オプションは必ず出力 URL より前に置く。後ろに置くと警告が出て無視されることがある)
 # 原因を直したら:
 /etc/init.d/S93youtube-relay start
