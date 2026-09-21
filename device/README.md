@@ -8,6 +8,7 @@ Thingino 実機に置く supervisor 一式。`/etc` 以下は overlayfs でフ�
 | `youtube-relay` | `/usr/sbin/youtube-relay` | supervisor 本体 (ffmpeg を監視・再起動するループ) |
 | `S93youtube-relay` | `/etc/init.d/S93youtube-relay` | 起動スクリプト (boot 時に自動開始) |
 | `youtube-relay.json.example` | `/etc/youtube-relay.json` または SD カード直下 | 設定ファイル (下記「SD カードモード」参照) |
+| `install.sh` | (PC 側で実行) | 上記と ffmpeg を SSH 経由でまとめて入れるインストーラ。再実行可能 |
 
 ## 設定ファイルの探索順と「SD カードモード」
 
@@ -39,11 +40,13 @@ Wyze Cam v3 の overlay (データパーティション) は 8.5MB で、ffmpeg 
   ネットワーク断 (デフォルトルート消失) 中は ffmpeg を起動せず5秒間隔で復帰を待つ
   (「Network down」のログが1回出る)。全ての起動試行は「Starting ffmpeg」としてログに残る
   `thingino-ha` パッケージの watchdog と同じ構造
-- 起動前に**デフォルトゲートウェイへの ping で ネットワーク up を待ち**、NTP 同期フラグ
-  (`/run/sync_success`) を最大60秒待つ
+- 起動前に**デフォルトルートができるまで待ち** (ICMP を落とすルーターで詰まらないよう
+  ping は意図的にしない)、NTP 同期フラグ (`/run/sync_success`) を最大60秒待つ
 - `start-stop-daemon -N 10` で低優先度起動 — prudynt / ISP 処理と CPU を取り合わない
   (`telegrambot` と同じ流儀)
-- ストリームキーが未設定なら**起動せず SKIP** (設定するまで無害)
+- ストリームキーが未設定でも supervisor は常駐し、設定が現れるまで**配信せず待機** (無害)
+- ffmpeg は `-protocols` で出力プロトコル (rtmps) 対応を確認してから使う。素の Thingino に
+  入っている録画用 `/usr/bin/ffmpeg` (RTMPS 非対応) を誤って拾わないため
 - 有効/無効の切り替えは Thingino 標準の `service enable|disable youtube-relay`
   (init スクリプトの実行ビットで制御) か、JSON の `"enabled"` フラグ
 
@@ -82,6 +85,14 @@ Thingino はルート全体が overlayfs (SquashFS + JFFS2 データパーティ
 ## インストール手順
 
 ```sh
+# まとめて入れる (再実行可能。既存の /etc/youtube-relay.json は上書きしない)
+./install.sh root@<camera-ip> ../dist/ffmpeg
+# スクリプトだけ入れ直す場合は ffmpeg の引数を省略
+```
+
+`install.sh` がやっていることを手作業で行う場合:
+
+```sh
 CAM=root@<camera-ip>
 
 # 1. ffmpeg バイナリ (dist/ffmpeg) を永続領域へ
@@ -101,8 +112,10 @@ ssh $CAM 'vi /etc/youtube-relay.json'    # stream_key を記入
 #  b) SD カードに置く (スタンドアロン運用)
 #     PC で SD 直下に youtube-relay.json を書いてカメラに挿すだけ。手順 4 は不要
 
-# 4. ファーム更新時のバックアップ対象に登録
-ssh $CAM 'grep -q youtube-relay /etc/cfg-backup.list || echo /etc/youtube-relay.json >> /etc/cfg-backup.list'
+# 4. ファーム更新時のバックアップ対象に登録 (設定 + スクリプト 2 本。下記「ファームウェア更新」参照)
+for p in /etc/youtube-relay.json /usr/sbin/youtube-relay /etc/init.d/S93youtube-relay; do
+  ssh $CAM "grep -qxF $p /etc/cfg-backup.list || echo $p >> /etc/cfg-backup.list"
+done
 
 # 5. 起動
 ssh $CAM '/etc/init.d/S93youtube-relay start'
@@ -111,6 +124,49 @@ ssh $CAM '/etc/init.d/S93youtube-relay start'
 ssh $CAM '/etc/init.d/S93youtube-relay status'
 ssh $CAM 'logread | grep youtube-relay | tail -20'
 ```
+
+## ファームウェア更新 (重要: overlay は消える)
+
+Thingino の rootfs / full アップグレードは **overlay を消去する**。つまりこのディレクトリの
+ファイルと `/usr/bin/ffmpeg` は全部消え、素のファームの `/usr/bin/ffmpeg` (録画用・RTMPS 非対応)
+に戻る。残せるのは 64KB の backup パーティションに入る分だけ:
+
+- `/etc/cfg-backup.list` に載っているパスが、**`sysupgrade -B` (`--backup`) を付けたときだけ**
+  退避され、更新後の初回起動で `S37cfg-autorestore` が自動復元する (`-B` はデフォルト無効)
+- 無圧縮 tar で上限 65472 バイト。設定とスクリプト 2 本 (約 9KB) は入るが、
+  **ffmpeg (2.5MB) は入らない**。`install.sh` が登録と収支チェックをする
+- 手元で確認するには `cfg-backup write` (収まらなければ `backup too large` で失敗する)
+
+更新の流れ:
+
+```sh
+ssh $CAM 'sysupgrade -B -f'                       # 設定を退避して更新
+# 更新後のファーム (toolchain 世代) に合わせてビルドし直した ffmpeg を入れる
+./install.sh root@<camera-ip> ../dist/ffmpeg
+```
+
+ffmpeg を SD カード (`/mnt/mmcblk0p1/ffmpeg`) に置く運用なら、更新後も `-B` の復元だけで
+配信が再開する。復元後に ffmpeg が無い間は supervisor が
+`No ffmpeg binary with rtmps support found` を出して待機する (素の ffmpeg は使わない)。
+
+## netwatch (ネットワーク監視による自動再起動) に注意
+
+2026-09 以降の Thingino には `S52netwatch` が入っており、**デフォルトで有効**。
+デフォルトゲートウェイへ 30 秒毎に ping し、**3 回連続で失敗するとカメラを再起動する**。
+
+ICMP に応答しないモバイルルーター / テザリングでは、Wi-Fi が正常でも約 90 秒毎に再起動して
+配信が成立しない。supervisor が gateway ping をしないのと同じ理由で、該当環境では止めるか
+宛先を変える:
+
+```sh
+ping -c 1 $(ip route | awk '/^default/{print $3; exit}')   # これが通らない環境は要対処
+jct /etc/thingino.json set netwatch.enabled false           # 無効化
+jct /etc/thingino.json set netwatch.target 1.1.1.1          # または応答するホストを監視
+service restart netwatch
+```
+
+`/etc/thingino.json` は標準で cfg-backup の対象なので、この設定はファーム更新後も残る。
+逆に ping が通る環境では、Wi-Fi が固まったときの最終手段として有効なままが望ましい。
 
 ## 運用
 
@@ -137,7 +193,7 @@ ps | grep ffmpeg | grep -v grep         # ffmpeg が実際に走っているか
 
 ```text
 youtube-relay: Started, watching for config: /mnt/mmcblk0p1/youtube-relay.json /etc/youtube-relay.json
-youtube-relay: Streaming to rtmps://.../REDACTED (config: ..., ffmpeg: ...)
+youtube-relay: Starting ffmpeg -> rtmps://.../REDACTED (config: ..., ffmpeg: ...)
 ```
 
 最終確認は YouTube Studio のプレビュー (映像と音声メーターが動いていること)。
@@ -147,13 +203,14 @@ youtube-relay: Streaming to rtmps://.../REDACTED (config: ..., ffmpeg: ...)
 | ログ / 症状 | 原因と対処 |
 |---|---|
 | `No usable config, standing by` | 設定が見つからない。`mount \| grep mmcblk` で SD がマウントされているか、`ls /mnt/mmcblk0p1/` にファイルがあるか、ファイル名が `youtube-relay.json` か、`jct <path> get stream_key` で読めるか (JSON 構文エラーだと読めない)、`"enabled": false` になっていないかを順に確認 |
-| `No ffmpeg binary found, standing by` | **再起動で `/tmp/ffmpeg` は消える**。`/usr/bin/ffmpeg` へ常設するか SD に置く。設定の `ffmpeg_bin` が存在しないパスを指している場合も同じ (行を消せば自動探索になる)。ffmpeg を置けば30秒以内に自動で拾う (supervisor 再起動不要) |
+| `No ffmpeg binary with rtmps support found, standing by` | ファーム更新で overlay が消え、素の `/usr/bin/ffmpeg` (RTMPS 非対応) に戻った可能性が高い → `install.sh` で入れ直す。また**再起動で `/tmp/ffmpeg` は消える**。`/usr/bin/ffmpeg` へ常設するか SD に置く。設定の `ffmpeg_bin` が存在しないパスを指している場合も同じ (行を消せば自動探索になる)。ffmpeg を置けば30秒以内に自動で拾う (supervisor 再起動不要) |
 | `ffmpeg exited (rc=1) after 0〜2s` を繰り返す | ffmpeg が即死している。RTSP の URL/認証ミス、YouTube 側のキー間違い、DNS/ネットワーク未接続が典型。下記「ffmpeg のエラーを直接見る」で原因を特定 |
 | `ffmpeg exited` が数十秒〜数分間隔 | 接続は成立するが切断されている。Wi-Fi 品質、YouTube 側の一時的な切断など。supervisor が自動復帰させるので、頻度が低ければ実害はない |
 | status が `not running` | `service enable youtube-relay` で有効化されているか (`ls -la /etc/init.d/S93youtube-relay` で実行ビット確認)、`/run/portal_mode` が無いか (Wi-Fi 未設定モード)。手動起動は `/etc/init.d/S93youtube-relay start` |
 | SD を挿してもマウントされない | `logread \| grep automount` を確認。fsck 失敗や非対応フォーマットの可能性。FAT32 でフォーマットし直す |
 | `Waiting for network` / `Network down` のまま復帰しない | `ip -4 route show default` が空ならデフォルトルート喪失 (SSH は同一セグメントなので通る点に注意)。`killall -USR1 udhcpc` で DHCP 再取得 → だめなら `service restart network`。リンク断で udhcpc がルートを再設置しないことがあるため、保険として cron に `* * * * * ip -4 route show default \| grep -q . \|\| killall -USR1 udhcpc` を入れておくとよい (`/etc/cron/crontabs/root` に追記) |
-| YouTube Studio に何も出ない (ログは Streaming) | ストリームキーの間違いが最有力。YouTube 側は間違ったキーでも接続を受けてから切断するため、`ffmpeg exited` の繰り返しになっていないかログを確認 |
+| カメラが約 90 秒毎に再起動する | netwatch がゲートウェイへの ping 失敗で再起動している (`logread \| grep netwatch`)。上記「netwatch」参照 |
+| YouTube Studio に何も出ない (ログは Starting ffmpeg) | ストリームキーの間違いが最有力。YouTube 側は間違ったキーでも接続を受けてから切断するため、`ffmpeg exited` の繰り返しになっていないかログを確認 |
 | 映像は出るが音が出ない | RTSP に複数の音声トラックが載っている可能性。設定の `ffmpeg_opts` に `-map 0:v:0 -map 0:a:0` を指定して AAC トラックを明示する |
 
 ### ffmpeg のエラーを直接見る

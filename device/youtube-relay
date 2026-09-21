@@ -39,6 +39,13 @@ network_ready() {
 	[ -n "$(ip -4 route show default 2>/dev/null)" ]
 }
 
+# Stock Thingino ships its own /usr/bin/ffmpeg (recording only, no RTMPS).
+# After a firmware upgrade wipes the overlay that binary reappears in place
+# of ours, so check that the candidate can actually speak the output protocol.
+ffmpeg_supports() {
+	"$1" -hide_banner -protocols 2>/dev/null | grep -q "^ *$2\$"
+}
+
 FFMPEG_PID=""
 WATCHER_PID=""
 
@@ -75,6 +82,7 @@ done
 BACKOFF=2
 STANDBY_LOGGED=0
 NET_LOGGED=0
+FFMPEG_LOGGED=0
 while true; do
 	CFG=$(find_config)
 	if [ -z "$CFG" ] || ! config_ok "$CFG"; then
@@ -98,15 +106,24 @@ while true; do
 	# Search order: temporary/removable locations first so a test binary on
 	# the SD card or in /tmp overrides the installed one; reboot (or pulling
 	# the SD card) falls back to the installed binary automatically.
+	PROTO=${RTMP_URL%%:*}
 	FFMPEG=$(jct "$CFG" get ffmpeg_bin 2>/dev/null)
-	[ -n "$FFMPEG" ] || for f in /mnt/mmcblk0p1/ffmpeg /tmp/ffmpeg /usr/bin/ffmpeg /usr/local/bin/ffmpeg; do
-		[ -x "$f" ] && FFMPEG="$f" && break
-	done
+	if [ -n "$FFMPEG" ]; then
+		[ -x "$FFMPEG" ] && ! ffmpeg_supports "$FFMPEG" "$PROTO" && FFMPEG=""
+	else
+		for f in /mnt/mmcblk0p1/ffmpeg /tmp/ffmpeg /usr/bin/ffmpeg /usr/local/bin/ffmpeg; do
+			[ -x "$f" ] && ffmpeg_supports "$f" "$PROTO" && FFMPEG="$f" && break
+		done
+	fi
 	if [ ! -x "$FFMPEG" ]; then
-		log "No ffmpeg binary found, standing by"
+		if [ $FFMPEG_LOGGED -eq 0 ]; then
+			log "No ffmpeg binary with $PROTO support found, standing by"
+			FFMPEG_LOGGED=1
+		fi
 		sleep 30
 		continue
 	fi
+	FFMPEG_LOGGED=0
 
 	if ! network_ready; then
 		if [ $NET_LOGGED -eq 0 ]; then
