@@ -130,7 +130,8 @@ network={
 - 元に戻す: `service disable prudynt-osd; service disable osd-config` して再起動 (すぐ戻すなら
   `service stop osd-config; service stop prudynt; /etc/init.d/S30prudynt-osd stop; service start prudynt`)。
   完全に消すなら `/etc/init.d/S30prudynt-osd` `/usr/bin/prudynt-osd` `/usr/bin/prudynt-osd.build`
-  `/usr/sbin/osd-progress-demo` `/usr/sbin/osd-config` `/etc/init.d/S93osd-config` を削除する
+  `/usr/sbin/osd-progress-demo` `/usr/sbin/osd-config` `/etc/init.d/S93osd-config` と、置いていれば
+  `/etc/prudynt-osd.json` を削除する (残っていると、入れ直した時に古い OSD 設定が自動で反映される)
 - Thingino を入れ直した/更新した後は、他のファイルと同じく入れ直しが必要 (新しいファームに合わせて
   prudynt をビルドし直す)
 
@@ -221,13 +222,16 @@ echo 'REC' > /run/prudynt/osd-text2.tmp && mv /run/prudynt/osd-text2.tmp /run/pr
   (手で `prudyntctl json` した設定に干渉しない)
 - prudynt が設定を受け付けない状態が 30 秒続くと (キーの綴り間違い、パッチなしの prudynt など)、
   `logread | grep osd-config` に 1 回出して、送り続ける
-- **送るのはファイルに書いてあるキーだけ。** ファイルから消したキーは、prudynt が再起動するまで前の値のまま残る
-  (例: `textfile2` の行を消しても右上は消えない。消したい時は `"enabled": false` と書く)
+- テキストの矩形 (`textfile` / `textfile2` / `textfile3`) のブロックをファイルから消すと、その矩形は無効に戻る
+  (別の設定ファイルに切り替わった時も同じ: 前のファイルにだけあった矩形は消える)。それ以外は
+  **ファイルに書いてあるキーだけを送る**ので、消したキー (`rows` や `osd.burnin` の設定など) は prudynt が
+  再起動するまで前の値のまま残る
 - JSON が壊れている時は何も変えず、`logread | grep osd-config` に理由を 1 回出す
 - フラッシュには何も書かない (`save_config` を送らない、`/etc/prudynt.json` に触らない)
 - **OSD プールのサイズ (`general.osd_pool_size`) はこの方法では変えられない** (prudynt の起動時にしか確保されない)。
   大きくしたい時は次の節の手順で `/etc/prudynt.json` に 1 回だけ書く
-- ログ: `logread | grep osd-config`。止める: `service disable osd-config`
+- ログ: `logread | grep osd-config`。止めて、次回の起動でも動かないようにする:
+  `service stop osd-config; service disable osd-config`
 
 ### 大きさの上限と OSD プール
 

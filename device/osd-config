@@ -14,8 +14,9 @@
 # Only its "osd" section is sent; anything else in the file is ignored.
 #
 # Re-sent when prudynt was restarted (new pid) or the file changed / appeared /
-# moved (SD inserted). File gone (SD pulled) -> the text overlays named in that file
-# are turned off again; slots it never mentioned are not touched. No config file
+# moved (SD inserted). File gone (SD pulled), or a text overlay block removed from
+# it -> the text overlays it had turned on are turned off again; slots it never
+# mentioned are not touched. No config file
 # ever seen -> prudynt is left alone.
 
 CONFIG_CANDIDATES=${OSD_CONFIG_CANDIDATES:-"/mnt/mmcblk0p1/prudynt-osd.json /etc/prudynt-osd.json"}
@@ -92,12 +93,20 @@ while :; do
 		case "$body" in
 		"{"*)
 			want="$pid|$cfg|$(printf '%s' "$body" | md5sum | cut -d' ' -f1)"
+			# Slots we turned on earlier that the new config no longer mentions
+			# (other file took over, or the block was deleted): off first, and
+			# only then forget them. If that fails, keep "managed" and retry.
+			new_slots=$(slots_in "$cfg")
+			stale=""
+			for slot in $managed; do
+				case " $new_slots" in *" $slot "*) ;; *) stale="$stale$slot " ;; esac
+			done
 			if [ "$want" = "$applied" ]; then
 				complained=""
-			elif send "$body"; then
-				log "Applied $cfg to prudynt (pid $pid)"
+			elif { [ -z "$stale" ] || send "$(off_json "$stale")"; } && send "$body"; then
+				log "Applied $cfg to prudynt (pid $pid)${stale:+, turned off: $stale}"
 				applied=$want
-				managed=$(slots_in "$cfg")
+				managed=$new_slots
 				save_state
 				complained=""
 				fails=0
