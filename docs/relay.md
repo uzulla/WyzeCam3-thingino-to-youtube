@@ -176,7 +176,8 @@ relay が自分で追従するので不要)。編集するのは **relay が使�
 - **Status**: relay サービスと ffmpeg の稼働 (pid、配信の経過時間)、起動時の自動開始、使っている設定ファイル。5 秒ごとに更新
 - **Relay service**: Start / Stop / **Restart stream (ffmpeg)** (= `service restart youtube-relay`)。「Start the relay service at
   boot」のスイッチが `service enable/disable` (init スクリプトの実行属性。切っても動いているものは止まらない)
-- **Restart prudynt**: prudynt を止めて起こし直す (映像と OSD が 5〜10 秒止まり、ffmpeg は自動で再接続。下記の注意)
+- **Restart prudynt**: prudynt を止めて起こし直す (映像と OSD が 5〜10 秒止まり、ffmpeg は自動で再接続。prudynt が止まらない /
+  起きない時は最大約 50 秒でエラー表示。下記の注意)
 - **Log**: `logread` の youtube-relay 行 (キーは relay が伏せている)。5 秒ごとに更新
 - 裏側の CGI は `/x/json-youtube.cgi` (`?action=status` / `save[&restart=1]` / `service&op=…`)。Thingino の認証 (セッション
   Cookie か `?token=<API キー>`) を通せばカメラ外からも使える。ストリームキーは認証済みのブラウザにそのまま返す

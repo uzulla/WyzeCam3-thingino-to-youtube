@@ -270,7 +270,8 @@ service)
 	[ -n "$op" ] || fail "op=start|stop|restart|enable|disable|restart-prudynt required"
 	if [ "$op" = restart-prudynt ]; then
 		service_lock
-		restart_prudynt
+		restart_prudynt # always answers and exits
+		exit 0
 	fi
 	[ -f "$INIT" ] || fail "$INIT is not installed" "409 Conflict"
 	service_lock

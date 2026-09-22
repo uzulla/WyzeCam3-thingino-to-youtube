@@ -121,6 +121,8 @@ ssh "$CAM" 'f=/etc/init.d/S31prudynt
 			&& sh -n $f.new && chmod 755 $f.new && mv $f.new $f \
 			&& echo "  S31prudynt: liveness check by name (restart works with the bind mount)" \
 			|| { rm -f $f.new; echo "  warning: could not edit $f - Thingino'"'"'s own prudynt restart may leave prudynt stopped" >&2; }
+	elif ! grep -q "DAEMON##\*/" $f; then
+		echo "  warning: $f does not look as expected (no pidof \"\$DAEMON\") - not edited; Thingino'"'"'s own prudynt restart may leave prudynt stopped" >&2
 	fi'
 
 # Web UI page (docs/osd.md), only now that the patched prudynt is known to run:
