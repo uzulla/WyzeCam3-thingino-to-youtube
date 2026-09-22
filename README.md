@@ -93,7 +93,7 @@ device/    カメラ側の常設運用一式 (ファイルの一覧は device/RE
 docs/      使い方と設定の文書 (下の「ドキュメント」参照)
 NOTES.md   実装の詳細・設計判断・ハマりどころ・実測値の記録 (手順は書かない)
 dist/      ビルド成果物 (git 管理外)。配布は GitHub Releases (ffmpeg バイナリ単体) で行う
-LICENSE    MIT (第三者由来のものは LICENSE.md)。LICENSES/ に GPL-3.0、FFmpeg、Thingino のライセンス本文
+LICENSE    MIT (第三者由来のものは LICENSE.md)。LICENSES/ に GPL-3.0-or-later、FFmpeg、Thingino のライセンス本文
 ```
 
 OS (Thingino) の更新・バックアップ・設定変更と、このリポジトリの成果物のインストールは分けてあります。
