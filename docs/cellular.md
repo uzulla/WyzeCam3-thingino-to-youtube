@@ -19,7 +19,9 @@
 
 ### 実測
 
-`Ip6OutOctets` (YouTube は IPv6。`/proc/net/snmp6`) の 120 秒差分。他に IPv6 の接続が無いことを `netstat -tn` で確認した上での値。
+`Ip6OutOctets` (`/proc/net/snmp6`) の 120 秒差分。この値は**ホスト全体の IPv6 送信量** (UDP なども含む) で、YouTube 専用では
+ない。ここでは YouTube への接続が IPv6 で、他に IPv6 の TCP 接続が無いこと (`netstat -tn`。ssh は IPv4) を確認した上で、
+IPv6 全体 ≒ YouTube 分と見なしている (IPv6 の UDP は `Udp6OutDatagrams` の差分で無いことを確かめられる)。
 映像 + 音声は prudynt の RTSP を 30 秒録画して 1.046 Mbps (H.264 Main 10fps + AAC 16kHz mono)。
 
 | 接続 | RTMP チャンク | YouTube への送信 | 映像 + 音声に対して | ffmpeg CPU |
@@ -114,37 +116,45 @@ YouTube の IPv6 帯 (`2404:6800::/32`) を blackhole 経路に、IPv4 のデフ
 ## 5. 測り方 (再現用)
 
 ```sh
-# YouTube への送信量 (IPv6 の場合。他に IPv6 の接続が無いことを netstat -tn で確認してから)
+# IPv6 の送信量 (YouTube が IPv6 で、他に IPv6 の接続が無ければ ≒ YouTube 分。netstat -tn で確認してから)
 a=$(awk '/^Ip6OutOctets/{print $2}' /proc/net/snmp6); sleep 120
 b=$(awk '/^Ip6OutOctets/{print $2}' /proc/net/snmp6); echo "$(( (b-a)*8/120/1000 )) kbps"
 
-# IPv4 の場合 (loopback の RTSP 分 = ほぼ映像のビットレートが混ざるので、その分を引く)
-grep '^IpExt:' /proc/net/netstat        # OutOctets の列
+# IPv4 の場合: IpExt の OutOctets には loopback (RTSP、ほぼ映像のビットレート) も入るので、lo の送信分を引く
+out4() { grep '^IpExt:' /proc/net/netstat | awk 'NR==1{for(i=1;i<=NF;i++)h[i]=$i} NR==2{for(i=1;i<=NF;i++) if(h[i]=="OutOctets") print $i}'; }
+lo() { awk '/^ *lo:/{print $10}' /proc/net/dev; }
+a=$(out4); la=$(lo); sleep 120; b=$(out4); lb=$(lo)
+echo "$(( ((b-a)-(lb-la))*8/120/1000 )) kbps"
 
-# TCP 再送の有無
-grep '^Tcp:' /proc/net/snmp             # RetransSegs の列の差分
+# TCP 再送の有無 (RetransSegs の列。2 時点の差分が 0 なら再送なし)
+grep '^Tcp:' /proc/net/snmp | awk 'NR==1{for(i=1;i<=NF;i++)h[i]=$i} NR==2{for(i=1;i<=NF;i++) if(h[i]=="RetransSegs") print $i}'
 
-# ffmpeg の CPU (120 秒)
+# ffmpeg の CPU (120 秒)。/proc/<pid>/stat の utime + stime は USER_HZ (Linux では常に 100) 単位
 p=$(pidof ffmpeg); set -- $(cat /proc/$p/stat); t0=$((${14}+${15})); sleep 120
-set -- $(cat /proc/$p/stat); echo "$(( (${14}+${15}-t0) * 100 / 100 / 120 )) %"
+set -- $(cat /proc/$p/stat); echo "$(( (${14}+${15}-t0) / 120 )).$(( ((${14}+${15}-t0) * 10 / 120) % 10 )) %"
 
-# 映像 + 音声そのもののビットレート (PC から、ssh のポートフォワード経由)
-ssh -L 18554:127.0.0.1:554 root@<camera-ip> -N &
+# 映像 + 音声そのもののビットレート (PC から、ssh のポートフォワード経由。終わったらトンネルを閉じる)
+ssh -f -N -o ExitOnForwardFailure=yes -L 18554:127.0.0.1:554 root@<camera-ip>
 ffmpeg -rtsp_transport tcp -i rtsp://thingino:thingino@127.0.0.1:18554/ch0 -t 30 -c copy out.mkv
 ffprobe -show_entries format=bit_rate out.mkv
+pkill -f '18554:127.0.0.1:554'
 ```
 
 上流断の再現 (配信が止まる。netwatch が無効なことを先に確認):
 
 ```sh
-GW4=$(ip -4 route show default | awk '{print $3}')
-ip route replace default via 192.168.11.250 dev wlan0 metric 200   # LAN 内の未使用アドレス
+# 元のデフォルトルートを丸ごと控え、中断 (Ctrl-C、ssh 切断) しても trap で必ず戻す
+SAVED=$(ip -4 route show default | head -1)
+restore() { ip route replace $SAVED; ip -6 route del blackhole 2404:6800::/32 2>/dev/null; }
+trap restore EXIT INT TERM HUP
+ip route replace default via 192.168.11.250 dev wlan0 metric 200   # LAN 内の未使用アドレス (先に ping で確認)
 ip -6 route add blackhole 2404:6800::/32                            # YouTube の IPv6 帯
 sleep 90
-ip route replace default via $GW4 dev wlan0 metric 200
-ip -6 route del blackhole 2404:6800::/32
+restore; trap - EXIT INT TERM HUP
 logread | grep youtube-relay | tail
 ```
+
+ssh が切れても戻るように、実際には上を 1 つのスクリプトにして `nohup` で回した。
 
 偽のゲートウェイを `via` で指す IPv6 経路は、このカーネル (3.10) では選ばれず遮断にならなかった。`blackhole` 型を使う。
 
