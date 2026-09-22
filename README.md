@@ -70,7 +70,7 @@ localhost RTSP (prudynt) → H.264/AAC stream copy → FLV mux → RTMPS/TLS →
 ```text
 patches/   このリポジトリの本体。Thingino に当てる差分
              thingino-ffmpeg-rtmps.diff         thingino-ffmpeg パッケージを RTMPS 対応にする
-             thingino-ffmpeg-rtmp-chunk-size.diff  FFmpeg 本体: RTMP の送信チャンクを 128 バイトから 4096 に (RTMPS の送信量を 1.7 倍 → 1.07 倍に)
+             thingino-ffmpeg-rtmp-chunk-size.diff  FFmpeg 本体: RTMP の送信チャンクを 128 バイトから 4096 に (RTMPS の送信量を映像の 1.7 倍 → 1.08 倍に)
              prudynt-osd-textfile.diff          任意: prudynt (ストリーマ) に「テキストファイルを映像へ重ねる OSD」を足す
              prudynt-msgchannel-warning.diff    任意: prudynt が 5 秒ごとに出す誤報の警告 (msgChannel sink clogged) を止める
 device/    カメラ側の常設運用一式 (ファイルの一覧は device/README.md、使い方は docs/)

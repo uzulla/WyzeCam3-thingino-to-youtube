@@ -193,8 +193,11 @@ Thingino 自体の更新や設定のバックアップはこのリポジトリ�
 - **送信量**: 素の FFmpeg は RTMP を 128 バイトのチャンクに刻み、チャンクごとに (しかも継続ヘッダの 1 バイトも別に)
   書き出す。RTMPS ではその 1 回ごとが TLS レコード (約 29 バイトの枝葉) になるので、**送信量が映像 + 音声の約 1.7 倍**に
   なる (720p10 / 1Mbps で実測 1.05 Mbps → 1.77 Mbps)。`patches/thingino-ffmpeg-rtmp-chunk-size.diff` を当てた
-  ffmpeg は接続直後にチャンクサイズ 4096 をサーバへ宣言し、**1.13 Mbps** (1.07 倍) になる。65536 にしても 1.11 Mbps で
+  ffmpeg は接続直後にチャンクサイズ 4096 をサーバへ宣言し、**1.13 Mbps** (1.08 倍) になる。65536 にしても 1.11 Mbps で
   差は無い。値は `-rtmp_chunk_size` (`ffmpeg_out_opts` に書く) で変えられ、128 で素の動作に戻る。
+  **平文の RTMP** (`rtmp_url` を `rtmp://a.rtmp.youtube.com/live2` に。ポート 1935) なら TLS の枝葉が無く、パッチ入りで
+  1.09 Mbps、パッチ無しでも TCP が小さな書き込みをまとめるので 1.13 Mbps。ffmpeg の CPU は 2.5% → 2.2% (パッチ無しの
+  平文は 3.6%)。RTMPS との差は約 3% で、代わりにストリームキーが経路上を平文で流れる (下の「ストリームキーの取り扱い」)
   確認は `awk '/^Ip6OutOctets/{print $2}' /proc/net/snmp6` の差分 (YouTube が IPv6 の場合。IPv4 なら
   `/proc/net/netstat` の `IpExt OutOctets` だが、こちらは loopback の RTSP 分も含む)
 

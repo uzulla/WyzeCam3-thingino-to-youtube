@@ -53,7 +53,21 @@ diff --git a/libavformat/rtmpproto.c b/libavformat/rtmpproto.c
   * Generate window acknowledgement size message and send it to the server.
   */
  static int gen_window_ack_size(URLContext *s, RTMPContext *rt)
-@@ -2896,6 +2934,8 @@
+@@ -1579,9 +1617,11 @@
+         return AVERROR_INVALIDDATA;
+     }
+ 
+-    if (!rt->is_input) {
++    if (!rt->is_input && rt->chunk_size <= 128) {
+         /* Send the same chunk size change packet back to the server,
+-         * setting the outgoing chunk size to the same as the incoming one. */
++         * setting the outgoing chunk size to the same as the incoming one.
++         * Not when we announced our own size in gen_set_chunk_size(): the
++         * server's choice for its direction must not shrink ours again. */
+         if ((ret = ff_rtmp_packet_write(rt->stream, pkt, rt->out_chunk_size,
+                                         &rt->prev_pkt[1], &rt->nb_prev_pkt[1])) < 0)
+             return ret;
+@@ -2896,6 +2936,8 @@
      av_log(s, AV_LOG_DEBUG, "Proto = %s, path = %s, app = %s, fname = %s\n",
             proto, path, rt->app, rt->playpath);
      if (!rt->listen) {
@@ -62,7 +76,7 @@ diff --git a/libavformat/rtmpproto.c b/libavformat/rtmpproto.c
          if ((ret = gen_connect(s, rt)) < 0)
              goto fail;
      } else {
-@@ -3191,6 +3231,7 @@
+@@ -3191,6 +3233,7 @@
      {"rtmp_conn", "Append arbitrary AMF data to the Connect message", OFFSET(conn), AV_OPT_TYPE_STRING, {.str = NULL }, 0, 0, DEC|ENC},
      {"rtmp_flashver", "Version of the Flash plugin used to run the SWF player.", OFFSET(flashver), AV_OPT_TYPE_STRING, {.str = NULL }, 0, 0, DEC|ENC},
      {"rtmp_flush_interval", "Number of packets flushed in the same request (RTMPT only).", OFFSET(flush_interval), AV_OPT_TYPE_INT, {.i64 = 10}, 0, INT_MAX, ENC},
