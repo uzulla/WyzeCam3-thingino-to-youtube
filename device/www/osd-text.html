@@ -359,7 +359,11 @@
       updateHint(sl.key, t != null);
     });
     $('config_path').textContent = s.config_path;
-    $('config_state').textContent = s.config_error ? s.config_error : (s.config ? 'exists' : 'no file yet, created on save');
+    var cstate = s.config_error ? s.config_error
+      : !s.config ? 'no file yet, created on save'
+      : (s.config_source && s.config_source !== s.config_path) ? 'no file yet; the form is merged into ' + s.config_source + ' (what osd-config uses now)'
+      : 'exists';
+    $('config_state').textContent = cstate;
     $('config_state').className = s.config_error ? 'text-warning' : '';
     $('log').textContent = (s.log && s.log.length) ? s.log.join('\n') : '(nothing logged)';
     renderJson();
@@ -402,13 +406,13 @@
   // substream_disabled, ...) survive. A pool size outside 0..POOL_MAX is left out.
   function buildConfig() {
     var cfg = (state.config && typeof state.config === 'object' && !Array.isArray(state.config)) ? JSON.parse(JSON.stringify(state.config)) : {};
-    cfg.osd = (cfg.osd && typeof cfg.osd === 'object') ? cfg.osd : {};
+    cfg.osd = (cfg.osd && typeof cfg.osd === 'object' && !Array.isArray(cfg.osd)) ? cfg.osd : {};
     var osd = readOsd();
     Object.keys(osd).forEach(function(k) {
-      cfg.osd[k] = Object.assign({}, (cfg.osd[k] && typeof cfg.osd[k] === 'object') ? cfg.osd[k] : {}, osd[k]);
+      cfg.osd[k] = Object.assign({}, (cfg.osd[k] && typeof cfg.osd[k] === 'object' && !Array.isArray(cfg.osd[k])) ? cfg.osd[k] : {}, osd[k]);
     });
     var pool = readNum('pool_size', 0, POOL_MAX);
-    if (pool !== undefined) cfg.general = Object.assign({}, (cfg.general && typeof cfg.general === 'object') ? cfg.general : {}, {osd_pool_size: pool});
+    if (pool !== undefined) cfg.general = Object.assign({}, (cfg.general && typeof cfg.general === 'object' && !Array.isArray(cfg.general)) ? cfg.general : {}, {osd_pool_size: pool});
     return cfg;
   }
 

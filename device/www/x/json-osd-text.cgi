@@ -8,7 +8,9 @@
 # not pass that header on to CGIs).
 #
 #   GET  ?action=status
-#        -> {"config_path":..., "config":<prudynt-osd.json or null>, "config_error":...,
+#        -> {"config_path":<SD file Save writes>, "config_source":<file "config" came from:
+#            the SD file, else /etc/prudynt-osd.json, like osd-config>, "config":<its content
+#            or null>, "config_error":...,
 #            "pool_size":<general.osd_pool_size in /etc/prudynt.json>,
 #            "live":<prudyntctl json osd.textfile/2/3/burnin>,
 #            "texts":{"textfile":"...", ...}  (current overlay files, null = none),
@@ -29,6 +31,7 @@ require_auth
 
 SD=/mnt/mmcblk0p1
 CONFIG=$SD/prudynt-osd.json
+BUILTIN_CONFIG=/etc/prudynt-osd.json # osd-config falls back to this one
 PRUDYNT_CONFIG=/etc/prudynt.json
 TMP=/tmp/osd-text-$$
 trap 'rm -f "$TMP" "$TMP.body"' EXIT
@@ -91,17 +94,29 @@ case "$action" in
 status)
 	config=null
 	config_error=null
+	config_source=null
+	# What the page merges its form into: the file osd-config is using now. Same
+	# search order as osd-config (SD card, then the built-in file), so that a
+	# first Save to the SD card carries over keys the page does not show
+	# (osd.textfile.path, substream_disabled, ...) instead of dropping them.
 	if [ -f "$CONFIG" ]; then
+		src=$CONFIG
+	elif [ -f "$BUILTIN_CONFIG" ]; then
+		src=$BUILTIN_CONFIG
+	else
+		src=""
+	fi
+	if [ -n "$src" ]; then
 		# jct prints {} for broken JSON without failing; "get osd" fails, and a
 		# file without an "osd" object is useless for osd-config anyway
-		if jct "$CONFIG" get osd >/dev/null 2>&1; then
-			config=$(jct "$CONFIG" print 2>/dev/null)
+		if jct "$src" get osd >/dev/null 2>&1; then
+			config=$(jct "$src" print 2>/dev/null)
+			config_source="\"$src\""
 		else
-			config_error="\"not valid JSON, or no \\\"osd\\\" object\""
+			config_error="\"$src: not valid JSON, or no \\\"osd\\\" object\""
 		fi
-	elif ! mountpoint -q "$SD"; then
-		config_error='"SD card not mounted"'
 	fi
+	mountpoint -q "$SD" || config_error='"SD card not mounted"'
 	pool=$(jct "$PRUDYNT_CONFIG" get general.osd_pool_size 2>/dev/null)
 	case "$pool" in "" | *[!0-9]*) pool=0 ;; esac
 	live=$(prudyntctl json '{"osd":{"textfile":null,"textfile2":null,"textfile3":null,"burnin":null}}' 2>/dev/null)
@@ -123,7 +138,7 @@ status)
 	done <<EOF
 $(logread 2>/dev/null | grep -E 'textfile|osd-config' | tail -n 12)
 EOF
-	send_json "{\"config_path\":\"$CONFIG\",\"config\":$config,\"config_error\":$config_error,\"pool_size\":$pool,\"live\":$live,\"texts\":{$texts},\"log\":[$log]}"
+	send_json "{\"config_path\":\"$CONFIG\",\"config_source\":$config_source,\"config\":$config,\"config_error\":$config_error,\"pool_size\":$pool,\"live\":$live,\"texts\":{$texts},\"log\":[$log]}"
 	;;
 
 text)
@@ -133,21 +148,22 @@ text)
 	# The overlay file belongs on tmpfs (docs/osd.md); refuse anything else
 	# rather than write as root wherever osd.textfileN.path points
 	case "$p" in
-	/run/*/* | /tmp/*) ;;
+	/run/* | /tmp/*) ;;
 	*) fail "osd.textfile${slot#1}.path is $p, not on /run or /tmp - not writing there" "409 Conflict" ;;
 	esac
 	case "$p" in *..*) fail "bad path $p" "409 Conflict" ;; esac
 	read_body
 	if [ -s "$TMP.body" ]; then
 		# Same contract as osd-progress-demo: write next to it, then mv, so
-		# prudynt never sees a half-written file
-		if ! { cp "$TMP.body" "$p.tmp" && mv "$p.tmp" "$p"; }; then
-			rm -f "$p.tmp"
+		# prudynt never sees a half-written file. The temp name carries the pid:
+		# two requests for the same slot at once must not share one
+		if ! { cp "$TMP.body" "$p.tmp.$$" && mv "$p.tmp.$$" "$p"; }; then
+			rm -f "$p.tmp.$$"
 			fail "cannot write $p" "500 Internal Server Error"
 		fi
 		send_json "{\"ok\":true,\"path\":\"$p\",\"bytes\":$(wc -c <"$p" | tr -d ' ')}"
 	else
-		rm -f "$p" "$p.tmp"
+		rm -f "$p" "$p.tmp.$$"
 		send_json "{\"ok\":true,\"path\":\"$p\",\"bytes\":0}"
 	fi
 	;;
@@ -161,8 +177,8 @@ save)
 	jct "$TMP.body" get osd >/dev/null 2>&1 || fail "not valid JSON, or no \"osd\" object"
 	# Write on the SD card itself, so the final mv is atomic (the file is
 	# what osd-config polls every 5 s)
-	if ! { cp "$TMP.body" "$CONFIG.tmp" && mv "$CONFIG.tmp" "$CONFIG"; }; then
-		rm -f "$CONFIG.tmp"
+	if ! { cp "$TMP.body" "$CONFIG.tmp.$$" && mv "$CONFIG.tmp.$$" "$CONFIG"; }; then
+		rm -f "$CONFIG.tmp.$$"
 		fail "cannot write $CONFIG" "500 Internal Server Error"
 	fi
 	send_json "{\"ok\":true,\"path\":\"$CONFIG\"}"

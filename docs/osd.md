@@ -80,7 +80,7 @@ Thingino の Web UI の Streamer メニュー → **OSD text** (`http://<camera-
 - **Apply now** は実行中の prudynt にだけ送る (`prudyntctl json` と同じ。prudynt の再起動で消える)
 - **Save to SD card** は SD 直下の `prudynt-osd.json` を書き換える (次の節)。`osd-config` が 5 秒以内に反映するので
   prudynt の再起動は要らない。ファイルに既にあるキーのうち、ページにない項目 (`path`、`substream_disabled` など) は
-  残る。`general.osd_pool_size` を変えた時だけ、`osd-config` が `/etc/prudynt.json` に書いて prudynt を再起動する
+  残る (SD にまだファイルが無い時は、`osd-config` と同じ順で `/etc/prudynt-osd.json` を読んでそれに重ねる)。`general.osd_pool_size` を変えた時だけ、`osd-config` が `/etc/prudynt.json` に書いて prudynt を再起動する
   (配信が数秒切れる) ので、保存前に確認が出る。SD カードが挿さっていない時は保存できない (エラーになる)
 - **prudynt-osd.json** 欄に、いま Save を押したら書かれる JSON がフォームに追従して出る。**Download** で
   `prudynt-osd.json` としてダウンロード、**Copy** でクリップボードへ (試した配置を PC に持ち帰る、別の SD カードに置く、
