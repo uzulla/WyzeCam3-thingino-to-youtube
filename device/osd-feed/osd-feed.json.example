@@ -1,0 +1,16 @@
+{
+  "interval_ms": 250,
+  "sources": {
+    "mem":   { "type": "meminfo", "interval_ms": 1000 },
+    "tick":  { "type": "tick",    "interval_ms": 100 },
+    "clock": { "type": "clock",   "interval_ms": 1000 }
+  },
+  "slots": {
+    "textfile": {
+      "template": "MEM {{lpad 3 .mem.free_mb}}MB free  {{lpad 3 .mem.used_pct}}% used\n{{bar 30 .tick.pct}} {{lpad 3 .tick.pct}}%\n{{.clock.date}} {{.clock.hms}}"
+    },
+    "textfile2": {
+      "template": "{{.clock.hms}}"
+    }
+  }
+}
