@@ -17,7 +17,8 @@
 - 読み込まれるのは**起動時だけ**。SD を挿しただけでは反映されないので再起動する
 - 適用された設定はカメラ側に保存される。**SD を抜いても元の Wi-Fi には戻らない**
   (最後に適用されたものが残る)。繋がらなくなったら、SD のファイルを直して再起動すれば復旧できる
-  (毎回 SD の内容が正になる)。**試す前に、確実に繋がる設定を書いた SD を用意しておくこと**
+  (A は毎回、B は SD の内容が最後に適用した時から変わっていれば適用する)。
+  **試す前に、確実に繋がる設定を書いた SD を用意しておくこと**
   (繋がらないと SSH でも直せない)
 - **SD 上のパスワードは平文**。ストリームキーと同じく、SD を抜かれたら読まれる前提で使う
 
@@ -63,10 +64,16 @@ network={
 - `psk=` は `wpa_passphrase <ssid> <password>` で作った 64 桁のハッシュでも可 (平文を置きたくない場合)
 - **`psk=` の無いオープンな Wi-Fi は使えない** (Thingino が「未設定」と判断して設定用ポータルを
   起動してしまうため)。その場合ファイルは無視され、ログに理由が出る
-- 適用前の設定は一度だけ `/etc/wpa_supplicant.conf.before-sd` に退避する
-- ログ: `logread | grep wifi-from-sd`。やめるとき: `rm /etc/init.d/S37wifi-from-sd`
+- 適用前の設定は一度だけ `/etc/wpa_supplicant.conf.before-sd` に退避する。最後に適用した内容の md5 を
+  `/etc/wpa_supplicant.conf.sd-md5` に置き、これで「内容が変わったか」を判断する (wpa_supplicant 自身が
+  動作中に `/etc/wpa_supplicant.conf` を書き換えるので、そのファイルとの比較では毎回「変わった」ことになる)。
+  裏返すと、**SD のファイルを変えない限り、その間に WebUI や `wlan configure` でカメラ側で変えた Wi-Fi 設定は
+  上書きしない** (SD のファイルを変えて再起動すれば SD が勝つ)
+- ログ: `logread | grep wifi-from-sd`。やめるとき: `rm /etc/init.d/S37wifi-from-sd /etc/wpa_supplicant.conf.sd-md5`。
+  元の Wi-Fi 設定に戻すなら `mv /etc/wpa_supplicant.conf.before-sd /etc/wpa_supplicant.conf` して再起動
 - Thingino を入れ直した/更新した後は、`install.sh` と同じく入れ直しが必要
 
-> **実機では未確認の機能** (ソースの読解と PC 上の busybox でのテストに基づく)。特に A は、Wi-Fi が一度も設定されて
-> いないカメラでは 1 回目の起動で繋がらず、もう一度再起動が要る可能性がある。詳細は [NOTES.md](../NOTES.md) の
-> 「SD カードからの Wi-Fi 設定: 未検証の点」。
+> B は実機で確認済み (2026-09-22、`ciao+da40db6`: 2 つの `network={}` を書いた SD で再起動 → 起動時に適用、
+> 両方が `wpa_cli list_networks` に載り、元の Wi-Fi に接続。内容が同じなら次の起動では書き換えない)。
+> **A は実機では未確認** (ソースの読解に基づく)。Wi-Fi が一度も設定されていないカメラでは 1 回目の起動で
+> 繋がらず、もう一度再起動が要る可能性がある。詳細は [NOTES.md](../NOTES.md) の「SD カードからの Wi-Fi 設定」。

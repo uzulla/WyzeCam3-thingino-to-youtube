@@ -622,10 +622,22 @@ prudynt (`354b1b4`) が RTSP クライアントの接続中、5 秒ごとに
   同じ経路で動作。範囲外 (99999) は 1 回ログして無視、`osd` の部分は普通に適用される
 - SD を抜いてもプールの値は戻さない (戻すたびに再起動 + フラッシュ書き込みになる)。0 を書けば既定に戻る
 
-### SD カードからの Wi-Fi 設定: 未検証の点
+### SD カードからの Wi-Fi 設定 (#10)
 
-A (`uenv.txt`)・B (`wpa_supplicant.conf`) とも、ソース `ciao+da40db6` の読解と PC 上の busybox でのテストに基づく。
-実機確認は #10。使い方は docs/wifi-from-sd.md。
+使い方は docs/wifi-from-sd.md。**B (`wpa_supplicant.conf` + `S37wifi-from-sd`) は 2026-09-22 に実機で確認した**:
+
+- SD に「今の Wi-Fi のブロック (カメラの設定からコピー) + 存在しないダミーの Wi-Fi (priority -10)」の 2 つを書いて再起動
+  → `wifi-from-sd: applied ... (2 network(s))`、`wpa_cli list_networks` に 2 つ、元の Wi-Fi に接続、SSH 復帰。
+  `S37` は `S38wpa_supplicant` の直前に動き、SD は `S09mmc` で先にマウントされている
+- **見つけたバグ (修正済み)**: 「内容が変わった時だけ書く」判定を `/etc/wpa_supplicant.conf` との md5 比較で
+  やっていたが、wpa_supplicant 自身が動作中にそのファイルを書き換える (`update_config=1`: `dik_cipher=` /
+  `dik=` の行を足し、`ap_scan=` を落とし、空行も変える) ので、毎回の起動で「変わった」と判断して書き直していた。
+  最後に適用した内容の md5 を `/etc/wpa_supplicant.conf.sd-md5` に置いて、それと比べるようにした。
+  修正後、同じ SD で再起動 → ログなし (書き換えなし)、接続は正常
+- 確認後、SD のファイルを消して `.before-sd` から元の設定に戻した (md5 が元と一致)。`S37wifi-from-sd` は
+  入れたまま (SD にファイルが無ければ何もしない)
+
+A (`uenv.txt`) は未確認 (ソースの読解に基づく):
 
 - Wi-Fi が一度も設定されていないカメラに A を使うと、その起動は設定用ポータルで立ち上がり、
   **もう一度再起動して初めて接続される**可能性がある (接続モードの判定が SD の読み込みより前のため)。
@@ -648,13 +660,13 @@ A (`uenv.txt`)・B (`wpa_supplicant.conf`) とも、ソース `ciao+da40db6` の
 - [x] `ciao+da40db6` での実機確認 — YouTube Live へ映像・音声とも配信成功 (2026-09-21)。
   `install.sh` は新規インストールと、配信中の再実行 (旧 supervisor の停止待ち → 入れ替え → 約 5 秒で配信再開) を確認。
   ffmpeg CPU 4.8% @720p10/1Mbps。`install.sh` (新規インストール / 配信中の再実行) と
-  `disable-netwatch.sh` も同日に実機で確認。長時間試験も完了。`S37wifi-from-sd` の実機確認は未実施
+  `disable-netwatch.sh` も同日に実機で確認。長時間試験も完了
 - [x] インストーラ (`install.sh`)、netwatch 無効化 (`disable-netwatch.sh`)、SD カードからの Wi-Fi 設定 (複数可)
 - [x] 映像に任意のテキストを重ねる prudynt の OSD パッチ (#17、3 か所化 #19、SD からの設定 #22) — 実機 (720p) で確認:
   3 か所同時の 0.5 秒更新、再起動後の自動有効化、OSD プールの上限、サブストリームへの表示、プライバシーカバーとの共存。
   連続動作は 1 か所の版 (#17) で 1 時間、3 か所の版で 15 分。本物の SD カードでの `osd-config` (抜き差し・再起動) と
   `general.osd_pool_size` の SD からの指定も確認。1080p は未確認 (この運用では使わない)
-- [ ] `S37wifi-from-sd` の実機確認 (#10)
+- [x] `S37wifi-from-sd` の実機確認 (#10、2026-09-22)。`uenv.txt` (Thingino 標準) の方は未確認
 - [ ] Thingino パッケージとしての統合 / ファームウェア組み込み (Config.in オプション化、stream key の安全な保持)。
   将来的には Thingino の新ストリーマ [Raptor](https://github.com/gtxaspec/raptor) の RTMPS push 機能 (RSP) への
   移行も選択肢
