@@ -1,4 +1,5 @@
 {
+  "general": { "osd_pool_size": 2048 },
   "osd": {
     "textfile":  { "enabled": true, "cols": 40, "rows": 10 },
     "textfile2": { "enabled": true, "cols": 24, "rows": 2 },
