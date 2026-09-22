@@ -168,9 +168,14 @@ apply_pool() {
 		return 1
 		;;
 	esac
-	jct "$PRUDYNT_CONFIG" set general.osd_pool_size "$have" >/dev/null 2>&1
-	log "prudynt did not come up with osd_pool_size=$want - restored $have"
-	restart_prudynt || log "prudynt is still not running after restoring osd_pool_size=$have"
+	if jct "$PRUDYNT_CONFIG" set general.osd_pool_size "$have" >/dev/null 2>&1 &&
+		[ "$(jct "$PRUDYNT_CONFIG" get general.osd_pool_size 2>/dev/null)" = "$have" ]; then
+		log "prudynt did not come up with osd_pool_size=$want - restored $have"
+	else
+		log "prudynt did not come up with osd_pool_size=$want and $have could not be written back to $PRUDYNT_CONFIG"
+	fi
+	# Start it again either way: stopped is the worst outcome
+	restart_prudynt || log "prudynt is still not running (general.osd_pool_size in $PRUDYNT_CONFIG is now $(jct "$PRUDYNT_CONFIG" get general.osd_pool_size 2>/dev/null))"
 	pool_bad="$1:$raw"
 	return 0
 }
