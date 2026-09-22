@@ -647,6 +647,38 @@ A (`uenv.txt`) は未確認 (ソースの読解に基づく):
 
 ---
 
+## 2026-09 追記: RTMPS の送信量が映像の 1.7 倍だった (FFmpeg パッチ, #31)
+
+wlan0 の送信が 1.8 Mbps なのに、prudynt の RTSP を録って測ると映像 + 音声は 1.05 Mbps (エンコーダは CBR 1024 の設定どおり)。
+`/proc/net/snmp6` の `Ip6OutOctets` (YouTube は IPv6) と `/proc/net/netstat` の `IpExt OutOctets` (IPv4 = LAN + loopback) に
+分けると、IPv6 = 1.77 Mbps ≒ wlan0 全体で、YouTube への RTMPS 接続そのものが 1.69 倍だった。TCP 再送は 0。
+
+原因は FFmpeg の RTMP 実装: 送信チャンクは 128 バイト固定 (`rtmpproto.c` の `rt->out_chunk_size = 128`、変えるオプション無し。
+Set Chunk Size を送るコードは listen 側にしか無い) で、`ff_rtmp_packet_write` はパケットヘッダ・128 バイトのデータ・次の
+チャンクの 1 バイトの継続ヘッダをそれぞれ別の `ffurl_write` で書く。`tls_mbedtls.c` の `tls_write` は書き込み 1 回 =
+`mbedtls_ssl_write` 1 回 = TLS レコード 1 つ (バッファ無し) なので、128 バイトごとに約 58 バイトの TLS の枝葉が付き、
+小さな書き込みが多い分 TCP/IPv6 ヘッダの比率も上がる。平文の RTMP では TCP がまとめるので目立たない。
+
+対処 `patches/thingino-ffmpeg-rtmp-chunk-size.diff`: `rtmp_chunk_size` オプション (既定 4096、128 で宣言しない) を足し、
+ハンドシェイク直後・`connect` の前に Set Chunk Size を送って `out_chunk_size` を切り替える (RTMP では送信側が自分のチャンク
+サイズを宣言できる。最大 65536)。`package/thingino-ffmpeg/0002-rtmp-chunk-size.patch` として Buildroot に当てる。
+
+実測 (2026-09-22、`Ip6OutOctets` の 120 秒差分、720p10 / 1Mbps):
+
+| ffmpeg | YouTube への送信 | 映像 + 音声に対して |
+|---|---|---|
+| パッチなし (128) | 1771 kbps | 1.69 倍 |
+| パッチ (4096、既定) | 1126 kbps | 1.08 倍 |
+| `-rtmp_chunk_size 65536` | 1111 kbps | 1.06 倍 |
+
+4096 と 65536 の差は誤差の範囲なので既定は 4096。YouTube 側は問題なく受信を継続 (ffmpeg の再起動なし、再送 0)。
+パッチを当てる前後で ffmpeg のバイナリサイズは同じ 2,604,580 バイト。パッチなしのビルドは実機に入っていたバイナリと md5 が
+一致した (ビルド環境の再現性の確認になった)。
+
+- `youtube-relay` は `/etc/youtube-relay.json` を書き換えても動いている ffmpeg を再起動しない (起動時に読むだけ)。
+  `ffmpeg_out_opts` を試す時は `service restart youtube-relay`
+- モバイル回線では 1 時間あたり約 800MB → 約 510MB
+
 ## 残タスク
 
 - [x] 長時間試験 — **約4時間の連続配信で完走、リーク・劣化なし**
