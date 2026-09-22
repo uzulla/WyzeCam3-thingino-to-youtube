@@ -83,6 +83,8 @@ device/    カメラ側の常設運用一式 (ファイルの一覧は device/RE
                                                 任意: 上記 OSD パッチ入りの prudynt を入れる、操作側のサンプル
              osd-config / S93osd-config / prudynt-osd.json.example
                                                 任意: OSD の設定を SD カードのファイルから読んで prudynt に送り直す
+             www/osd-text.html / www/x/json-osd-text.cgi
+                                                任意: Thingino の Web UI に足す OSD テキストの編集ページと CGI
              common.sh                          対応ファームの判定 (違えば何も変更せず中止)
 docs/      使い方と設定の文書 (下の「ドキュメント」参照)
 NOTES.md   実装の詳細・設計判断・ハマりどころ・実測値の記録 (手順は書かない)
@@ -101,7 +103,7 @@ git 管理外です。必要な変更はすべて `patches/` に分離してあ�
 | 文書 | 内容 |
 |---|---|
 | [docs/relay.md](docs/relay.md) | 配信 supervisor: インストール、設定ファイル (SD カードモード)、ffmpeg の置き場所、運用、ストリームキーの取り扱い |
-| [docs/osd.md](docs/osd.md) | 映像にテキストを重ねる (OSD テキストオーバーレイ): インストール、使い方、設定項目、SD カードの設定ファイル、大きさの上限 |
+| [docs/osd.md](docs/osd.md) | 映像にテキストを重ねる (OSD テキストオーバーレイ): インストール、使い方、Web UI での編集、設定項目、SD カードの設定ファイル、大きさの上限 |
 | [docs/wifi-from-sd.md](docs/wifi-from-sd.md) | Wi-Fi 設定を SD カードで運ぶ |
 | [docs/netwatch.md](docs/netwatch.md) | netwatch (ping 失敗での OS 再起動) の無効化 |
 | [docs/cellular.md](docs/cellular.md) | セルラー回線 (車載) での配信: 送信量 (RTMPS と平文 RTMP の実測)、切断からの復帰の実測、チューニングの選択肢 |
@@ -153,6 +155,7 @@ git 管理外です。必要な変更はすべて `patches/` に分離してあ�
 prudynt (Thingino のストリーマ) へのパッチ `patches/prudynt-osd-textfile.diff` で、配信映像に任意の複数行テキスト
 (プログレスバーなどの ASCII アート) を 3 か所 (既定は左下・右上・右下) まで焼き込み、カメラ上の別のプログラムから
 0.5 秒単位で更新できます。操作側は tmpfs 上のファイルを `mv` で置き換えるだけで、ファームの焼き直しは不要です。
+矩形の位置や大きさ、表示するテキストは Thingino の Web UI (Streamer → OSD text) からも編集でき、設定は SD カードに保存されます。
 使い方と設定は [docs/osd.md](docs/osd.md)、ビルドは [docs/build.md](docs/build.md)。
 
 ## 補足
