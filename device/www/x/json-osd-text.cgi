@@ -33,8 +33,18 @@ SD=/mnt/mmcblk0p1
 CONFIG=$SD/prudynt-osd.json
 BUILTIN_CONFIG=/etc/prudynt-osd.json # osd-config falls back to this one
 PRUDYNT_CONFIG=/etc/prudynt.json
-TMP=/tmp/osd-text-$$
-trap 'rm -f "$TMP" "$TMP.body"' EXIT
+# Request bodies are small (a text is at most 128x32 characters, the config a
+# few KB); anything bigger is a mistake, not a use case
+BODY_MAX=65536
+# Scratch files in a private directory with an unpredictable name (root CGI:
+# a pre-planted symlink at a guessable /tmp name must not be followed)
+umask 077
+TMPD=$(mktemp -d /tmp/osd-text.XXXXXX) || { printf 'Status: 500 Internal Server Error\r\n\r\n'; exit 0; }
+TMP=$TMPD/answer
+trap 'rm -rf "$TMPD"' EXIT
+# uhttpd ends a CGI that stalls (a client that sent less than Content-Length
+# and hung up) with a signal: EXIT alone does not run then
+trap 'rm -rf "$TMPD"; exit 1' HUP INT TERM PIPE
 
 send_json() {
 	printf 'Status: %s\r\nContent-Type: application/json\r\nCache-Control: no-store\r\nConnection: close\r\n\r\n' "${2:-200 OK}"
@@ -71,11 +81,35 @@ for pair in $(printf '%s' "$QUERY_STRING" | tr '&' ' '); do
 	esac
 done
 
+# read_body - the POST body into $TMP.body, exactly CONTENT_LENGTH bytes or an
+# error (a short read must not end up as a half text on the overlay)
 read_body() {
 	case "$CONTENT_LENGTH" in
 	"" | *[!0-9]* | 0) : >"$TMP.body" ;;
-	*) head -c "$CONTENT_LENGTH" >"$TMP.body" ;;
+	*)
+		[ "$CONTENT_LENGTH" -le $BODY_MAX ] || fail "body larger than $BODY_MAX bytes" "413 Payload Too Large"
+		# uhttpd (-t 0) never ends a CGI whose client sent less than
+		# Content-Length and went away: the read would sleep forever. Give it
+		# 10 s (the body is a few KB, from the LAN).
+		timeout 10 head -c "$CONTENT_LENGTH" >"$TMP.body" || fail "cannot read the body (timeout?)" "400 Bad Request"
+		[ "$(wc -c <"$TMP.body" | tr -d ' ')" = "$CONTENT_LENGTH" ] || fail "body shorter than Content-Length" "400 Bad Request"
+		;;
 	esac
+}
+
+# has_osd_object <file> - 0 when the file is JSON with an "osd" object (what
+# osd-config applies; it ignores {"osd":[]} or {"osd":null}, so we do too)
+has_osd_object() {
+	case $(jct "$1" get osd 2>/dev/null) in "{"*) return 0 ;; esac
+	return 1
+}
+
+# regular_or_absent <path> - 0 unless something that is not a plain file sits
+# there (a directory, a symlink): mv would go inside a directory, a symlink
+# would be followed as root
+regular_or_absent() {
+	[ ! -e "$1" ] && [ ! -L "$1" ] && return 0
+	[ -f "$1" ] && [ ! -L "$1" ]
 }
 
 # slot_path <n> - the file prudynt reads for that slot (osd.textfileN.path), from
@@ -111,7 +145,7 @@ status)
 	if [ -n "$src" ]; then
 		# jct prints {} for broken JSON without failing; "get osd" fails, and a
 		# file without an "osd" object is useless for osd-config anyway
-		if jct "$src" get osd >/dev/null 2>&1; then
+		if has_osd_object "$src"; then
 			config=$(jct "$src" print 2>/dev/null)
 			config_source="\"$src\""
 		else
@@ -154,32 +188,36 @@ text)
 	*) fail "osd.textfile${slot#1}.path is $p, not on /run or /tmp - not writing there" "409 Conflict" ;;
 	esac
 	case "$p" in *..*) fail "bad path $p" "409 Conflict" ;; esac
+	pj=$(json_escape "$p")
+	regular_or_absent "$p" || fail "$p exists and is not a regular file - not touching it" "409 Conflict"
 	read_body
 	if [ -s "$TMP.body" ]; then
 		# Same contract as osd-progress-demo: write next to it, then mv, so
 		# prudynt never sees a half-written file. The temp name carries the pid:
 		# two requests for the same slot at once must not share one
-		if ! { cp "$TMP.body" "$p.tmp.$$" && mv "$p.tmp.$$" "$p"; }; then
+		if ! { cp "$TMP.body" "$p.tmp.$$" && chmod 644 "$p.tmp.$$" && mv "$p.tmp.$$" "$p"; }; then
 			rm -f "$p.tmp.$$"
 			fail "cannot write $p" "500 Internal Server Error"
 		fi
-		send_json "{\"ok\":true,\"path\":\"$p\",\"bytes\":$(wc -c <"$p" | tr -d ' ')}"
+		send_json "{\"ok\":true,\"path\":\"$pj\",\"bytes\":$CONTENT_LENGTH}"
 	else
 		rm -f "$p" "$p.tmp.$$"
-		send_json "{\"ok\":true,\"path\":\"$p\",\"bytes\":0}"
+		[ -e "$p" ] && fail "cannot remove $p" "500 Internal Server Error"
+		send_json "{\"ok\":true,\"path\":\"$pj\",\"bytes\":0}"
 	fi
 	;;
 
 save)
 	[ "$REQUEST_METHOD" = POST ] || fail "POST required" "405 Method Not Allowed"
 	mountpoint -q "$SD" || fail "SD card not mounted at $SD" "409 Conflict"
+	regular_or_absent "$CONFIG" || fail "$CONFIG exists and is not a regular file - not touching it" "409 Conflict"
 	read_body
 	[ -s "$TMP.body" ] || fail "empty body"
 	# osd-config ignores a file without an "osd" object; do not save one
-	jct "$TMP.body" get osd >/dev/null 2>&1 || fail "not valid JSON, or no \"osd\" object"
+	has_osd_object "$TMP.body" || fail "not valid JSON, or no \"osd\" object"
 	# Write on the SD card itself, so the final mv is atomic (the file is
 	# what osd-config polls every 5 s)
-	if ! { cp "$TMP.body" "$CONFIG.tmp.$$" && mv "$CONFIG.tmp.$$" "$CONFIG"; }; then
+	if ! { cp "$TMP.body" "$CONFIG.tmp.$$" && chmod 644 "$CONFIG.tmp.$$" && mv "$CONFIG.tmp.$$" "$CONFIG"; }; then
 		rm -f "$CONFIG.tmp.$$"
 		fail "cannot write $CONFIG" "500 Internal Server Error"
 	fi

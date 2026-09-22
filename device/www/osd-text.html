@@ -245,7 +245,7 @@
         '</span>' +
       '</div>' +
       '<div class="d-flex flex-wrap align-items-end gap-2 mb-2">' +
-        numHtml(k, 'pos_x', 'X', -4096, 4096) + numHtml(k, 'pos_y', 'Y', -4096, 4096) +
+        numHtml(k, 'pos_x', 'X', -8192, 8192) + numHtml(k, 'pos_y', 'Y', -8192, 8192) +
         numHtml(k, 'cols', 'Cols', 1, 128) + numHtml(k, 'rows', 'Rows', 1, 32) + numHtml(k, 'scale', 'Scale', 0, 10) +
       '</div>' +
       '<div class="d-flex flex-wrap align-items-end gap-2 mb-2">' +
@@ -276,8 +276,34 @@
 
   // The settings as prudynt takes them; a field left empty or invalid is not sent
   function readNum(id, min, max) {
-    var n = parseInt($(id).value, 10);
-    return (isNaN(n) || n < min || n > max) ? undefined : n;
+    // valueAsNumber, not parseInt: "1.5" and "1e3" must not turn into 1
+    var n = $(id).valueAsNumber;
+    return (!Number.isInteger(n) || n < min || n > max) ? undefined : n;
+  }
+
+  // Every number field an integer within its min/max, every colour #rrggbbaa.
+  // Returns the first offending input (focused, marked) or null. Apply and Save
+  // refuse to run with a bad field rather than silently leaving it out.
+  function firstInvalid() {
+    var bad = null;
+    document.querySelectorAll('#slots input, #burnin_scale, #burnin_colors input[type=text], #pool_size').forEach(function(inp) {
+      if (bad) return;
+      var ok = true;
+      if (inp.type === 'number') {
+        ok = readNum(inp.id, parseInt(inp.min, 10), parseInt(inp.max, 10)) !== undefined;
+      } else if (inp.type === 'text' && /_color$/.test(inp.id)) {
+        ok = normColor(inp.value) !== null;
+      }
+      inp.classList.toggle('is-invalid', !ok);
+      if (!ok) bad = inp;
+    });
+    if (bad) {
+      bad.focus();
+      var label = document.querySelector('label[for="' + bad.id + '"]');
+      notify('danger', 'Fix the highlighted field first: ' + (label ? label.textContent.trim() : bad.id) +
+        (bad.type === 'number' ? ' must be a whole number ' + bad.min + '..' + bad.max : ' must be #rrggbbaa'));
+    }
+    return bad;
   }
 
   function readSlot(k) {
@@ -392,6 +418,7 @@
   }
 
   async function applyNow() {
+    if (firstInvalid()) return;
     var btn = $('apply');
     btn.disabled = true;
     try {
@@ -459,9 +486,9 @@
   }
 
   async function save() {
+    if (firstInvalid()) return;
     var btn = $('save');
     var pool = readNum('pool_size', 0, POOL_MAX);
-    if (pool === undefined) { notify('danger', 'osd_pool_size must be 0..' + POOL_MAX); return; }
     if (pool !== state.pool_size) {
       var ok = await confirm('general.osd_pool_size changes from ' + state.pool_size + ' to ' + pool + ' KB.\n\n' +
         'osd-config will write it to /etc/prudynt.json (flash) and restart prudynt: the stream drops for a few seconds. Continue?');
@@ -517,6 +544,7 @@
   // Keep the JSON preview in step with the form (the text areas are not part of it)
   ['input', 'change'].forEach(function(t) {
     document.querySelector('main').addEventListener(t, function(ev) {
+      if (ev.target.type === 'number') ev.target.classList.remove('is-invalid');
       if (ev.target.id !== 'json_preview' && !/_text$/.test(ev.target.id)) renderJson();
     });
   });
