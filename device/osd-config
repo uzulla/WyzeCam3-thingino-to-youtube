@@ -148,23 +148,33 @@ apply_pool() {
 	fi
 	have=$(jct "$PRUDYNT_CONFIG" get general.osd_pool_size 2>/dev/null) || have=0
 	[ "$want" = "$have" ] && return 1
+	# One prudynt restart at a time, shared with the web UI's Restart prudynt
+	# (json-youtube.cgi): an interleaved stop/start would make us conclude the
+	# new size does not work and write the old one back. Busy -> next pass.
+	prudynt_lock || return 1
 	# Read back what was written: if it does not match, do not restart, and do
 	# not try again (that would write flash on every pass).
 	if ! jct "$PRUDYNT_CONFIG" set general.osd_pool_size "$want" >/dev/null 2>&1 ||
 		[ "$(jct "$PRUDYNT_CONFIG" get general.osd_pool_size 2>/dev/null)" != "$want" ]; then
 		log "cannot write general.osd_pool_size=$want to $PRUDYNT_CONFIG"
 		pool_bad="$1:$raw"
+		prudynt_unlock
 		return 1
 	fi
 	log "general.osd_pool_size $have -> $want KB in $PRUDYNT_CONFIG (from $1) - restarting prudynt"
 	restart_prudynt
-	case $? in
-	0) return 0 ;;
+	rc=$?
+	case $rc in
+	0)
+		prudynt_unlock
+		return 0
+		;;
 	2)
 		# Old prudynt still running with the old size; the new one is in flash
 		# and applies whenever prudynt next restarts.
 		log "prudynt did not stop - osd_pool_size=$want applies at its next restart"
 		pool_bad="$1:$raw"
+		prudynt_unlock
 		return 1
 		;;
 	esac
@@ -177,7 +187,28 @@ apply_pool() {
 	# Start it again either way: stopped is the worst outcome
 	restart_prudynt || log "prudynt did not come back after that either ($([ -n "$(pidof prudynt)" ] && echo "running but not answering" || echo "not running"); general.osd_pool_size in $PRUDYNT_CONFIG is now $(jct "$PRUDYNT_CONFIG" get general.osd_pool_size 2>/dev/null))"
 	pool_bad="$1:$raw"
+	prudynt_unlock
 	return 0
+}
+
+# The lock around a prudynt restart, shared with json-youtube.cgi (same path,
+# same rules): mkdir is atomic; a lock older than 2 minutes is a leftover of
+# something that died and is taken over; only the owner removes it.
+PRUDYNT_LOCK=/run/prudynt-restart.lock
+prudynt_lock() {
+	if ! mkdir "$PRUDYNT_LOCK" 2>/dev/null; then
+		now=$(date +%s)
+		since=$(cat "$PRUDYNT_LOCK/since" 2>/dev/null)
+		case "$since" in "" | *[!0-9]*) since=$(stat -c %Y "$PRUDYNT_LOCK" 2>/dev/null || echo 0) ;; esac
+		[ $((now - since)) -lt 120 ] && return 1
+		mv "$PRUDYNT_LOCK" "$PRUDYNT_LOCK.stale.$$" 2>/dev/null && rm -rf "$PRUDYNT_LOCK.stale.$$"
+		mkdir "$PRUDYNT_LOCK" 2>/dev/null || return 1
+	fi
+	echo "$$" >"$PRUDYNT_LOCK/owner"
+	date +%s >"$PRUDYNT_LOCK/since"
+}
+prudynt_unlock() {
+	[ "$(cat "$PRUDYNT_LOCK/owner" 2>/dev/null)" = "$$" ] && rm -rf "$PRUDYNT_LOCK"
 }
 
 while :; do

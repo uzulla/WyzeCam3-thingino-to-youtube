@@ -65,6 +65,40 @@ ssh "$CAM" '[ -x /etc/init.d/S93osd-config ] && /etc/init.d/S93osd-config stop >
 push "$HERE/osd-config" /usr/sbin/osd-config 755
 push "$HERE/S93osd-config" /etc/init.d/S93osd-config 755
 
+# With the bind mount, /proc/<pid>/exe of the running prudynt reads
+# /usr/bin/prudynt-osd, and Thingino's S31prudynt checks liveness with
+# pidof "$DAEMON" where DAEMON=/usr/bin/prudynt: a full path, matched against
+# exe, so it finds nothing. Its "stop" then returns at once and "restart"
+# starts the new prudynt while the old one is still shutting down; the new one
+# quits with "Another Prudynt instance appears to be running" and none is left.
+# That breaks Thingino's own Restart streamer, its OSD page and resolution
+# changes. Match by name instead (${DAEMON##*/} = prudynt): the same for the
+# stock binary, so the edit is harmless without the bind mount. Re-runs are
+# no-ops; a firmware update restores Thingino's file along with everything else.
+# Done before the switch: without it the bind mount would make Thingino's own
+# restart leave the camera without a streamer, so an S31prudynt we cannot edit
+# means stop here, with nothing changed yet.
+if ! ssh "$CAM" 'f=/etc/init.d/S31prudynt
+	if grep -q "pidof \"\$DAEMON\"" $f; then
+		sed -e "s|pidof \"\$DAEMON\"|pidof \"\${DAEMON##*/}\"|" \
+			-e "s|killall \"\$DAEMON\"|killall \"\${DAEMON##*/}\"|" \
+			-e "s|killall -9 \"\$DAEMON\"|killall -9 \"\${DAEMON##*/}\"|" $f > $f.new \
+			&& sh -n $f.new && ! grep -q "pidof \"\$DAEMON\"" $f.new && grep -q "pidof \"\${DAEMON##\*/}\"" $f.new \
+			&& chmod 755 $f.new && mv $f.new $f \
+			&& echo "  S31prudynt: liveness check by name (restart works with the bind mount)" \
+			|| { rm -f $f.new; echo "could not edit $f" >&2; exit 1; }
+	elif grep -q "pidof \"\${DAEMON##\*/}\"" $f; then
+		: # already edited
+	else
+		echo "$f does not look as expected (neither pidof \"\$DAEMON\" nor the edited form)" >&2
+		exit 1
+	fi'; then
+	echo "Thingino'"'"'s /etc/init.d/S31prudynt could not be adjusted for the bind mount (see above)." >&2
+	echo "With it unchanged, Thingino'"'"'s own \"Restart streamer\" would leave the camera without prudynt - nothing was switched." >&2
+	exit 1
+fi
+
+
 echo "Switching prudynt (the stream drops for a few seconds)"
 # Failures here are not fatal on purpose: the check below decides, and rolls back.
 # "S31prudynt stop" returns before prudynt is gone; starting too early makes the new
@@ -103,27 +137,6 @@ if [ -z "$ok" ]; then
 fi
 ssh "$CAM" '/etc/init.d/S93osd-config start' || echo "warning: osd-config did not start (prudynt itself is fine)" >&2
 
-# With the bind mount, /proc/<pid>/exe of the running prudynt reads
-# /usr/bin/prudynt-osd, and Thingino's S31prudynt checks liveness with
-# pidof "$DAEMON" where DAEMON=/usr/bin/prudynt: a full path, matched against
-# exe, so it finds nothing. Its "stop" then returns at once and "restart"
-# starts the new prudynt while the old one is still shutting down; the new one
-# quits with "Another Prudynt instance appears to be running" and none is left.
-# That breaks Thingino's own Restart streamer, its OSD page and resolution
-# changes. Match by name instead (${DAEMON##*/} = prudynt): the same for the
-# stock binary, so the edit is harmless without the bind mount. Re-runs are
-# no-ops; a firmware update restores Thingino's file along with everything else.
-ssh "$CAM" 'f=/etc/init.d/S31prudynt
-	if grep -q "pidof \"\$DAEMON\"" $f; then
-		sed -e "s|pidof \"\$DAEMON\"|pidof \"\${DAEMON##*/}\"|" \
-			-e "s|killall \"\$DAEMON\"|killall \"\${DAEMON##*/}\"|" \
-			-e "s|killall -9 \"\$DAEMON\"|killall -9 \"\${DAEMON##*/}\"|" $f > $f.new \
-			&& sh -n $f.new && chmod 755 $f.new && mv $f.new $f \
-			&& echo "  S31prudynt: liveness check by name (restart works with the bind mount)" \
-			|| { rm -f $f.new; echo "  warning: could not edit $f - Thingino'"'"'s own prudynt restart may leave prudynt stopped" >&2; }
-	elif ! grep -q "DAEMON##\*/" $f; then
-		echo "  warning: $f does not look as expected (no pidof \"\$DAEMON\") - not edited; Thingino'"'"'s own prudynt restart may leave prudynt stopped" >&2
-	fi'
 
 # Web UI page (docs/osd.md), only now that the patched prudynt is known to run:
 # a rollback above must not leave the menu pointing at a page for a feature the

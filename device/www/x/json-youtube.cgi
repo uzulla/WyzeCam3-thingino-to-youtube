@@ -115,8 +115,21 @@ regular_or_absent() {
 # for the process to be gone (its init script returns early), start, wait for
 # an answer. Sends the JSON reply itself.
 PRUDYNT_INIT=/etc/init.d/S31prudynt
+PRUDYNT_LOCK=/run/prudynt-restart.lock # shared with osd-config (its pool-size restart)
 restart_prudynt() {
 	[ -f "$PRUDYNT_INIT" ] || fail "$PRUDYNT_INIT not found" "409 Conflict"
+	if ! mkdir "$PRUDYNT_LOCK" 2>/dev/null; then
+		now=$(date +%s)
+		since=$(cat "$PRUDYNT_LOCK/since" 2>/dev/null)
+		case "$since" in "" | *[!0-9]*) since=$(stat -c %Y "$PRUDYNT_LOCK" 2>/dev/null || echo 0) ;; esac
+		[ $((now - since)) -lt 120 ] && fail "prudynt is being restarted by something else (osd-config?) - try again in a moment" "409 Conflict"
+		mv "$PRUDYNT_LOCK" "$PRUDYNT_LOCK.stale.$$" 2>/dev/null && rm -rf "$PRUDYNT_LOCK.stale.$$"
+		mkdir "$PRUDYNT_LOCK" 2>/dev/null || fail "prudynt is being restarted by something else" "409 Conflict"
+	fi
+	echo "$$" >"$PRUDYNT_LOCK/owner"
+	date +%s >"$PRUDYNT_LOCK/since"
+	trap 'unlock; prudynt_unlock; rm -rf "$TMPD"' EXIT
+	trap 'unlock; prudynt_unlock; rm -rf "$TMPD"; exit 1' HUP INT TERM PIPE
 	t0=$(date +%s)
 	sh "$PRUDYNT_INIT" stop >/dev/null 2>&1
 	i=0
@@ -148,6 +161,9 @@ restart_prudynt() {
 LOCK=/run/youtube-cgi.lock
 unlock() {
 	[ "$(cat "$LOCK/owner" 2>/dev/null)" = "$$" ] && rm -rf "$LOCK"
+}
+prudynt_unlock() {
+	[ "$(cat "$PRUDYNT_LOCK/owner" 2>/dev/null)" = "$$" ] && rm -rf "$PRUDYNT_LOCK"
 }
 service_lock() {
 	if ! mkdir "$LOCK" 2>/dev/null; then

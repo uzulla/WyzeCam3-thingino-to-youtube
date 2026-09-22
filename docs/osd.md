@@ -22,7 +22,10 @@ device/install-prudynt-osd.sh root@<camera-ip> path/to/prudynt
   を名前一致にする。bind mount した prudynt は `/proc/<pid>/exe` が `/usr/bin/prudynt-osd` になり、フルパスの `pidof` に
   一致しないため、Thingino 標準の `service restart prudynt` (メニューの Restart streamer、OSD ページの Save、解像度変更)
   が旧プロセスの終了を待たずに新プロセスを起こし、新しい方が「Another Prudynt instance appears to be running」で終了して
-  **prudynt が居なくなる** (実機で発生)。書き換え後は標準の再起動が正しく待つ。標準の prudynt でも同じ動きなので害は無い
+  **prudynt が居なくなる** (実機で発生)。書き換え後は標準の再起動が正しく待つ。標準の prudynt でも同じ動きなので害は無い。
+  書き換えられない (想定外の内容の) 時はインストーラは何も切り替えずに中止する
+- prudynt の再起動は `osd-config` (`osd_pool_size` の変更時) と Web UI の「Restart prudynt」が `/run/prudynt-restart.lock` で
+  直列化される (同時に走ると片方が「起動失敗」と誤判定して古い値に戻し得るため)
 - 元に戻す: `service disable prudynt-osd; service disable osd-config` して再起動 (すぐ戻すなら
   `service stop osd-config; service stop prudynt; /etc/init.d/S30prudynt-osd stop; service start prudynt`)。
   完全に消すなら `/etc/init.d/S30prudynt-osd` `/usr/bin/prudynt-osd` `/usr/bin/prudynt-osd.build`

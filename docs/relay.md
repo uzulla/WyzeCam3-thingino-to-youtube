@@ -189,8 +189,9 @@ relay が自分で追従するので不要)。編集するのは **relay が使�
   打ち切らない設定 `-t 0`。実機で 40 秒無応答の CGI が通ることを確認)。普段は 2 秒程度
 - 「Restart prudynt」は `/etc/init.d/S31prudynt` を stop / start する (Thingino 標準の `restart-prudynt.cgi` は使わない。上記)
 - 手で入れるなら: `device/www/youtube.html` → `/var/www/youtube.html` (644)、`device/www/x/json-youtube.cgi` → `/var/www/x/json-youtube.cgi`
-  (755)、メニューは `/var/www/a/plugins.js` の `cfg.plugins = {` の次の行に install.sh が挿している 1 行 (`"youtube-relay": {…},`) を足して 644 にする
-  (無くても URL で開ける)
+  (755)、`device/www/a/plugins/youtube-relay.webui.json` → `/var/www/a/plugins/youtube-relay.webui.json` (644。`thingino-pkg` が
+  `plugins.js` を作り直す時の元)、メニューは `/var/www/a/plugins.js` の `cfg.plugins = {` の次の行に install.sh が挿している 1 行
+  (`"youtube-relay": {…},`) を足して 644 にする (無くても URL で開ける)
 - Save や Start / Stop / Restart は CGI 側で 1 つずつ直列化される (同時に押すと 409)。ボタンは操作中はまとめて無効になる
 - メニューに「YouTube Live」が出ない時はページを再読み込みする (Thingino の一部のページは `plugins.js` を版番号なしで
   読むため、ブラウザが古いものをしばらく使う)。install.sh はメニューの元になるマニフェスト `/var/www/a/plugins/youtube-relay.webui.json`
