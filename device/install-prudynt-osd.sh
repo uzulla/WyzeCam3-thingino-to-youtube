@@ -9,7 +9,8 @@
 # it over /usr/bin/prudynt at boot. Also adds the "OSD text" page to Thingino's web
 # UI (the Streamer menu entry that led to Thingino's own OSD page is pointed at it).
 # Undo:
-#   ssh root@<camera-ip> 'rm /etc/init.d/S30prudynt-osd /etc/init.d/S93osd-config /usr/bin/prudynt-osd /usr/bin/prudynt-osd.build /usr/sbin/osd-config /var/www/osd-text.html /var/www/x/json-osd-text.cgi; sed -i "s#/osd-text.html#/streamer-osd.html#; s#\"OSD text\"#\"OSD Elements\"#" /var/www/a/plugins.js /var/www/a/plugins/prudynt.webui.json; reboot'
+#   ssh root@<camera-ip> 'rm /etc/init.d/S30prudynt-osd /etc/init.d/S93osd-config /usr/bin/prudynt-osd /usr/bin/prudynt-osd.build /usr/sbin/osd-config /var/www/osd-text.html /var/www/x/json-osd-text.cgi; sed -i "s#/osd-text.html#/streamer-osd.html#; s#\"OSD text\"#\"OSD Elements\"#" /var/www/a/plugins.js /var/www/a/plugins/prudynt.webui.json; sed -i "s|\${DAEMON##\*/}|\$DAEMON|g" /etc/init.d/S31prudynt; reboot'
+# (the S31prudynt edit may also just stay: it is harmless with the stock prudynt)
 #
 # prudynt is restarted at the end, which interrupts the stream for a few seconds
 # (the youtube-relay supervisor reconnects by itself).
@@ -101,6 +102,26 @@ if [ -z "$ok" ]; then
 	exit 1
 fi
 ssh "$CAM" '/etc/init.d/S93osd-config start' || echo "warning: osd-config did not start (prudynt itself is fine)" >&2
+
+# With the bind mount, /proc/<pid>/exe of the running prudynt reads
+# /usr/bin/prudynt-osd, and Thingino's S31prudynt checks liveness with
+# pidof "$DAEMON" where DAEMON=/usr/bin/prudynt: a full path, matched against
+# exe, so it finds nothing. Its "stop" then returns at once and "restart"
+# starts the new prudynt while the old one is still shutting down; the new one
+# quits with "Another Prudynt instance appears to be running" and none is left.
+# That breaks Thingino's own Restart streamer, its OSD page and resolution
+# changes. Match by name instead (${DAEMON##*/} = prudynt): the same for the
+# stock binary, so the edit is harmless without the bind mount. Re-runs are
+# no-ops; a firmware update restores Thingino's file along with everything else.
+ssh "$CAM" 'f=/etc/init.d/S31prudynt
+	if grep -q "pidof \"\$DAEMON\"" $f; then
+		sed -e "s|pidof \"\$DAEMON\"|pidof \"\${DAEMON##*/}\"|" \
+			-e "s|killall \"\$DAEMON\"|killall \"\${DAEMON##*/}\"|" \
+			-e "s|killall -9 \"\$DAEMON\"|killall -9 \"\${DAEMON##*/}\"|" $f > $f.new \
+			&& sh -n $f.new && chmod 755 $f.new && mv $f.new $f \
+			&& echo "  S31prudynt: liveness check by name (restart works with the bind mount)" \
+			|| { rm -f $f.new; echo "  warning: could not edit $f - Thingino'"'"'s own prudynt restart may leave prudynt stopped" >&2; }
+	fi'
 
 # Web UI page (docs/osd.md), only now that the patched prudynt is known to run:
 # a rollback above must not leave the menu pointing at a page for a feature the
