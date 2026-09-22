@@ -176,7 +176,8 @@ relay が自分で追従するので不要)。編集するのは **relay が使�
 - **Status**: relay サービスと ffmpeg の稼働 (pid、配信の経過時間)、起動時の自動開始、使っている設定ファイル。5 秒ごとに更新
 - **Relay service**: Start / Stop / **Restart stream (ffmpeg)** (= `service restart youtube-relay`)。「Start the relay service at
   boot」のスイッチが `service enable/disable` (init スクリプトの実行属性。切っても動いているものは止まらない)
-- **Restart prudynt**: Thingino の `/x/restart-prudynt.cgi` を呼ぶ (映像と OSD が数秒止まり、ffmpeg は自動で再接続)
+- **Restart prudynt**: prudynt を止めて起こし直す (映像と OSD が 5〜10 秒止まり、ffmpeg は自動で再接続。prudynt が止まらない /
+  起きない時は最大約 50 秒でエラー表示。下記の注意)
 - **Log**: `logread` の youtube-relay 行 (キーは relay が伏せている)。5 秒ごとに更新
 - 裏側の CGI は `/x/json-youtube.cgi` (`?action=status` / `save[&restart=1]` / `service&op=…`)。Thingino の認証 (セッション
   Cookie か `?token=<API キー>`) を通せばカメラ外からも使える。ストリームキーは認証済みのブラウザにそのまま返す
@@ -186,14 +187,20 @@ relay が自分で追従するので不要)。編集するのは **relay が使�
   プログラムから叩くのは同じ LAN 内 (または VPN 越し) に限る
 - Restart / Stop は supervisor の終了を待つので、詰まっている時は約 50 秒応答が返らない (uhttpd は CGI を
   打ち切らない設定 `-t 0`。実機で 40 秒無応答の CGI が通ることを確認)。普段は 2 秒程度
-- 「Restart prudynt」は Thingino 標準の `/x/restart-prudynt.cgi` を呼ぶ (対応ファーム ciao+da40db6 に入っている。
-  無いファームでは 404 になり、ページにエラーが出るだけ)
+- 「Restart prudynt」は `/etc/init.d/S31prudynt` を stop / start する (Thingino 標準の `restart-prudynt.cgi` は使わない。上記)
 - 手で入れるなら: `device/www/youtube.html` → `/var/www/youtube.html` (644)、`device/www/x/json-youtube.cgi` → `/var/www/x/json-youtube.cgi`
-  (755)、メニューは `/var/www/a/plugins.js` の `cfg.plugins = {` の次の行に install.sh が挿している 1 行 (`"youtube-relay": {…},`) を足して 644 にする
-  (無くても URL で開ける)
+  (755)、`device/www/a/plugins/youtube-relay.webui.json` → `/var/www/a/plugins/youtube-relay.webui.json` (644。`thingino-pkg` が
+  `plugins.js` を作り直す時の元)、メニューは `/var/www/a/plugins.js` の `cfg.plugins = {` の次の行に install.sh が挿している 1 行
+  (`"youtube-relay": {…},`) を足して 644 にする (無くても URL で開ける)
 - Save や Start / Stop / Restart は CGI 側で 1 つずつ直列化される (同時に押すと 409)。ボタンは操作中はまとめて無効になる
-- 消す: `/var/www/youtube.html` `/var/www/x/json-youtube.cgi` を削除し、`/var/www/a/plugins.js` から `"youtube-relay": {…},` の
-  1 行を消す
+- メニューに「YouTube Live」が出ない時はページを再読み込みする (Thingino の一部のページは `plugins.js` を版番号なしで
+  読むため、ブラウザが古いものをしばらく使う)。install.sh はメニューの元になるマニフェスト `/var/www/a/plugins/youtube-relay.webui.json`
+  も置くので、Thingino の `thingino-pkg` が `plugins.js` を作り直しても項目は残る
+- **Restart prudynt** はこのページ側で「stop → 消えるまで待つ → start → 応答を待つ」をやる (5〜10 秒)。Thingino 標準の
+  `service restart prudynt` は旧プロセスが終わる前に新プロセスを起こし、新しい方が「Another Prudynt instance appears to be
+  running」で終了して **prudynt が居なくなる**ことがある (実機で発生)
+- 消す: `/var/www/youtube.html` `/var/www/x/json-youtube.cgi` `/var/www/a/plugins/youtube-relay.webui.json` を削除し、
+  `/var/www/a/plugins.js` から `"youtube-relay": {…},` の 1 行を消す
 
 ## Thingino を入れ直した / 更新した後
 

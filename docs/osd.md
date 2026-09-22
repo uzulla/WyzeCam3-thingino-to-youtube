@@ -18,12 +18,21 @@ device/install-prudynt-osd.sh root@<camera-ip> path/to/prudynt
   bind mount せず、標準の prudynt のまま起動する
 - Web UI にページが増える (Streamer メニューの「OSD Elements」が「OSD text」= `/osd-text.html` に差し替わる。
   [下記](#web-ui-から編集する))
+- **Thingino の `/etc/init.d/S31prudynt` を 2 行書き換える**: 生存確認の `pidof "$DAEMON"` (`/usr/bin/prudynt` のフルパス)
+  を名前一致にする。bind mount した prudynt は `/proc/<pid>/exe` が `/usr/bin/prudynt-osd` になり、フルパスの `pidof` に
+  一致しないため、Thingino 標準の `service restart prudynt` (メニューの Restart streamer、OSD ページの Save、解像度変更)
+  が旧プロセスの終了を待たずに新プロセスを起こし、新しい方が「Another Prudynt instance appears to be running」で終了して
+  **prudynt が居なくなる** (実機で発生)。書き換え後は標準の再起動が正しく待つ。標準の prudynt でも同じ動きなので害は無い。
+  書き換えられない (想定外の内容の) 時はインストーラは何も切り替えずに中止する
+- prudynt の再起動は `osd-config` (`osd_pool_size` の変更時) と Web UI の「Restart prudynt」が `/run/prudynt-restart.lock` で
+  直列化される (同時に走ると片方が「起動失敗」と誤判定して古い値に戻し得るため)
 - 元に戻す: `service disable prudynt-osd; service disable osd-config` して再起動 (すぐ戻すなら
   `service stop osd-config; service stop prudynt; /etc/init.d/S30prudynt-osd stop; service start prudynt`)。
   完全に消すなら `/etc/init.d/S30prudynt-osd` `/usr/bin/prudynt-osd` `/usr/bin/prudynt-osd.build`
   `/usr/sbin/osd-progress-demo` `/usr/sbin/osd-config` `/etc/init.d/S93osd-config` `/var/www/osd-text.html`
   `/var/www/x/json-osd-text.cgi` を削除し、メニューを戻す
-  (`sed -i 's#/osd-text.html#/streamer-osd.html#; s#"OSD text"#"OSD Elements"#' /var/www/a/plugins.js`)。置いていれば
+  (`sed -i 's#/osd-text.html#/streamer-osd.html#; s#"OSD text"#"OSD Elements"#' /var/www/a/plugins.js /var/www/a/plugins/prudynt.webui.json`)。
+  `S31prudynt` の書き換えは残しても害は無い (戻すなら `sed -i 's|${DAEMON##\*/}|$DAEMON|g' /etc/init.d/S31prudynt`)。置いていれば
   設定ファイル (`/etc/prudynt-osd.json` と、SD カード直下の `prudynt-osd.json` = カメラ上では
   `/mnt/mmcblk0p1/prudynt-osd.json`) を削除する。どちらかが残っていると、入れ直した時や `osd-config` を
   有効に戻した時に、古い OSD 設定が自動で反映される。設定ファイルで `general.osd_pool_size` を使っていた場合は

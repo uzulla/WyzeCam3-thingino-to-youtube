@@ -93,12 +93,18 @@ fi
 
 ssh "$CAM" '/etc/init.d/S93youtube-relay start'
 
-# Web UI page (docs/relay.md, "Web UI"): Services > YouTube Live. plugins.js is
-# generated at firmware build time; our entry is inserted right after
-# "cfg.plugins = {" when it is not there yet (re-runs are no-ops). The entry
-# travels as a file and goes in with "sed r": no quoting through ssh.
+# Web UI page (docs/relay.md, "Web UI"): Services > YouTube Live. The menu is
+# built from /var/www/a/plugins.js, which the firmware generates at build time
+# from the manifests in /var/www/a/plugins/*.webui.json (thingino-pkg
+# regenerates it from them after installing or removing a package). So: our
+# manifest goes into that directory (survives a regeneration), and the live
+# plugins.js gets the same entry inserted right after "cfg.plugins = {" when it
+# is not there yet (re-runs are no-ops; a regeneration by thingino-pkg would
+# drop the cfg.device flags, so we do not trigger one). The entry travels as a
+# file and goes in with "sed r": no quoting through ssh.
 push "$HERE/www/youtube.html" /var/www/youtube.html 644
 push "$HERE/www/x/json-youtube.cgi" /var/www/x/json-youtube.cgi 755
+push "$HERE/www/a/plugins/youtube-relay.webui.json" /var/www/a/plugins/youtube-relay.webui.json 644
 ssh "$CAM" 'cat > /tmp/youtube-nav.frag' <<'EOF'
   "youtube-relay": {"label": "YouTube Live relay", "name": "youtube-relay", "nav": [{"section": "ddServices", "position": "prepend", "items": [{"href": "/youtube.html", "label": "YouTube Live"}]}]},
 EOF

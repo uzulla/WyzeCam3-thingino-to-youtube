@@ -9,7 +9,8 @@
 # it over /usr/bin/prudynt at boot. Also adds the "OSD text" page to Thingino's web
 # UI (the Streamer menu entry that led to Thingino's own OSD page is pointed at it).
 # Undo:
-#   ssh root@<camera-ip> 'rm /etc/init.d/S30prudynt-osd /etc/init.d/S93osd-config /usr/bin/prudynt-osd /usr/bin/prudynt-osd.build /usr/sbin/osd-config /var/www/osd-text.html /var/www/x/json-osd-text.cgi; sed -i "s#/osd-text.html#/streamer-osd.html#; s#\"OSD text\"#\"OSD Elements\"#" /var/www/a/plugins.js; reboot'
+#   ssh root@<camera-ip> 'rm /etc/init.d/S30prudynt-osd /etc/init.d/S93osd-config /usr/bin/prudynt-osd /usr/bin/prudynt-osd.build /usr/sbin/osd-config /var/www/osd-text.html /var/www/x/json-osd-text.cgi; sed -i "s#/osd-text.html#/streamer-osd.html#; s#\"OSD text\"#\"OSD Elements\"#" /var/www/a/plugins.js /var/www/a/plugins/prudynt.webui.json; sed -i "s|\${DAEMON##\*/}|\$DAEMON|g" /etc/init.d/S31prudynt; reboot'
+# (the S31prudynt edit may also just stay: it is harmless with the stock prudynt)
 #
 # prudynt is restarted at the end, which interrupts the stream for a few seconds
 # (the youtube-relay supervisor reconnects by itself).
@@ -64,6 +65,41 @@ ssh "$CAM" '[ -x /etc/init.d/S93osd-config ] && /etc/init.d/S93osd-config stop >
 push "$HERE/osd-config" /usr/sbin/osd-config 755
 push "$HERE/S93osd-config" /etc/init.d/S93osd-config 755
 
+# With the bind mount, /proc/<pid>/exe of the running prudynt reads
+# /usr/bin/prudynt-osd, and Thingino's S31prudynt checks liveness with
+# pidof "$DAEMON" where DAEMON=/usr/bin/prudynt: a full path, matched against
+# exe, so it finds nothing. Its "stop" then returns at once and "restart"
+# starts the new prudynt while the old one is still shutting down; the new one
+# quits with "Another Prudynt instance appears to be running" and none is left.
+# That breaks Thingino's own Restart streamer, its OSD page and resolution
+# changes. Match by name instead (${DAEMON##*/} = prudynt): the same for the
+# stock binary, so the edit is harmless without the bind mount. Re-runs are
+# no-ops; a firmware update restores Thingino's file along with everything else.
+# Done before the switch: without it the bind mount would make Thingino's own
+# restart leave the camera without a streamer, so an S31prudynt we cannot edit
+# means stop here, with nothing changed yet.
+if ! ssh "$CAM" 'f=/etc/init.d/S31prudynt
+	if grep -q "pidof \"\$DAEMON\"" $f; then
+		sed -e "s|pidof \"\$DAEMON\"|pidof \"\${DAEMON##*/}\"|" \
+			-e "s|killall \"\$DAEMON\"|killall \"\${DAEMON##*/}\"|" \
+			-e "s|killall -9 \"\$DAEMON\"|killall -9 \"\${DAEMON##*/}\"|" $f > $f.new \
+			&& sh -n $f.new && ! grep -q "pidof \"\$DAEMON\"" $f.new && ! grep -q "killall \"\$DAEMON\"" $f.new \
+			&& grep -q "pidof \"\${DAEMON##\*/}\"" $f.new \
+			&& chmod 755 $f.new && mv $f.new $f \
+			&& echo "  S31prudynt: liveness check by name (restart works with the bind mount)" \
+			|| { rm -f $f.new; echo "could not edit $f" >&2; exit 1; }
+	elif grep -q "pidof \"\${DAEMON##\*/}\"" $f; then
+		: # already edited
+	else
+		echo "$f does not look as expected (neither pidof \"\$DAEMON\" nor the edited form)" >&2
+		exit 1
+	fi'; then
+	echo "The Thingino init script /etc/init.d/S31prudynt could not be adjusted for the bind mount (see above)." >&2
+	echo "Unchanged, the Thingino menu entry 'Restart streamer' would leave the camera without prudynt - nothing was switched." >&2
+	exit 1
+fi
+
+
 echo "Switching prudynt (the stream drops for a few seconds)"
 # Failures here are not fatal on purpose: the check below decides, and rolls back.
 # "S31prudynt stop" returns before prudynt is gone; starting too early makes the new
@@ -102,6 +138,7 @@ if [ -z "$ok" ]; then
 fi
 ssh "$CAM" '/etc/init.d/S93osd-config start' || echo "warning: osd-config did not start (prudynt itself is fine)" >&2
 
+
 # Web UI page (docs/osd.md), only now that the patched prudynt is known to run:
 # a rollback above must not leave the menu pointing at a page for a feature the
 # stock prudynt does not have. Thingino's own OSD page (streamer-osd.html) stays
@@ -111,6 +148,14 @@ ssh "$CAM" '/etc/init.d/S93osd-config start' || echo "warning: osd-config did no
 # substitution, done only when the old href is still there (re-runs are no-ops).
 push "$HERE/www/osd-text.html" /var/www/osd-text.html 644
 push "$HERE/www/x/json-osd-text.cgi" /var/www/x/json-osd-text.cgi 755
+# Same change in the manifest plugins.js is generated from (thingino-pkg
+# regenerates plugins.js from /var/www/a/plugins/*.webui.json), so a
+# regeneration keeps the menu pointing at our page
+ssh "$CAM" 'm=/var/www/a/plugins/prudynt.webui.json
+	if [ -f $m ] && grep -q "\"/streamer-osd.html\"" $m; then
+		sed -e "s#\(\"href\": *\)\"/streamer-osd.html\"#\1\"/osd-text.html\"#" \
+			-e "s#\(\"label\": *\)\"OSD Elements\"#\1\"OSD text\"#" $m > $m.new && chmod 644 $m.new && mv $m.new $m
+	fi'
 ssh "$CAM" 'f=/var/www/a/plugins.js
 	if grep -q "\"/streamer-osd.html\"" $f; then
 		sed -e "s#\(\"href\": *\)\"/streamer-osd.html\"#\1\"/osd-text.html\"#" \
