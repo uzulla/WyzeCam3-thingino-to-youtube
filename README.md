@@ -70,6 +70,7 @@ localhost RTSP (prudynt) → H.264/AAC stream copy → FLV mux → RTMPS/TLS →
 ```text
 patches/   このリポジトリの本体。Thingino に当てる差分
              thingino-ffmpeg-rtmps.diff         thingino-ffmpeg パッケージを RTMPS 対応にする
+             thingino-ffmpeg-rtmp-chunk-size.diff  FFmpeg 本体: RTMP の送信チャンクサイズを rtmp_chunk_size オプション (既定 4096、128〜65536) で指定できるようにする。素の FFmpeg は 128 固定で、RTMPS の送信量が映像の 1.7 倍になる (4096 で 1.08 倍)
              prudynt-osd-textfile.diff          任意: prudynt (ストリーマ) に「テキストファイルを映像へ重ねる OSD」を足す
              prudynt-msgchannel-warning.diff    任意: prudynt が 5 秒ごとに出す誤報の警告 (msgChannel sink clogged) を止める
 device/    カメラ側の常設運用一式 (ファイルの一覧は device/README.md、使い方は docs/)
@@ -103,6 +104,7 @@ git 管理外です。必要な変更はすべて `patches/` に分離してあ�
 | [docs/osd.md](docs/osd.md) | 映像にテキストを重ねる (OSD テキストオーバーレイ): インストール、使い方、設定項目、SD カードの設定ファイル、大きさの上限 |
 | [docs/wifi-from-sd.md](docs/wifi-from-sd.md) | Wi-Fi 設定を SD カードで運ぶ |
 | [docs/netwatch.md](docs/netwatch.md) | netwatch (ping 失敗での OS 再起動) の無効化 |
+| [docs/cellular.md](docs/cellular.md) | セルラー回線 (車載) での配信: 送信量 (RTMPS と平文 RTMP の実測)、切断からの復帰の実測、チューニングの選択肢 |
 | [docs/troubleshooting.md](docs/troubleshooting.md) | 症状別の対処 |
 | [docs/build.md](docs/build.md) | ffmpeg / prudynt のビルド手順 |
 | [device/README.md](device/README.md) | `device/` のファイル一覧 |

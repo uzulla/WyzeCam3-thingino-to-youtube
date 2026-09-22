@@ -647,6 +647,49 @@ A (`uenv.txt`) は未確認 (ソースの読解に基づく):
 
 ---
 
+## 2026-09 追記: RTMPS の送信量が映像の 1.7 倍だった (FFmpeg パッチ, #31)
+
+wlan0 の送信が 1.8 Mbps なのに、prudynt の RTSP を録って測ると映像 + 音声は 1.05 Mbps (エンコーダは CBR 1024 の設定どおり)。
+`/proc/net/snmp6` の `Ip6OutOctets` (YouTube は IPv6) と `/proc/net/netstat` の `IpExt OutOctets` (IPv4 = LAN + loopback) に
+分けると、IPv6 = 1.77 Mbps ≒ wlan0 全体で、YouTube への RTMPS 接続そのものが 1.69 倍だった (`Ip6OutOctets` は IPv6 全体の
+値だが、`netstat -tn` で他に IPv6 の接続が無い (ssh は IPv4) ことを確認した上での測定。倍率は TLS・TCP・IPv6 ヘッダを
+含む線上の実測値)。TCP 再送は 0。
+
+原因は FFmpeg の RTMP 実装: 送信チャンクは 128 バイト固定 (`rtmpproto.c` の `rt->out_chunk_size = 128`、変えるオプション無し。
+Set Chunk Size を送るコードは listen 側にしか無い) で、`ff_rtmp_packet_write` はパケットヘッダ・128 バイトのデータ・次の
+チャンクの 1 バイトの継続ヘッダをそれぞれ別の `ffurl_write` で書く。`tls_mbedtls.c` の `tls_write` は書き込み 1 回 =
+`mbedtls_ssl_write` 1 回 = TLS レコード 1 つ (バッファ無し) なので、128 バイトごとに TLS レコード 2 つ (データ + 継続ヘッダ)
+= 2 × 約 29 = 約 58 バイトの枝葉が付き、
+小さな書き込みが多い分 TCP/IPv6 ヘッダの比率も上がる。平文の RTMP では TCP がまとめるので目立たない。
+
+対処 `patches/thingino-ffmpeg-rtmp-chunk-size.diff`: `rtmp_chunk_size` オプション (既定 4096、128 で宣言しない) を足し、
+ハンドシェイク直後・`connect` の前に Set Chunk Size を送って `out_chunk_size` を切り替える (RTMP では送信側が自分のチャンク
+サイズを宣言できる。最大 65536)。`package/thingino-ffmpeg/0002-rtmp-chunk-size.patch` として Buildroot に当てる。
+FFmpeg は publish 中にサーバから Set Chunk Size を受けると、それを送り返して自分の送信サイズにも反映する
+(`handle_chunk_size`) ので、自分でサイズを宣言した時はこの反映をしないようにした (YouTube は接続時に送ってこないことを
+無効なキーで接続して確認したが、送ってきても 4096 が縮まないように)。
+
+実測 (2026-09-22、`Ip6OutOctets` の 120 秒差分、720p10 / 1Mbps):
+
+| 接続 | ffmpeg | YouTube への送信 | 映像 + 音声 (1046 kbps) に対して | ffmpeg CPU |
+|---|---|---|---|---|
+| RTMPS | パッチなし (128) | 1771 kbps | 1.69 倍 | (前日の実測 4.8%) |
+| RTMPS | パッチ (4096、既定) | 1126〜1128 kbps | 1.08 倍 | 2.5% |
+| RTMPS | `-rtmp_chunk_size 65536` | 1111 kbps | 1.06 倍 | — |
+| 平文 RTMP (1935) | パッチ (4096) | 1093 kbps | 1.04 倍 | 2.2% |
+| 平文 RTMP (1935) | `-rtmp_chunk_size 128` (素の動作) | 1133 kbps | 1.08 倍 | 3.6% |
+
+4096 と 65536 の差は誤差の範囲なので既定は 4096。YouTube 側は問題なく受信を継続 (ffmpeg の再起動なし、再送 0)。
+平文 RTMP は TLS の枝葉が無いぶん RTMPS より約 3% 少なく、パッチ無しでも TCP が小さな書き込みをまとめるので 1.08 倍で済む
+(TLS が無ければこの問題はほぼ顕在化しない)。CPU の差も 0.3 ポイント。ユーザーの判断で、この実機は平文 RTMP に切り替えた
+(帯域を優先。ストリームキーが経路上を平文で流れることは了承済み)。
+パッチを当てる前後で ffmpeg のバイナリサイズは同じ 2,604,580 バイト。パッチなしのビルドは実機に入っていたバイナリと md5 が
+一致した (ビルド環境の再現性の確認になった)。
+
+- `youtube-relay` は `/etc/youtube-relay.json` を書き換えても動いている ffmpeg を再起動しない (起動時に読むだけ)。
+  `ffmpeg_out_opts` を試す時は `service restart youtube-relay`
+- モバイル回線では 1 時間あたり約 800MB → 約 510MB (RTMPS + パッチ)、約 490MB (平文 RTMP + パッチ)
+
 ## 残タスク
 
 - [x] 長時間試験 — **約4時間の連続配信で完走、リーク・劣化なし**

@@ -18,6 +18,8 @@ git submodule update --init          # buildroot をピン位置で checkout
 
 # 2. RTMPS 対応パッチを適用
 git apply ../patches/thingino-ffmpeg-rtmps.diff
+#    FFmpeg 本体へのパッチ (RTMP の送信チャンクサイズ。無いと RTMPS の送信量が映像の 1.7 倍になる。docs/relay.md)
+cp ../patches/thingino-ffmpeg-rtmp-chunk-size.diff package/thingino-ffmpeg/0002-rtmp-chunk-size.patch
 
 # 3. 公式ビルダーイメージと DL キャッシュを取得
 WORKFLOW=1 make -f Makefile.container container-pull

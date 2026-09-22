@@ -1,0 +1,86 @@
+diff --git a/libavformat/rtmpproto.c b/libavformat/rtmpproto.c
+--- a/libavformat/rtmpproto.c
++++ b/libavformat/rtmpproto.c
+@@ -119,6 +119,7 @@
+     int           max_sent_unacked;           ///< max unacked sent bytes
+     int           client_buffer_time;         ///< client buffer time in ms
+     int           flush_interval;             ///< number of packets flushed in the same request (RTMPT only)
++    int           chunk_size;                 ///< chunk size to announce for outgoing packets (client only)
+     int           encrypted;                  ///< use an encrypted connection (RTMPE only)
+     TrackedMethod*tracked_methods;            ///< tracked methods buffer
+     int           nb_tracked_methods;         ///< number of tracked methods
+@@ -972,6 +973,43 @@
+ }
+ 
+ /**
++ * Announce a bigger chunk size for our outgoing packets and switch to it.
++ *
++ * FFmpeg keeps the default 128-byte chunks for everything it publishes, and
++ * ff_rtmp_packet_write() issues a separate write for every chunk (plus one for
++ * the 1-byte continuation header). Over TLS each write becomes its own record
++ * (~29 bytes of framing), so a 128-byte chunk costs about 60 bytes on top of
++ * itself, and the many small writes also inflate the TCP/IP header share. With
++ * 1 Mbps of H.264 to rtmps://a.rtmps.youtube.com this made the wire rate 1.7x
++ * the media rate. Sending Set Chunk Size right after the handshake brings it
++ * back to a few percent.
++ */
++static int gen_set_chunk_size(URLContext *s, RTMPContext *rt)
++{
++    RTMPPacket pkt;
++    uint8_t *p;
++    int ret;
++
++    if (rt->chunk_size <= 128)
++        return 0;
++
++    if ((ret = ff_rtmp_packet_create(&pkt, RTMP_NETWORK_CHANNEL,
++                                     RTMP_PT_CHUNK_SIZE, 0, 4)) < 0)
++        return ret;
++
++    p = pkt.data;
++    bytestream_put_be32(&p, rt->chunk_size);
++    // This message itself still goes out in the old chunk size (it fits anyway).
++    ret = rtmp_send_packet(rt, &pkt, 0);
++    if (ret < 0)
++        return ret;
++
++    rt->out_chunk_size = rt->chunk_size;
++    av_log(s, AV_LOG_DEBUG, "Outgoing chunk size set to %d\n", rt->out_chunk_size);
++    return 0;
++}
++
++/**
+  * Generate window acknowledgement size message and send it to the server.
+  */
+ static int gen_window_ack_size(URLContext *s, RTMPContext *rt)
+@@ -1579,9 +1617,11 @@
+         return AVERROR_INVALIDDATA;
+     }
+ 
+-    if (!rt->is_input) {
++    if (!rt->is_input && rt->chunk_size <= 128) {
+         /* Send the same chunk size change packet back to the server,
+-         * setting the outgoing chunk size to the same as the incoming one. */
++         * setting the outgoing chunk size to the same as the incoming one.
++         * Not when we announced our own size in gen_set_chunk_size(): the
++         * server's choice for its direction must not shrink ours again. */
+         if ((ret = ff_rtmp_packet_write(rt->stream, pkt, rt->out_chunk_size,
+                                         &rt->prev_pkt[1], &rt->nb_prev_pkt[1])) < 0)
+             return ret;
+@@ -2896,6 +2936,8 @@
+     av_log(s, AV_LOG_DEBUG, "Proto = %s, path = %s, app = %s, fname = %s\n",
+            proto, path, rt->app, rt->playpath);
+     if (!rt->listen) {
++        if ((ret = gen_set_chunk_size(s, rt)) < 0)
++            goto fail;
+         if ((ret = gen_connect(s, rt)) < 0)
+             goto fail;
+     } else {
+@@ -3191,6 +3233,7 @@
+     {"rtmp_conn", "Append arbitrary AMF data to the Connect message", OFFSET(conn), AV_OPT_TYPE_STRING, {.str = NULL }, 0, 0, DEC|ENC},
+     {"rtmp_flashver", "Version of the Flash plugin used to run the SWF player.", OFFSET(flashver), AV_OPT_TYPE_STRING, {.str = NULL }, 0, 0, DEC|ENC},
+     {"rtmp_flush_interval", "Number of packets flushed in the same request (RTMPT only).", OFFSET(flush_interval), AV_OPT_TYPE_INT, {.i64 = 10}, 0, INT_MAX, ENC},
++    {"rtmp_chunk_size", "Chunk size announced to the server for outgoing packets (128 = RTMP default, do not announce).", OFFSET(chunk_size), AV_OPT_TYPE_INT, {.i64 = 4096}, 128, 65536, ENC},
+     {"rtmp_enhanced_codecs", "Specify the codec(s) to use in an enhanced rtmp live stream", OFFSET(enhanced_codecs), AV_OPT_TYPE_STRING, {.str = NULL }, 0, 0, ENC},
+     {"rtmp_live", "Specify that the media is a live stream.", OFFSET(live), AV_OPT_TYPE_INT, {.i64 = -2}, INT_MIN, INT_MAX, DEC, .unit = "rtmp_live"},
+     {"any", "both", 0, AV_OPT_TYPE_CONST, {.i64 = -2}, 0, 0, DEC, .unit = "rtmp_live"},
