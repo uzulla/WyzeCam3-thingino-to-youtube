@@ -100,9 +100,17 @@ func TestFileHoldsDetectsRemovalAndReplacement(t *testing.T) {
 	if !fileHolds(p, "abc\n") {
 		t.Error("just written file must hold the text")
 	}
-	os.WriteFile(p, []byte("x"), 0o644)
+	if err := os.WriteFile(p, []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	if fileHolds(p, "abc\n") {
 		t.Error("a file replaced by someone else must be noticed")
+	}
+	if err := os.WriteFile(p, []byte("xyz\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if fileHolds(p, "abc\n") {
+		t.Error("a replacement of the same size must be noticed")
 	}
 	os.Remove(p)
 	if fileHolds(p, "abc\n") {

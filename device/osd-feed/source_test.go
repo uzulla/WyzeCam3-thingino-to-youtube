@@ -40,6 +40,14 @@ func TestHTTPSourceJSON(t *testing.T) {
 	}
 }
 
+func TestHTTPSourceFlattenCollision(t *testing.T) {
+	if _, err := httpPoll(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(`{"gps": {"lat": 1}, "gps_lat": 2}`))
+	}, time.Second); err == nil {
+		t.Error("colliding keys must be an error")
+	}
+}
+
 func TestHTTPSourceNonJSONAndNull(t *testing.T) {
 	v, err := httpPoll(t, func(w http.ResponseWriter, r *http.Request) { w.Write([]byte("  hello\n")) }, time.Second)
 	if err != nil || v["body"] != "hello" || v["status"] != 200 {

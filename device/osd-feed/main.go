@@ -195,8 +195,8 @@ loop:
 					continue
 				}
 				// Unchanged text is not rewritten, unless the file itself is
-				// gone or not ours any more (the web UI's Clear, another
-				// writer): then the overlay would stay blank for good
+				// gone or not ours any more (the web UI's Clear or Show,
+				// another writer): then the overlay would stay wrong for good
 				if text == last[s.Name] && fileHolds(s.Path, text) {
 					continue
 				}
@@ -252,9 +252,10 @@ func sourceNames(cfg *Config) []string {
 	return names
 }
 
-// fileHolds - the file exists with the size of text (a cheap stat on tmpfs;
-// the content check is left to prudynt, which compares inode/mtime/size too)
+// fileHolds - the file exists and holds exactly text (a few hundred bytes
+// read from tmpfs per slot per tick; another writer's text of the same size
+// must be noticed too)
 func fileHolds(path, text string) bool {
-	st, err := os.Stat(path)
-	return err == nil && st.Size() == int64(len(text))
+	b, err := os.ReadFile(path)
+	return err == nil && string(b) == text
 }

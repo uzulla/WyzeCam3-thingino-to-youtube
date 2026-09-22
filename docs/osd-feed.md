@@ -75,7 +75,7 @@ device/install-osd-feed.sh root@<camera-ip>       # SD にバイナリと (無�
 | `meminfo` | `free_kb` `free_mb` `total_mb` `used_pct` (buffers/cache は空きに数える。`free` コマンドと同じ) | — |
 | `tick` | `n` (0→max をループ) `pct` (n の百分率) `max` | `step` (1 回の増分、既定 1)、`max` (既定 100)。`interval_ms` 100 で 10 秒で 1 周 |
 | `clock` | `hms` `date` `unix` (カメラのローカル時刻。`/etc/TZ` の POSIX 形式を読む。DST の規則は無視) | — |
-| `http` | GET した JSON オブジェクトのメンバーがキー。**入れ子のオブジェクトは `_` でつないで平らにする** (`{"gps":{"lat":35.6}}` → `.car.gps_lat`。取得前や欠けている時に空文字で済ませるため)。配列はそのまま (`{{index .car.list 0}}`)。JSON でなければ `body` (文字列)。`status` は常に HTTP ステータス (同名の JSON メンバーは見えない) | `url` (必須)、`timeout_ms` (既定 3000)、`headers` (`{"Authorization": "..."}`) |
+| `http` | GET した JSON オブジェクトのメンバーがキー。**入れ子のオブジェクトは `_` でつないで平らにする** (`{"gps":{"lat":35.6}}` → `.car.gps_lat`。取得前や欠けている時に空文字で済ませるため)。メンバーの値が配列ならそのまま (`{{index .car.list 0}}`)。平坦化後に同じキーになるメンバーがあれば取得エラー。本文が JSON オブジェクトでなければ (配列・数値・文字列・`null`・JSON 以外) `body` (文字列)。`status` は常に HTTP ステータス (同名の JSON メンバーは見えない) | `url` (必須)、`timeout_ms` (既定 3000)、`headers` (`{"Authorization": "..."}`) |
 
 どの source にも **`ok`** (直前の取得が成功した) と **`age_s`** (最後に成功してからの秒数。一度も無ければ -1) が付く。
 取得に失敗しても前回の値は残るので、外部データが途切れた時の見せ方はテンプレート側で決める:

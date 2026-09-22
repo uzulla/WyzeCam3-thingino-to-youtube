@@ -220,8 +220,8 @@ func (t *tickSource) Poll(context.Context) (Values, error) {
 // a template cannot step into a nested value that is not there yet (before
 // the first poll, or when the server left it out) without failing; one level
 // of keys, blank when missing, is what the overlay needs. Arrays are kept as
-// they are ({{index .car.list 0}}). A non-object or non-JSON body is exposed
-// as "body" (string). "status" is always the HTTP status code (a JSON member
+// they are ({{index .car.list 0}}). A body that is not a JSON object (an
+// array, a number, null, plain text) is exposed as "body" (string). "status" is always the HTTP status code (a JSON member
 // called "status" is not visible).
 
 type httpSource struct {
@@ -260,7 +260,9 @@ func (h *httpSource) Poll(ctx context.Context) (Values, error) {
 	v := Values{}
 	var obj map[string]any
 	if json.Unmarshal(body, &obj) == nil && obj != nil { // "null" decodes to a nil map
-		flatten("", obj, v)
+		if err := flatten("", obj, v); err != nil {
+			return nil, err
+		}
 	} else {
 		v["body"] = strings.TrimSpace(string(body))
 	}
@@ -270,14 +272,22 @@ func (h *httpSource) Poll(ctx context.Context) (Values, error) {
 	return v, nil
 }
 
-// flatten - nested objects into prefix_key entries of out
-func flatten(prefix string, obj map[string]any, out Values) {
+// flatten - nested objects into prefix_key entries of out. Two members that
+// flatten to the same key ({"gps":{"lat":1},"gps_lat":2}) are an error: map
+// order would decide which one shows.
+func flatten(prefix string, obj map[string]any, out Values) error {
 	for k, val := range obj {
 		key := prefix + k
 		if sub, ok := val.(map[string]any); ok {
-			flatten(key+"_", sub, out)
+			if err := flatten(key+"_", sub, out); err != nil {
+				return err
+			}
 			continue
+		}
+		if _, dup := out[key]; dup {
+			return fmt.Errorf("JSON members collide after flattening: %q", key)
 		}
 		out[key] = val
 	}
+	return nil
 }
