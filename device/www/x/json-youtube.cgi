@@ -119,7 +119,10 @@ unlock() {
 service_lock() {
 	if ! mkdir "$LOCK" 2>/dev/null; then
 		now=$(date +%s)
-		since=$(cat "$LOCK/since" 2>/dev/null || echo "$now")
+		# A CGI that died between mkdir and writing "since" leaves a lock
+		# without it: judge that one by the directory's own mtime
+		since=$(cat "$LOCK/since" 2>/dev/null)
+		case "$since" in "" | *[!0-9]*) since=$(stat -c %Y "$LOCK" 2>/dev/null || echo 0) ;; esac
 		if [ $((now - since)) -lt 120 ]; then
 			fail "another save or service operation is still running - try again in a moment" "409 Conflict"
 		fi
