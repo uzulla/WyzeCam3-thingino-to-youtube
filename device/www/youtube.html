@@ -1,0 +1,309 @@
+<!DOCTYPE html>
+<html lang="en" data-bs-theme="dark">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>thingino · YouTube Live</title>
+  <script src="/a/theme-init.js"></script>
+  <link rel="icon" type="image/svg+xml" href="/a/favicon.svg">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700&display=swap">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/css/bootstrap.min.css"
+    integrity="sha384-sRIl4kxILFvY47J16cr9ZwB07vP4J8+LH7qKQnuqkuIAvNWLzeN8tE5YBujZqJLB" crossorigin="anonymous">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.13.1/font/bootstrap-icons.min.css">
+  <link rel="stylesheet" href="/a/main.css">
+  <style>
+    #log{max-height:18em;overflow:auto;font-size:.8em;white-space:pre-wrap}
+    .state{display:inline-block;min-width:5.5em}
+    .dot{display:inline-block;width:.6em;height:.6em;border-radius:50%;margin-right:.3em;vertical-align:middle}
+  </style>
+</head>
+
+<body id="page-youtube">
+<nav data-app-nav></nav>
+
+<main class="pb-4">
+  <div class="container">
+    <div data-app-controls></div>
+
+    <section>
+      <div class="d-flex justify-content-between align-items-center mb-3">
+        <h3>YouTube Live</h3>
+        <button type="button" id="reload" class="btn btn-outline-secondary btn-sm" title="Read the state again">
+          <i class="bi bi-arrow-clockwise me-1"></i> Reload
+        </button>
+      </div>
+
+      <div class="row g-3">
+        <div class="col-12 col-xl-6">
+          <div class="card bg-dark-subtle p-3 h-100" id="settings_card">
+            <h5 class="mb-3">Stream settings <span class="text-secondary fw-normal small" id="config_note"></span></h5>
+
+            <p class="form-switch mb-3">
+              <input type="checkbox" id="enabled" role="switch" class="form-check-input">
+              <label for="enabled" class="form-check-label">Streaming enabled</label>
+              <span class="small text-secondary d-block ms-0 ps-0">Off pauses the stream within 15 s and keeps the key. The relay service keeps running.</span>
+            </p>
+
+            <label class="form-label mb-0" for="stream_key">Stream key</label>
+            <div class="input-group mb-3">
+              <input type="password" id="stream_key" class="form-control font-monospace" autocomplete="off" spellcheck="false" placeholder="xxxx-xxxx-xxxx-xxxx-xxxx">
+              <button type="button" class="btn btn-outline-secondary" id="toggle_key" title="Show / hide"><i class="bi bi-eye"></i></button>
+            </div>
+
+            <label class="form-label mb-0" for="rtmp_preset">Ingest URL</label>
+            <select id="rtmp_preset" class="form-select mb-1">
+              <option value="rtmps://a.rtmps.youtube.com:443/live2">rtmps://a.rtmps.youtube.com:443/live2 (TLS, YouTube default)</option>
+              <option value="rtmp://a.rtmp.youtube.com/live2">rtmp://a.rtmp.youtube.com/live2 (plain RTMP, less data)</option>
+              <option value="">Other…</option>
+            </select>
+            <input type="text" id="rtmp_url" class="form-control font-monospace mb-3" spellcheck="false" placeholder="rtmp(s)://host/app" aria-label="Ingest URL (free text)">
+
+            <details class="mb-3">
+              <summary class="text-secondary small">Advanced (RTSP source, ffmpeg options)</summary>
+              <label class="form-label mb-0 mt-2" for="rtsp_url">RTSP source</label>
+              <input type="text" id="rtsp_url" class="form-control font-monospace mb-2" spellcheck="false" placeholder="rtsp://thingino:thingino@127.0.0.1:554/ch0">
+              <label class="form-label mb-0" for="ffmpeg_opts">ffmpeg input options (before -i)</label>
+              <input type="text" id="ffmpeg_opts" class="form-control font-monospace mb-2" spellcheck="false">
+              <label class="form-label mb-0" for="ffmpeg_out_opts">ffmpeg output options (after -i)</label>
+              <input type="text" id="ffmpeg_out_opts" class="form-control font-monospace mb-2" spellcheck="false">
+              <p class="small text-secondary mb-0">Other keys already in the file (ffmpeg_bin, ffmpeg_loglevel, …) are kept as they are.</p>
+            </details>
+
+            <div class="d-flex flex-wrap gap-2 align-items-center">
+              <button type="button" id="save" class="btn btn-primary"><i class="bi bi-floppy me-1"></i> Save</button>
+              <span class="small text-secondary">writes <code id="config_path">…</code></span>
+            </div>
+            <p class="small text-secondary mt-2 mb-0">
+              A new key or URL only takes effect when the stream is restarted; Save offers that when the stream is running
+              (it drops for a few seconds). The "enabled" switch alone is picked up by the relay by itself.
+            </p>
+          </div>
+        </div>
+
+        <div class="col-12 col-xl-6">
+          <div class="card bg-dark-subtle p-3 mb-3">
+            <h5 class="mb-3">Status</h5>
+            <table class="table table-sm table-borderless mb-3 w-auto">
+              <tr><td class="text-secondary pe-3">Relay service</td><td><span class="dot" id="dot_service"></span><span id="st_service">…</span></td></tr>
+              <tr><td class="text-secondary pe-3">Stream (ffmpeg)</td><td><span class="dot" id="dot_ffmpeg"></span><span id="st_ffmpeg">…</span></td></tr>
+              <tr><td class="text-secondary pe-3">Start at boot</td><td><span id="st_autostart">…</span></td></tr>
+              <tr><td class="text-secondary pe-3">Config in use</td><td><code id="st_config">…</code></td></tr>
+            </table>
+
+            <h6>Relay service (youtube-relay)</h6>
+            <div class="d-flex flex-wrap gap-2 mb-2">
+              <button type="button" class="btn btn-outline-primary btn-sm" data-op="start"><i class="bi bi-play me-1"></i> Start</button>
+              <button type="button" class="btn btn-outline-primary btn-sm" data-op="stop"><i class="bi bi-stop me-1"></i> Stop</button>
+              <button type="button" class="btn btn-outline-primary btn-sm" data-op="restart"><i class="bi bi-arrow-repeat me-1"></i> Restart stream (ffmpeg)</button>
+            </div>
+            <p class="form-switch mb-3">
+              <input type="checkbox" id="autostart" role="switch" class="form-check-input">
+              <label for="autostart" class="form-check-label">Start the relay service at boot</label>
+              <span class="small text-secondary d-block">service enable / disable youtube-relay. Off does not stop the running service.</span>
+            </p>
+
+            <h6>Video (prudynt)</h6>
+            <div class="d-flex flex-wrap gap-2 align-items-center">
+              <button type="button" id="restart_prudynt" class="btn btn-outline-danger btn-sm"><i class="bi bi-arrow-repeat me-1"></i> Restart prudynt</button>
+              <span class="small text-secondary">Restarts the streamer (video + OSD). The stream drops for a few seconds and ffmpeg reconnects by itself.</span>
+            </div>
+          </div>
+
+          <div class="card bg-dark-subtle p-3">
+            <h6 class="mb-2">Log (logread: youtube-relay) <span class="text-secondary fw-normal small">refreshes every 5 s; the key is redacted by the relay</span></h6>
+            <pre id="log" class="mb-0">…</pre>
+          </div>
+        </div>
+      </div>
+    </section>
+  </div>
+</main>
+
+<footer data-app-footer></footer>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/js/bootstrap.bundle.min.js"
+  integrity="sha384-FKyoEForCGlyvwx9Hj09JcYn3nv7wiPVlz7YYwJrWVcXK/BmnVDxM+D2scQbITxI" crossorigin="anonymous"></script>
+<script src="/a/main.js"></script>
+<script src="/a/runtime-config.js"></script>
+<script src="/a/plugins.js"></script>
+<script src="/a/control-bar.js"></script>
+<script src="/a/navigation.js"></script>
+<script src="/a/footer.js"></script>
+<script>
+(function() {
+  'use strict';
+
+  var CGI = '/x/json-youtube.cgi';
+  var FIELDS = ['stream_key', 'rtmp_url', 'rtsp_url', 'ffmpeg_opts', 'ffmpeg_out_opts'];
+  var state = {config: null, service: {}, ffmpeg: {}};
+
+  function $(id) { return document.getElementById(id); }
+  function notify(type, msg) {
+    if (typeof showAlert === 'function') showAlert(type, msg, type === 'danger' ? 8000 : 4000);
+    else alert(msg);
+  }
+  async function api(url, opts) {
+    var r = await fetch(url, Object.assign({cache: 'no-store', credentials: 'same-origin'}, opts || {}));
+    var d;
+    try { d = await r.json(); } catch (e) { throw new Error('bad response (HTTP ' + r.status + ')'); }
+    if (!r.ok || (d && d.error && !d.ok)) throw new Error((d && d.error) || ('HTTP ' + r.status));
+    return d;
+  }
+
+  // ---- ingest URL: preset select + free text kept in step
+  function syncPreset() {
+    var v = $('rtmp_url').value.trim();
+    var opt = Array.from($('rtmp_preset').options).find(function(o) { return o.value === v; });
+    $('rtmp_preset').value = opt ? v : '';
+  }
+  $('rtmp_preset').addEventListener('change', function() {
+    if ($('rtmp_preset').value) $('rtmp_url').value = $('rtmp_preset').value;
+    $('rtmp_url').focus();
+  });
+  $('rtmp_url').addEventListener('input', syncPreset);
+  $('toggle_key').addEventListener('click', function() {
+    var k = $('stream_key');
+    k.type = k.type === 'password' ? 'text' : 'password';
+    this.firstElementChild.className = k.type === 'password' ? 'bi bi-eye' : 'bi bi-eye-slash';
+  });
+
+  // ---- status
+  function fmtElapsed(s) {
+    if (s == null) return '';
+    var h = Math.floor(s / 3600), m = Math.floor(s % 3600 / 60);
+    return h ? h + 'h ' + m + 'm' : m ? m + 'm ' + (s % 60) + 's' : s + 's';
+  }
+  function dot(id, on, warn) {
+    $(id).style.backgroundColor = on ? (warn ? '#f0ad4e' : '#3fb950') : '#6c757d';
+  }
+
+  // The relay's defaults for keys a file may leave out (youtube-relay)
+  var DEFAULTS = {rtmp_url: 'rtmps://a.rtmps.youtube.com:443/live2', rtsp_url: 'rtsp://thingino:thingino@127.0.0.1:554/ch0'};
+
+  // normalize - the file as the relay reads it: "false" as a string (a
+  // hand-edited file) disables the stream too, and left-out URLs mean the
+  // defaults. The form, the status line and the change detection all use this.
+  function normalize(c) {
+    var n = (c && typeof c === 'object' && !Array.isArray(c)) ? JSON.parse(JSON.stringify(c)) : {};
+    n.enabled = n.enabled !== false && n.enabled !== 'false';
+    FIELDS.forEach(function(f) { n[f] = n[f] == null || n[f] === '' ? (DEFAULTS[f] || '') : String(n[f]); });
+    return n;
+  }
+
+  function fillForm(c) {
+    $('enabled').checked = c.enabled;
+    FIELDS.forEach(function(f) { $(f).value = c[f]; });
+    syncPreset();
+  }
+
+  var formTouched = false;
+  $('settings_card').addEventListener('input', function() { formTouched = true; });
+
+  async function load(quiet) {
+    var s = await api(CGI + '?action=status');
+    state = s;
+    state.norm = normalize(s.config); // no file yet: the relay's defaults, key empty
+    if (!formTouched) fillForm(state.norm);
+    $('config_path').textContent = s.config_path;
+    $('config_note').textContent = s.config_error ? s.config_error
+      : !s.config ? 'no config file yet, ' + s.config_path + ' is created on save' : '';
+    var sv = s.service || {}, ff = s.ffmpeg || {};
+    dot('dot_service', sv.running);
+    $('st_service').textContent = sv.running ? 'running (pid ' + sv.pid + ')' : 'stopped';
+    dot('dot_ffmpeg', ff.running, sv.running && !ff.running);
+    $('st_ffmpeg').textContent = ff.running ? 'streaming for ' + fmtElapsed(ff.elapsed_s) + ' (pid ' + ff.pid + ')'
+      : sv.running ? (s.config && !state.norm.enabled ? 'paused (streaming disabled)' : 'not running (starting, or standing by - see the log)')
+      : 'not running';
+    $('st_autostart').textContent = sv.autostart ? 'yes' : 'no';
+    $('autostart').checked = !!sv.autostart;
+    $('st_config').textContent = s.config_source || '(none)';
+    $('log').textContent = (s.log && s.log.length) ? s.log.join('\n') : '(nothing logged)';
+    if (!quiet && s.config_error) notify('warning', s.config_error);
+  }
+  async function reload() {
+    try { await load(false); } catch (e) { notify('danger', 'Cannot read the state: ' + e.message); }
+  }
+  setInterval(function() { load(true).catch(function() {}); }, 5000);
+
+  // ---- save
+  function buildConfig() {
+    var cfg = (state.config && typeof state.config === 'object' && !Array.isArray(state.config)) ? JSON.parse(JSON.stringify(state.config)) : {};
+    cfg.enabled = $('enabled').checked;
+    FIELDS.forEach(function(f) { cfg[f] = $(f).value.trim(); });
+    return cfg;
+  }
+
+  async function save() {
+    var cfg = buildConfig();
+    if (!/^rtmps?:\/\/\S+/.test(cfg.rtmp_url)) { notify('danger', 'Ingest URL must start with rtmp:// or rtmps://'); $('rtmp_url').focus(); return; }
+    if (cfg.enabled && !cfg.stream_key) { notify('danger', 'Stream key is empty (or turn streaming off)'); $('stream_key').focus(); return; }
+    var old = state.norm || normalize(null);
+    var streamChange = FIELDS.some(function(f) { return old[f] !== cfg[f]; });
+    var restart = false;
+    if (streamChange && state.ffmpeg && state.ffmpeg.running) {
+      var r = await confirm('The key / URL / options changed. Restart the stream now so they take effect?\n\nThe stream drops for a few seconds. "Cancel" saves without restarting (the old settings keep streaming until the next restart).');
+      restart = !!r;
+    }
+    serviceButtons(true);
+    try {
+      var d = await api(CGI + '?action=save' + (restart ? '&restart=1' : ''), {
+        method: 'POST', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(cfg, null, 2) + '\n'
+      });
+      formTouched = false;
+      notify(d.error ? 'warning' : 'success', d.error ? d.error : ('Saved to ' + d.path + (d.restarted ? ', stream restarted' : '')));
+      await load(true);
+    } catch (e) {
+      notify('danger', 'Save failed: ' + e.message);
+    } finally {
+      serviceButtons(false);
+    }
+  }
+
+  // ---- service buttons
+  function serviceButtons(disabled) {
+    document.querySelectorAll('button[data-op], #autostart, #save').forEach(function(b) { b.disabled = disabled; });
+  }
+
+  async function serviceOp(op) {
+    var warn = {stop: 'Stop the relay service? The stream ends until it is started again.',
+                restart: 'Restart the relay? The stream drops for a few seconds.'}[op];
+    if (warn && !(await confirm(warn))) { load(true).catch(function() {}); return; }
+    serviceButtons(true); // one at a time: the CGI refuses a second one anyway (409)
+    notify('info', op + '…');
+    try {
+      var d = await api(CGI + '?action=service&op=' + op, {method: 'POST'});
+      notify('success', 'youtube-relay: ' + op + ' ' + (d.output || '').replace(/\s+/g, ' ').trim().slice(0, 120));
+    } catch (e) {
+      notify('danger', op + ' failed: ' + e.message);
+    } finally {
+      serviceButtons(false);
+      load(true).catch(function() {});
+    }
+  }
+  document.querySelectorAll('button[data-op]').forEach(function(b) {
+    b.addEventListener('click', function() { serviceOp(b.dataset.op); });
+  });
+  $('autostart').addEventListener('change', function() {
+    serviceOp($('autostart').checked ? 'enable' : 'disable');
+  });
+  $('restart_prudynt').addEventListener('click', async function() {
+    if (!(await confirm('Restart prudynt (the streamer)? Video and OSD stop for a few seconds; ffmpeg reconnects by itself.'))) return;
+    try {
+      var r = await fetch('/x/restart-prudynt.cgi', {cache: 'no-store', credentials: 'same-origin'});
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      notify('success', 'prudynt restart initiated');
+    } catch (e) {
+      notify('danger', 'prudynt restart failed: ' + e.message);
+    }
+  });
+
+  $('reload').addEventListener('click', function() { formTouched = false; reload(); });
+  $('save').addEventListener('click', save);
+  reload();
+})();
+</script>
+</body>
+</html>

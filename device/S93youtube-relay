@@ -39,6 +39,10 @@ start() {
 	fi
 }
 
+# stop - TERM, then wait for the supervisor to be gone. TERM only asks: it
+# exits after its current sleep and after reaping ffmpeg (up to ~15 s). A
+# "restart" that did not wait would run a new supervisor alongside the old
+# one, both publishing to the same stream key. After 45 s it is killed.
 stop() {
 	echo -n "Stopping $DAEMON: "
 	# A stale pidfile may name a PID since reused by something else: never signal that
@@ -47,11 +51,31 @@ stop() {
 		rm -f "$PIDFILE"
 		return 0
 	fi
-	if start-stop-daemon -K -p "$PIDFILE" -s TERM 2>/dev/null; then
-		echo "OK"
-	else
-		echo "FAIL (not running?)"
+	pid=$(cat "$PIDFILE")
+	if ! start-stop-daemon -K -p "$PIDFILE" -s TERM 2>/dev/null; then
+		echo "FAIL (could not signal pid $pid)"
+		return 1
 	fi
+	i=0
+	while grep -q "$DAEMON" "/proc/$pid/cmdline" 2>/dev/null && [ $i -lt 45 ]; do
+		sleep 1
+		i=$((i + 1))
+	done
+	if grep -q "$DAEMON" "/proc/$pid/cmdline" 2>/dev/null; then
+		echo -n "(did not exit, killing) "
+		pkill -KILL -P "$pid" 2>/dev/null # its ffmpeg first, or it would be orphaned
+		kill -9 "$pid" 2>/dev/null
+		i=0
+		while grep -q "$DAEMON" "/proc/$pid/cmdline" 2>/dev/null && [ $i -lt 5 ]; do
+			sleep 1
+			i=$((i + 1))
+		done
+		if grep -q "$DAEMON" "/proc/$pid/cmdline" 2>/dev/null; then
+			echo "FAIL (pid $pid will not die)"
+			return 1
+		fi
+	fi
+	echo "OK"
 	rm -f "$PIDFILE"
 }
 
@@ -63,8 +87,7 @@ case "$1" in
 		stop
 		;;
 	restart)
-		stop
-		sleep 1
+		stop || exit 1
 		start
 		;;
 	status)

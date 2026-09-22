@@ -9,9 +9,10 @@
 # The ffmpeg argument is optional; without it only scripts are (re)installed.
 # An existing /etc/youtube-relay.json on the camera is never overwritten.
 #
-# Scope: this only places OUR files (ffmpeg, supervisor, init script, config).
-# It never touches Thingino's own files or settings; updating or backing up
-# the OS is out of scope.
+# Scope: this places OUR files (ffmpeg, supervisor, init script, config, the
+# web UI page and its CGI). The one Thingino file it edits is
+# /var/www/a/plugins.js (one line, the menu entry for the page); it never
+# touches Thingino's settings. Updating or backing up the OS is out of scope.
 
 set -e
 
@@ -91,4 +92,27 @@ else
 fi
 
 ssh "$CAM" '/etc/init.d/S93youtube-relay start'
+
+# Web UI page (docs/relay.md, "Web UI"): Services > YouTube Live. plugins.js is
+# generated at firmware build time; our entry is inserted right after
+# "cfg.plugins = {" when it is not there yet (re-runs are no-ops). The entry
+# travels as a file and goes in with "sed r": no quoting through ssh.
+push "$HERE/www/youtube.html" /var/www/youtube.html 644
+push "$HERE/www/x/json-youtube.cgi" /var/www/x/json-youtube.cgi 755
+ssh "$CAM" 'cat > /tmp/youtube-nav.frag' <<'EOF'
+  "youtube-relay": {"label": "YouTube Live relay", "name": "youtube-relay", "nav": [{"section": "ddServices", "position": "prepend", "items": [{"href": "/youtube.html", "label": "YouTube Live"}]}]},
+EOF
+ssh "$CAM" 'f=/var/www/a/plugins.js
+	if ! grep -q "\"/youtube.html\"" $f && grep -q "^  cfg.plugins = {$" $f; then
+		if sed "/^  cfg.plugins = {$/r /tmp/youtube-nav.frag" $f > $f.new && chmod 644 $f.new && mv $f.new $f; then
+			echo "  menu: Services > YouTube Live -> /youtube.html"
+		else
+			rm -f $f.new
+			echo "  warning: editing $f failed" >&2
+		fi
+	fi
+	rm -f /tmp/youtube-nav.frag
+	chmod 644 $f # an edit by an older version may have left it 0600, which uhttpd refuses to serve
+	grep -q "\"/youtube.html\"" $f || echo "  warning: could not add /youtube.html to the menu (open it by URL)"'
+echo "Web UI: Services > YouTube Live (http://${CAM#*@}/youtube.html)"
 echo "Done. Logs: ssh $CAM 'logread | grep youtube-relay'"

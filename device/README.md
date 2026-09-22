@@ -5,9 +5,10 @@ Thingino 実機に置くスクリプト一式。`/etc` や `/usr` は overlayfs 
 
 | ファイル | インストール先 | 役割 | 文書 |
 |---|---|---|---|
-| `install.sh` | (PC 側で実行) | ffmpeg と配信 supervisor をまとめて入れる。再実行可能。自前のファイルを置くだけで、Thingino の設定には触らない | [relay.md](../docs/relay.md) |
+| `install.sh` | (PC 側で実行) | ffmpeg と配信 supervisor、Web UI のページをまとめて入れる。再実行可能。Thingino の設定には触らない (書き換えるのは `/var/www/a/plugins.js` のメニュー 1 行だけ) | [relay.md](../docs/relay.md) |
 | `youtube-relay` / `S93youtube-relay` | `/usr/sbin/youtube-relay` / `/etc/init.d/S93youtube-relay` | 配信 supervisor (ffmpeg を監視・再起動) と起動スクリプト | [relay.md](../docs/relay.md) |
 | `youtube-relay.json.example` | SD カード直下または `/etc/youtube-relay.json` | 配信の設定 (ストリームキー等) | [relay.md](../docs/relay.md) |
+| `www/youtube.html` / `www/x/json-youtube.cgi` | `/var/www/youtube.html` / `/var/www/x/json-youtube.cgi` | (`install.sh` が入れる) Web UI の「YouTube Live」ページと CGI。設定の編集、配信 / prudynt の再起動、サービスの開始・停止・自動起動の切り替え。Services メニューに項目を足す (`plugins.js` に 1 行追記) | [relay.md](../docs/relay.md#web-ui) |
 | `disable-netwatch.sh` | (PC 側で実行) | Thingino の netwatch (ping 失敗で OS を再起動) を無効化する。OS 設定の変更なので `install.sh` とは別 | [netwatch.md](../docs/netwatch.md) |
 | `install-wifi-from-sd.sh` / `S37wifi-from-sd` | (PC 側で実行) / `/etc/init.d/S37wifi-from-sd` | 任意。SD の `wpa_supplicant.conf` (複数の Wi-Fi 可) を起動時に適用する。OS 設定を書き換えるので `install.sh` とは別 | [wifi-from-sd.md](../docs/wifi-from-sd.md) |
 | `install-prudynt-osd.sh` / `S30prudynt-osd` | (PC 側で実行) / `/etc/init.d/S30prudynt-osd` | 任意。映像に任意のテキストを重ねられる prudynt (パッチ入り) を入れる。Thingino のストリーマを差し替えるので `install.sh` とは別 | [osd.md](../docs/osd.md) |

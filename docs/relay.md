@@ -154,7 +154,46 @@ service disable youtube-relay   # boot 時の自動開始を無効化
 service enable youtube-relay    # 有効化
 ```
 
-設定変更 (`/etc/youtube-relay.json` 編集) 後は `service restart youtube-relay`。
+ストリームキー・URL・ffmpeg のオプションを変えた後は `service restart youtube-relay` (`enabled` の変更だけなら
+relay が自分で追従するので不要)。編集するのは **relay が使っている方のファイル** (SD カードに `youtube-relay.json` が
+あればそちらが優先され、`/etc/youtube-relay.json` を直しても反映されない。次の節)。Web UI のページは使っている方に書く。
+`stop` は supervisor と ffmpeg が終わるまで待ってから戻る (45 秒待っても残っていれば kill し、さらに最大 5 秒確認する
+ので、詰まった時は約 50 秒。待たずに `start` すると新旧 2 つが同じキーへ publish する)。
+
+## Web UI
+
+`install.sh` が Thingino の Web UI に **Services → YouTube Live** (`http://<camera-ip>/youtube.html`) を足す。
+上の運用コマンドと設定ファイルの編集を、ブラウザからできるようにしたもの。
+
+![YouTube Live ページ](images/youtube-webui.png)
+
+- **Stream settings**: `enabled`、ストリームキー (伏せ字、目のボタンで表示)、Ingest URL (RTMPS / 平文 RTMP のプリセットか任意)、
+  Advanced に RTSP の URL と ffmpeg のオプション。**Save** は relay が今使っているファイル (SD → `/etc` の順。無ければ SD が
+  あれば SD、なければ `/etc`) に 600 で書く。ファイルにあってページに無いキー (`ffmpeg_bin` など) は残る
+  - キー・URL・オプションを変えた時は、配信中なら「今すぐ再起動して反映するか」を聞く (配信が数秒切れる)。
+    Cancel すると保存だけして、次の再起動まで古い設定で配信を続ける
+  - `enabled` の変更だけなら聞かない: relay が自分で追従する (OFF は watcher が 15 秒以内に止める、ON は待機ループが 10 秒以内に再開する)
+- **Status**: relay サービスと ffmpeg の稼働 (pid、配信の経過時間)、起動時の自動開始、使っている設定ファイル。5 秒ごとに更新
+- **Relay service**: Start / Stop / **Restart stream (ffmpeg)** (= `service restart youtube-relay`)。「Start the relay service at
+  boot」のスイッチが `service enable/disable` (init スクリプトの実行属性。切っても動いているものは止まらない)
+- **Restart prudynt**: Thingino の `/x/restart-prudynt.cgi` を呼ぶ (映像と OSD が数秒止まり、ffmpeg は自動で再接続)
+- **Log**: `logread` の youtube-relay 行 (キーは relay が伏せている)。5 秒ごとに更新
+- 裏側の CGI は `/x/json-youtube.cgi` (`?action=status` / `save[&restart=1]` / `service&op=…`)。Thingino の認証 (セッション
+  Cookie か `?token=<API キー>`) を通せばカメラ外からも使える。ストリームキーは認証済みのブラウザにそのまま返す
+  (Thingino が API キーや Wi-Fi のパスワードを画面に出すのと同じ扱い。[下記](#ストリームキーの取り扱い))。
+  Thingino の Web UI は平文 HTTP なので、**LAN の外からは使わない** (この CGI に限らず、ログイン情報も API キーも
+  ストリームキーも平文で流れる。`?token=` は URL に残るのでブラウザ履歴やプロキシのログにも載る)。カメラ外の
+  プログラムから叩くのは同じ LAN 内 (または VPN 越し) に限る
+- Restart / Stop は supervisor の終了を待つので、詰まっている時は約 50 秒応答が返らない (uhttpd は CGI を
+  打ち切らない設定 `-t 0`。実機で 40 秒無応答の CGI が通ることを確認)。普段は 2 秒程度
+- 「Restart prudynt」は Thingino 標準の `/x/restart-prudynt.cgi` を呼ぶ (対応ファーム ciao+da40db6 に入っている。
+  無いファームでは 404 になり、ページにエラーが出るだけ)
+- 手で入れるなら: `device/www/youtube.html` → `/var/www/youtube.html` (644)、`device/www/x/json-youtube.cgi` → `/var/www/x/json-youtube.cgi`
+  (755)、メニューは `/var/www/a/plugins.js` の `cfg.plugins = {` の次の行に install.sh が挿している 1 行 (`"youtube-relay": {…},`) を足して 644 にする
+  (無くても URL で開ける)
+- Save や Start / Stop / Restart は CGI 側で 1 つずつ直列化される (同時に押すと 409)。ボタンは操作中はまとめて無効になる
+- 消す: `/var/www/youtube.html` `/var/www/x/json-youtube.cgi` を削除し、`/var/www/a/plugins.js` から `"youtube-relay": {…},` の
+  1 行を消す
 
 ## Thingino を入れ直した / 更新した後
 
