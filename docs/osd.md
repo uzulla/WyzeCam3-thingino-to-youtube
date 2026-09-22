@@ -82,6 +82,10 @@ Thingino の Web UI の Streamer メニュー → **OSD text** (`http://<camera-
   prudynt の再起動は要らない。ファイルに既にあるキーのうち、ページにない項目 (`path`、`substream_disabled` など) は
   残る。`general.osd_pool_size` を変えた時だけ、`osd-config` が `/etc/prudynt.json` に書いて prudynt を再起動する
   (配信が数秒切れる) ので、保存前に確認が出る。SD カードが挿さっていない時は保存できない (エラーになる)
+- **prudynt-osd.json** 欄に、いま Save を押したら書かれる JSON がフォームに追従して出る。**Download** で
+  `prudynt-osd.json` としてダウンロード、**Copy** でクリップボードへ (試した配置を PC に持ち帰る、別の SD カードに置く、
+  `device/prudynt-osd.json.example` のように保存しておく、といった用途)。テキスト欄の中身はこの JSON には入らない
+  (表示するテキストは設定ではなく `/run/prudynt/osd-text*` の中身なので、テキスト欄からコピーする)
 - **Log** に `logread` の `textfile` (プールに入らず縮めた警告など) と `osd-config` の行を出す。Reload で読み直す
 - Thingino 標準の OSD ページ (`/streamer-osd.html`) はメニューから外れるだけで残っている。URL で開いて
   「Save configuration」を押すと `/etc/prudynt.json` (フラッシュ) に保存されるので、使わない

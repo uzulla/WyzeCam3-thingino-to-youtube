@@ -104,6 +104,21 @@
           </div>
 
           <div class="card bg-dark-subtle mb-3 p-2">
+            <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
+              <h6 class="mb-0">prudynt-osd.json <span class="text-secondary fw-normal small">what "Save" writes, from the form as it is now</span></h6>
+              <div class="d-flex gap-2">
+                <button type="button" id="copy_json" class="btn btn-outline-secondary btn-sm" title="Copy to the clipboard">
+                  <i class="bi bi-clipboard me-1"></i> Copy
+                </button>
+                <button type="button" id="download_json" class="btn btn-outline-secondary btn-sm" title="Download as prudynt-osd.json">
+                  <i class="bi bi-download me-1"></i> Download
+                </button>
+              </div>
+            </div>
+            <textarea id="json_preview" class="form-control form-control-sm font-monospace" rows="8" readonly spellcheck="false" wrap="off"></textarea>
+          </div>
+
+          <div class="card bg-dark-subtle mb-3 p-2">
             <h6 class="mb-2">Log (logread: textfile / osd-config)</h6>
             <pre id="log" class="mb-0">…</pre>
           </div>
@@ -342,6 +357,7 @@
     $('config_state').textContent = s.config_error ? s.config_error : (s.config ? 'exists' : 'no file yet, created on save');
     $('config_state').className = s.config_error ? 'text-warning' : '';
     $('log').textContent = (s.log && s.log.length) ? s.log.join('\n') : '(nothing logged)';
+    renderJson();
   }
 
   async function reload() {
@@ -376,6 +392,52 @@
     }
   }
 
+  // The prudynt-osd.json that Save writes: the form, merged into what the file
+  // already has so keys this page does not know (osd.textfile.path,
+  // substream_disabled, ...) survive. A pool size outside 0..POOL_MAX is left out.
+  function buildConfig() {
+    var cfg = (state.config && typeof state.config === 'object' && !Array.isArray(state.config)) ? JSON.parse(JSON.stringify(state.config)) : {};
+    cfg.osd = (cfg.osd && typeof cfg.osd === 'object') ? cfg.osd : {};
+    var osd = readOsd();
+    Object.keys(osd).forEach(function(k) {
+      cfg.osd[k] = Object.assign({}, (cfg.osd[k] && typeof cfg.osd[k] === 'object') ? cfg.osd[k] : {}, osd[k]);
+    });
+    var pool = readNum('pool_size', 0, POOL_MAX);
+    if (pool !== undefined) cfg.general = Object.assign({}, (cfg.general && typeof cfg.general === 'object') ? cfg.general : {}, {osd_pool_size: pool});
+    return cfg;
+  }
+
+  function configText() { return JSON.stringify(buildConfig(), null, 2) + '\n'; }
+
+  function renderJson() {
+    try { $('json_preview').value = configText(); } catch (e) { $('json_preview').value = '(' + e.message + ')'; }
+  }
+
+  function downloadJson() {
+    var blob = new Blob([configText()], {type: 'application/json'});
+    var a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'prudynt-osd.json';
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(function() { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
+  }
+
+  async function copyJson() {
+    var ta = $('json_preview');
+    renderJson();
+    var copied = false;
+    // navigator.clipboard needs https (the camera is plain http) and may be
+    // refused even then; the old execCommand on a selection is the fallback
+    if (navigator.clipboard && window.isSecureContext) {
+      try { await navigator.clipboard.writeText(ta.value); copied = true; } catch (e) { /* fall through */ }
+    }
+    ta.focus(); ta.select();
+    if (!copied) { try { copied = document.execCommand('copy'); } catch (e) { copied = false; } }
+    if (copied) notify('success', 'prudynt-osd.json copied to the clipboard');
+    else notify('warning', 'Could not copy automatically; the text is selected, press Ctrl/Cmd+C');
+  }
+
   async function save() {
     var btn = $('save');
     var pool = readNum('pool_size', 0, POOL_MAX);
@@ -385,21 +447,11 @@
         'osd-config will write it to /etc/prudynt.json (flash) and restart prudynt: the stream drops for a few seconds. Continue?');
       if (!ok) return;
     }
-    // Merge into what the file already has, so keys this page does not know
-    // (osd.textfile.path, substream_disabled, ...) survive
-    var cfg = (state.config && typeof state.config === 'object' && !Array.isArray(state.config)) ? state.config : {};
-    cfg.osd = (cfg.osd && typeof cfg.osd === 'object') ? cfg.osd : {};
-    var osd = readOsd();
-    Object.keys(osd).forEach(function(k) {
-      cfg.osd[k] = Object.assign({}, (cfg.osd[k] && typeof cfg.osd[k] === 'object') ? cfg.osd[k] : {}, osd[k]);
-    });
-    cfg.general = Object.assign({}, (cfg.general && typeof cfg.general === 'object') ? cfg.general : {}, {osd_pool_size: pool});
-
     btn.disabled = true;
     try {
       await api(CGI + '?action=save', {
         method: 'POST', headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify(cfg, null, 2) + '\n'
+        body: configText()
       });
       notify('success', 'Saved to the SD card; osd-config applies it within 5 s' + (pool !== state.pool_size ? ', then restarts prudynt' : ''));
       setTimeout(reload, 6000);
@@ -440,6 +492,14 @@
   $('reload').addEventListener('click', reload);
   $('apply').addEventListener('click', applyNow);
   $('save').addEventListener('click', save);
+  $('copy_json').addEventListener('click', copyJson);
+  $('download_json').addEventListener('click', downloadJson);
+  // Keep the JSON preview in step with the form (the text areas are not part of it)
+  ['input', 'change'].forEach(function(t) {
+    document.querySelector('main').addEventListener(t, function(ev) {
+      if (ev.target.id !== 'json_preview' && !/_text$/.test(ev.target.id)) renderJson();
+    });
+  });
 
   reload();
 })();
