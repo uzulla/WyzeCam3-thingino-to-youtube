@@ -42,7 +42,7 @@ RTMPS では書き込み 1 回が TLS レコード 1 つ (約 29 バイトの枝
 まとめるので目立たない。詳細と FFmpeg 側の該当箇所は [NOTES.md](../NOTES.md) の「RTMPS の送信量が映像の 1.7 倍だった」。
 
 対処は `patches/thingino-ffmpeg-rtmp-chunk-size.diff` (接続直後にチャンクサイズ 4096 をサーバへ宣言する)。このリポジトリの
-手順でビルドした ffmpeg には入っている。値は `ffmpeg_out_opts` の `-rtmp_chunk_size` で変えられる (128 で素の動作)。
+手順でビルドした ffmpeg には入っている。値は `ffmpeg_out_opts` の `-rtmp_chunk_size` で変えられる (128〜65536、既定 4096。128 で素の動作)。
 
 ### セルラーでの含意
 

@@ -195,7 +195,7 @@ Thingino 自体の更新や設定のバックアップはこのリポジトリ�
   レコード 2 つ = 約 58 バイト) になり、小さな書き込みが多いぶん TCP/IPv6 ヘッダの比率も上がるので、**送信量が映像 + 音声の
   約 1.7 倍**になる (720p10 / 1Mbps で実測 1.05 Mbps → 1.77 Mbps。TLS・TCP・IPv6 ヘッダをすべて含む線上の値)。`patches/thingino-ffmpeg-rtmp-chunk-size.diff` を当てた
   ffmpeg は接続直後にチャンクサイズ 4096 をサーバへ宣言し、**1.13 Mbps** (1.08 倍) になる。65536 にしても 1.11 Mbps で
-  差は無い。値は `-rtmp_chunk_size` (`ffmpeg_out_opts` に書く) で変えられ、128 で素の動作に戻る。
+  差は無い。値は `-rtmp_chunk_size` (`ffmpeg_out_opts` に書く。128〜65536、既定 4096) で変えられ、128 で素の動作に戻る。
   **平文の RTMP** (`rtmp_url` を `rtmp://a.rtmp.youtube.com/live2` に。ポート 1935) なら TLS の枝葉が無く、パッチ入りで
   1.09 Mbps、パッチ無しでも TCP が小さな書き込みをまとめるので 1.13 Mbps。ffmpeg の CPU は 2.5% → 2.2% (パッチ無しの
   平文は 3.6%)。RTMPS との差は約 3% で、代わりにストリームキーが経路上を平文で流れる (下の「ストリームキーの取り扱い」)
