@@ -182,13 +182,19 @@
   // The relay's defaults for keys a file may leave out (youtube-relay)
   var DEFAULTS = {rtmp_url: 'rtmps://a.rtmps.youtube.com:443/live2', rtsp_url: 'rtsp://thingino:thingino@127.0.0.1:554/ch0'};
 
+  // normalize - the file as the relay reads it: "false" as a string (a
+  // hand-edited file) disables the stream too, and left-out URLs mean the
+  // defaults. The form, the status line and the change detection all use this.
+  function normalize(c) {
+    var n = (c && typeof c === 'object' && !Array.isArray(c)) ? JSON.parse(JSON.stringify(c)) : {};
+    n.enabled = n.enabled !== false && n.enabled !== 'false';
+    FIELDS.forEach(function(f) { n[f] = n[f] == null || n[f] === '' ? (DEFAULTS[f] || '') : String(n[f]); });
+    return n;
+  }
+
   function fillForm(c) {
-    // "false" as a string (a hand-edited file) disables the stream in the relay too
-    $('enabled').checked = c.enabled !== false && c.enabled !== 'false';
-    FIELDS.forEach(function(f) {
-      var v = c[f] == null || c[f] === '' ? (DEFAULTS[f] || '') : String(c[f]);
-      $(f).value = v;
-    });
+    $('enabled').checked = c.enabled;
+    FIELDS.forEach(function(f) { $(f).value = c[f]; });
     syncPreset();
   }
 
@@ -198,7 +204,8 @@
   async function load(quiet) {
     var s = await api(CGI + '?action=status');
     state = s;
-    if (!formTouched) fillForm(s.config || {enabled: true}); // no file yet: the relay's defaults, key empty
+    state.norm = normalize(s.config); // no file yet: the relay's defaults, key empty
+    if (!formTouched) fillForm(state.norm);
     $('config_path').textContent = s.config_path;
     $('config_note').textContent = s.config_error ? s.config_error
       : !s.config ? 'no config file yet, ' + s.config_path + ' is created on save' : '';
@@ -207,7 +214,7 @@
     $('st_service').textContent = sv.running ? 'running (pid ' + sv.pid + ')' : 'stopped';
     dot('dot_ffmpeg', ff.running, sv.running && !ff.running);
     $('st_ffmpeg').textContent = ff.running ? 'streaming for ' + fmtElapsed(ff.elapsed_s) + ' (pid ' + ff.pid + ')'
-      : sv.running ? (s.config && s.config.enabled === false ? 'paused (streaming disabled)' : 'not running (starting, or standing by - see the log)')
+      : sv.running ? (s.config && !state.norm.enabled ? 'paused (streaming disabled)' : 'not running (starting, or standing by - see the log)')
       : 'not running';
     $('st_autostart').textContent = sv.autostart ? 'yes' : 'no';
     $('autostart').checked = !!sv.autostart;
@@ -232,8 +239,8 @@
     var cfg = buildConfig();
     if (!/^rtmps?:\/\/\S+/.test(cfg.rtmp_url)) { notify('danger', 'Ingest URL must start with rtmp:// or rtmps://'); $('rtmp_url').focus(); return; }
     if (cfg.enabled && !cfg.stream_key) { notify('danger', 'Stream key is empty (or turn streaming off)'); $('stream_key').focus(); return; }
-    var old = state.config || {};
-    var streamChange = FIELDS.some(function(f) { return String(old[f] == null ? '' : old[f]) !== cfg[f]; });
+    var old = state.norm || normalize(null);
+    var streamChange = FIELDS.some(function(f) { return old[f] !== cfg[f]; });
     var restart = false;
     if (streamChange && state.ffmpeg && state.ffmpeg.running) {
       var r = await confirm('The key / URL / options changed. Restart the stream now so they take effect?\n\nThe stream drops for a few seconds. "Cancel" saves without restarting (the old settings keep streaming until the next restart).');

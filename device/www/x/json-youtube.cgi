@@ -105,24 +105,33 @@ regular_or_absent() {
 	[ -f "$1" ] && [ ! -L "$1" ]
 }
 
-# One service operation at a time: a Stop arriving while a restart still
-# waits for the old supervisor would remove the pidfile the restart is about
-# to create, or start a second supervisor. mkdir is atomic; a lock older than
-# 2 minutes is stale (a CGI killed mid-way) and taken over.
+# One save / service operation at a time: a Stop arriving while a restart
+# still waits for the old supervisor would remove the pidfile the restart is
+# about to create, or start a second supervisor; two saves would race on the
+# file. mkdir is atomic. A lock older than 2 minutes is stale (a CGI killed
+# mid-way): it is moved aside with mv (atomic too, so only one of several
+# racing requests gets to remove it) and then taken with a fresh mkdir. The
+# lock records its owner, and only the owner removes it on exit.
 LOCK=/run/youtube-cgi.lock
+unlock() {
+	[ "$(cat "$LOCK/owner" 2>/dev/null)" = "$$" ] && rm -rf "$LOCK"
+}
 service_lock() {
 	if ! mkdir "$LOCK" 2>/dev/null; then
 		now=$(date +%s)
 		since=$(cat "$LOCK/since" 2>/dev/null || echo "$now")
 		if [ $((now - since)) -lt 120 ]; then
-			fail "another service operation is still running - try again in a moment" "409 Conflict"
+			fail "another save or service operation is still running - try again in a moment" "409 Conflict"
 		fi
-		rm -rf "$LOCK"
-		mkdir "$LOCK" 2>/dev/null || fail "another service operation is still running" "409 Conflict"
+		if mv "$LOCK" "$LOCK.stale.$$" 2>/dev/null; then
+			rm -rf "$LOCK.stale.$$"
+		fi
+		mkdir "$LOCK" 2>/dev/null || fail "another save or service operation is still running" "409 Conflict"
 	fi
+	echo "$$" >"$LOCK/owner"
 	date +%s >"$LOCK/since"
-	trap 'rm -rf "$TMPD" "$LOCK"' EXIT
-	trap 'rm -rf "$TMPD" "$LOCK"; exit 1' HUP INT TERM PIPE
+	trap 'unlock; rm -rf "$TMPD"' EXIT
+	trap 'unlock; rm -rf "$TMPD"; exit 1' HUP INT TERM PIPE
 }
 
 case "$action" in
@@ -198,6 +207,9 @@ save)
 	"" | rtmp://* | rtmps://*) ;;
 	*) fail "rtmp_url must start with rtmp:// or rtmps://" ;;
 	esac
+	# From here on nothing else may write the file or restart the relay: a
+	# second save must not slip in between our write and our restart
+	service_lock
 	# Same directory, then mv: the relay (and its watcher, every 15 s) never
 	# reads a half-written file. 600 like install.sh: the key is in there.
 	if ! { cp "$TMPD/body" "$target.tmp.$$" && chmod 600 "$target.tmp.$$" && mv "$target.tmp.$$" "$target"; }; then
@@ -208,7 +220,6 @@ save)
 	if [ -n "$restart" ]; then
 		# The init script's stop waits for the supervisor (and its ffmpeg) to be
 		# gone, so the new one never publishes alongside the old one
-		service_lock
 		if out=$(sh "$INIT" restart 2>&1); then
 			restarted=true
 		else
