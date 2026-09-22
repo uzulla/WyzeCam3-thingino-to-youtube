@@ -247,6 +247,8 @@
       '<div class="d-flex flex-wrap align-items-end gap-2 mb-2">' +
         numHtml(k, 'pos_x', 'X', -4096, 4096) + numHtml(k, 'pos_y', 'Y', -4096, 4096) +
         numHtml(k, 'cols', 'Cols', 1, 128) + numHtml(k, 'rows', 'Rows', 1, 32) + numHtml(k, 'scale', 'Scale', 0, 10) +
+      '</div>' +
+      '<div class="d-flex flex-wrap align-items-end gap-2 mb-2">' +
         COLORS.map(function(c) { return colorHtml(k, c); }).join('') +
       '</div>' +
       '<label class="form-label small mb-0" for="' + k + '_text">Text <span class="text-secondary" id="' + k + '_path"></span></label>' +
