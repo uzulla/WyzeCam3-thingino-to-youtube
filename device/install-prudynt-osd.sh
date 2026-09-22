@@ -6,8 +6,10 @@
 # OPTIONAL, and separate from install.sh because it replaces a Thingino program
 # (the streamer) at run time. Thingino's own /usr/bin/prudynt is NOT overwritten:
 # the new binary is stored as /usr/bin/prudynt-osd and S30prudynt-osd bind-mounts
-# it over /usr/bin/prudynt at boot. Undo:
-#   ssh root@<camera-ip> 'rm /etc/init.d/S30prudynt-osd /etc/init.d/S93osd-config /usr/bin/prudynt-osd /usr/bin/prudynt-osd.build /usr/sbin/osd-config; reboot'
+# it over /usr/bin/prudynt at boot. Also adds the "OSD text" page to Thingino's web
+# UI (the Streamer menu entry that led to Thingino's own OSD page is pointed at it).
+# Undo:
+#   ssh root@<camera-ip> 'rm /etc/init.d/S30prudynt-osd /etc/init.d/S93osd-config /usr/bin/prudynt-osd /usr/bin/prudynt-osd.build /usr/sbin/osd-config /var/www/osd-text.html /var/www/x/json-osd-text.cgi; sed -i "s#/osd-text.html#/streamer-osd.html#; s#\"OSD text\"#\"OSD Elements\"#" /var/www/a/plugins.js; reboot'
 #
 # prudynt is restarted at the end, which interrupts the stream for a few seconds
 # (the youtube-relay supervisor reconnects by itself).
@@ -99,5 +101,24 @@ if [ -z "$ok" ]; then
 	exit 1
 fi
 ssh "$CAM" '/etc/init.d/S93osd-config start' || echo "warning: osd-config did not start (prudynt itself is fine)" >&2
+
+# Web UI page (docs/osd.md), only now that the patched prudynt is known to run:
+# a rollback above must not leave the menu pointing at a page for a feature the
+# stock prudynt does not have. Thingino's own OSD page (streamer-osd.html) stays
+# in place, but its menu entry is pointed at ours: the two would otherwise fight
+# over the same settings, and the old page's Save writes /etc/prudynt.json.
+# plugins.js is generated at firmware build time, so the edit is a plain
+# substitution, done only when the old href is still there (re-runs are no-ops).
+push "$HERE/www/osd-text.html" /var/www/osd-text.html 644
+push "$HERE/www/x/json-osd-text.cgi" /var/www/x/json-osd-text.cgi 755
+ssh "$CAM" 'f=/var/www/a/plugins.js
+	if grep -q "\"/streamer-osd.html\"" $f; then
+		sed -e "s#\(\"href\": *\)\"/streamer-osd.html\"#\1\"/osd-text.html\"#" \
+			-e "s#\(\"label\": *\)\"OSD Elements\"#\1\"OSD text\"#" $f > $f.new && mv $f.new $f
+		echo "  menu: Streamer > OSD Elements -> /osd-text.html"
+	fi
+	grep -q "\"/osd-text.html\"" $f || echo "  warning: could not add /osd-text.html to the menu (open it by URL)"'
+
 echo "Done. Try it:  ssh $CAM osd-progress-demo 20"
+echo "Web UI: Streamer > OSD text (http://${CAM#*@}/osd-text.html)"
 echo "Settings that survive restarts: put prudynt-osd.json on the SD card (see docs/osd.md)"

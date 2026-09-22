@@ -1,0 +1,556 @@
+<!DOCTYPE html>
+<html lang="en" data-bs-theme="dark">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>thingino · OSD text</title>
+  <script src="/a/theme-init.js"></script>
+  <link rel="icon" type="image/svg+xml" href="/a/favicon.svg">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700&display=swap">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/css/bootstrap.min.css"
+    integrity="sha384-sRIl4kxILFvY47J16cr9ZwB07vP4J8+LH7qKQnuqkuIAvNWLzeN8tE5YBujZqJLB" crossorigin="anonymous">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.13.1/font/bootstrap-icons.min.css">
+  <link rel="stylesheet" href="/a/main.css">
+  <style>
+    #sei-osd-overlay{display:none}
+    /* The native colour input sits invisibly on top of the swatch: a real click
+       lands on it, which opens the picker in every browser (Safari ignores a
+       scripted click() on a display:none input) */
+    .color-swatch{width:32px;padding:2px;cursor:pointer;border:1px solid var(--bs-border-color);position:relative;overflow:hidden}
+    .color-swatch input[type=color]{position:absolute;inset:0;width:100%;height:100%;opacity:0;cursor:pointer;border:0;padding:0}
+    .color-group{width:150px}
+    .alpha-slider{width:48px;height:24px;cursor:pointer}
+    .num{width:5.5em}
+    textarea.osd-text{font-family:var(--bs-font-monospace);white-space:pre;overflow-x:auto}
+    #log{max-height:14em;overflow:auto;font-size:.8em;white-space:pre-wrap}
+  </style>
+</head>
+
+<body id="page-osd-text">
+<nav data-app-nav></nav>
+
+<main class="pb-4">
+  <div class="container">
+    <div data-app-controls></div>
+
+    <section>
+      <div class="d-flex justify-content-between align-items-center mb-3">
+        <h3>OSD text</h3>
+        <button type="button" id="reload" class="btn btn-outline-secondary btn-sm" title="Read everything again from the camera">
+          <i class="bi bi-arrow-clockwise me-1"></i> Reload
+        </button>
+      </div>
+
+      <div class="row mb-3">
+        <div class="col-12 col-xl-4">
+          <div id="frame" class="position-relative">
+            <img id="preview" src="/a/nostream.svg" class="img-fluid" alt="Preview" tabindex="-1" data-stream="ch0">
+          </div>
+          <p class="small text-secondary mt-2 mb-0">
+            The overlays are burnt into the video, so the preview shows them as the stream does.
+            <code>scale 0</code> = auto (2 at 720p). Positions: 0 or more from the left/top edge, negative from the right/bottom edge.
+            Text is ASCII only; longer lines and extra rows are cut off.
+          </p>
+        </div>
+
+        <div class="col col-xl-8">
+          <div id="slots"></div>
+
+          <div class="card bg-dark-subtle mb-3 p-2">
+            <div class="d-flex align-items-center mb-2">
+              <h6 class="mb-0 me-3">Date/time (osd.burnin)</h6>
+              <span class="form-switch mb-0">
+                <input type="checkbox" id="burnin_enabled" role="switch" class="form-check-input">
+                <label for="burnin_enabled" class="form-check-label small">Enabled</label>
+              </span>
+            </div>
+            <div class="row g-2 mb-2">
+              <div class="col">
+                <label class="form-label small mb-0" for="burnin_format">Format (strftime)</label>
+                <input type="text" id="burnin_format" class="form-control form-control-sm font-monospace" placeholder="%F %T">
+              </div>
+              <div class="col-auto">
+                <label class="form-label small mb-0" for="burnin_scale">Scale</label>
+                <input type="number" id="burnin_scale" class="form-control form-control-sm num" min="0" max="10">
+              </div>
+            </div>
+            <div class="d-flex flex-wrap align-items-end gap-2" id="burnin_colors"></div>
+          </div>
+
+          <div class="card bg-dark-subtle mb-3 p-2">
+            <h6 class="mb-2">Apply / save</h6>
+            <div class="row g-2 align-items-end mb-2">
+              <div class="col-auto">
+                <label class="form-label small mb-0" for="pool_size">OSD pool (general.osd_pool_size, KB, 0 = default)</label>
+                <input type="number" id="pool_size" class="form-control form-control-sm" style="width:8em" min="0" max="16384" step="256">
+              </div>
+              <div class="col small text-secondary">
+                Only allocated when prudynt starts. Changing it makes osd-config write <code>/etc/prudynt.json</code> and
+                <strong>restart prudynt (the stream drops for a few seconds)</strong>. Takes effect through "Save" only.
+              </div>
+            </div>
+            <div class="d-flex flex-wrap gap-2 align-items-center">
+              <button type="button" id="apply" class="btn btn-outline-primary">
+                <i class="bi bi-lightning me-1"></i> Apply now (until prudynt restarts)
+              </button>
+              <button type="button" id="save" class="btn btn-primary">
+                <i class="bi bi-sd-card me-1"></i> Save to SD card
+              </button>
+            </div>
+            <p class="small text-secondary mt-2 mb-0">
+              "Apply now" sends the settings to the running prudynt only (prudyntctl). "Save" writes
+              <code id="config_path">/mnt/mmcblk0p1/prudynt-osd.json</code> (<span id="config_state">…</span>);
+              osd-config picks it up within 5 s, and again after every prudynt restart. Nothing is written to flash
+              except osd_pool_size. Other keys already in the file are kept.
+            </p>
+          </div>
+
+          <div class="card bg-dark-subtle mb-3 p-2">
+            <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
+              <h6 class="mb-0">prudynt-osd.json <span class="text-secondary fw-normal small">what "Save" writes, from the form as it is now</span></h6>
+              <div class="d-flex gap-2">
+                <button type="button" id="copy_json" class="btn btn-outline-secondary btn-sm" title="Copy to the clipboard">
+                  <i class="bi bi-clipboard me-1"></i> Copy
+                </button>
+                <button type="button" id="download_json" class="btn btn-outline-secondary btn-sm" title="Download as prudynt-osd.json">
+                  <i class="bi bi-download me-1"></i> Download
+                </button>
+              </div>
+            </div>
+            <textarea id="json_preview" class="form-control form-control-sm font-monospace" rows="8" readonly spellcheck="false" wrap="off"></textarea>
+          </div>
+
+          <div class="card bg-dark-subtle mb-3 p-2">
+            <h6 class="mb-2">Log (logread: textfile / osd-config)</h6>
+            <pre id="log" class="mb-0">…</pre>
+          </div>
+        </div>
+      </div>
+    </section>
+  </div>
+</main>
+
+<footer data-app-footer></footer>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/js/bootstrap.bundle.min.js"
+  integrity="sha384-FKyoEForCGlyvwx9Hj09JcYn3nv7wiPVlz7YYwJrWVcXK/BmnVDxM+D2scQbITxI" crossorigin="anonymous"></script>
+<script src="/a/main.js"></script>
+<script src="/a/runtime-config.js"></script>
+<script src="/a/plugins.js"></script>
+<script src="/a/control-bar.js"></script>
+<script src="/a/navigation.js"></script>
+<script src="/a/footer.js"></script>
+<script src="/a/preview.js"></script>
+<script>
+(function() {
+  'use strict';
+
+  var CGI = '/x/json-osd-text.cgi';
+  var PRUDYNT_CGI = '/x/json-prudynt.cgi'; // POST body -> prudyntctl json
+  var POOL_MAX = 16384; // same limit as osd-config
+
+  // The three text overlays; slot n <-> osd.textfile[n] <-> /run/prudynt/osd-text[n]
+  var SLOTS = [
+    {key: 'textfile',  slot: 1, label: 'Text 1', hint: 'default: bottom-left'},
+    {key: 'textfile2', slot: 2, label: 'Text 2', hint: 'default: top-right'},
+    {key: 'textfile3', slot: 3, label: 'Text 3', hint: 'default: bottom-right'}
+  ];
+  var SLOT_NUMS = ['pos_x', 'pos_y', 'cols', 'rows', 'scale'];
+  var COLORS = [
+    {field: 'fill_color', label: 'Fill', fallback: '#ffffffff'},
+    {field: 'outline_color', label: 'Outline', fallback: '#00000000'},
+    {field: 'background_color', label: 'Background', fallback: '#00000080'}
+  ];
+
+  var state = {config: null, pool_size: 0, live: null};
+
+  function $(id) { return document.getElementById(id); }
+  function el(key, field) { return $(key + '_' + field); }
+
+  function notify(type, msg) {
+    if (typeof showAlert === 'function') showAlert(type, msg, type === 'danger' ? 8000 : 4000);
+    else alert(msg);
+  }
+
+  async function api(url, opts) {
+    var r = await fetch(url, Object.assign({cache: 'no-store', credentials: 'same-origin'}, opts || {}));
+    var d;
+    try { d = await r.json(); } catch (e) { throw new Error('bad response (HTTP ' + r.status + ')'); }
+    if (!r.ok || (d && d.error)) throw new Error((d && d.error) || ('HTTP ' + r.status));
+    return d;
+  }
+
+  // ---- colour fields: text (#rrggbbaa) + native picker for rgb + slider for alpha
+  function colorHtml(key, c) {
+    var id = key + '_' + c.field;
+    return '<div>' +
+      '<label class="form-label small mb-0" for="' + id + '">' + c.label + '</label>' +
+      '<div class="input-group input-group-sm color-group">' +
+        '<span class="input-group-text color-swatch" id="' + id + '_sw" title="Pick colour">' +
+          '<input type="color" id="' + id + '_pk" title="Pick colour"></span>' +
+        '<input type="text" id="' + id + '" class="form-control form-control-sm font-monospace" placeholder="' + c.fallback + '" pattern="#[0-9a-fA-F]{8}" maxlength="9">' +
+      '</div>' +
+      '<input type="range" id="' + id + '_a" class="alpha-slider" min="0" max="255" title="Alpha">' +
+      '</div>';
+  }
+
+  function normColor(v) {
+    v = (v || '').trim();
+    if (/^[0-9a-fA-F]{8}$/.test(v)) v = '#' + v;
+    return /^#[0-9a-fA-F]{8}$/.test(v) ? v.toLowerCase() : null;
+  }
+
+  function syncColor(id) {
+    var input = $(id), sw = $(id + '_sw'), a = $(id + '_a'), pk = $(id + '_pk');
+    var v = normColor(input.value);
+    if (!v) { sw.style.backgroundColor = ''; input.classList.add('is-invalid'); return; }
+    input.classList.remove('is-invalid');
+    var r = parseInt(v.substr(1, 2), 16), g = parseInt(v.substr(3, 2), 16), b = parseInt(v.substr(5, 2), 16), al = parseInt(v.substr(7, 2), 16);
+    sw.style.backgroundColor = 'rgba(' + r + ',' + g + ',' + b + ',' + (al / 255) + ')';
+    a.value = al;
+    pk.value = v.substr(0, 7);
+  }
+
+  function wireColor(id) {
+    var input = $(id), a = $(id + '_a'), pk = $(id + '_pk');
+    pk.addEventListener('input', function() {
+      var v = normColor(input.value) || '#000000ff';
+      input.value = pk.value + v.substr(7, 2);
+      syncColor(id);
+    });
+    a.addEventListener('input', function() {
+      var v = normColor(input.value) || '#ffffffff';
+      input.value = v.substr(0, 7) + ('0' + parseInt(a.value, 10).toString(16)).slice(-2);
+      syncColor(id);
+    });
+    input.addEventListener('input', function() { syncColor(id); });
+  }
+
+  function setColor(id, v, fallback) {
+    $(id).value = normColor(v) || fallback;
+    syncColor(id);
+  }
+
+  // ---- slot cards
+  function slotHtml(s) {
+    var k = s.key;
+    return '<div class="card bg-dark-subtle mb-3 p-2">' +
+      '<div class="d-flex align-items-center mb-2">' +
+        '<h6 class="mb-0 me-3">' + s.label + ' <span class="text-secondary fw-normal small">osd.' + k + ' · ' + s.hint + '</span></h6>' +
+        '<span class="form-switch mb-0">' +
+          '<input type="checkbox" id="' + k + '_enabled" role="switch" class="form-check-input">' +
+          '<label for="' + k + '_enabled" class="form-check-label small">Enabled</label>' +
+        '</span>' +
+      '</div>' +
+      '<div class="d-flex flex-wrap align-items-end gap-2 mb-2">' +
+        numHtml(k, 'pos_x', 'X', -8192, 8192) + numHtml(k, 'pos_y', 'Y', -8192, 8192) +
+        numHtml(k, 'cols', 'Cols', 1, 128) + numHtml(k, 'rows', 'Rows', 1, 32) + numHtml(k, 'scale', 'Scale', 0, 10) +
+      '</div>' +
+      '<div class="d-flex flex-wrap align-items-end gap-2 mb-2">' +
+        COLORS.map(function(c) { return colorHtml(k, c); }).join('') +
+      '</div>' +
+      '<label class="form-label small mb-0" for="' + k + '_text">Text <span class="text-secondary" id="' + k + '_path"></span></label>' +
+      '<textarea id="' + k + '_text" class="form-control form-control-sm osd-text mb-1" rows="3" spellcheck="false" wrap="off"></textarea>' +
+      '<div class="d-flex flex-wrap align-items-center gap-2">' +
+        '<button type="button" class="btn btn-outline-primary btn-sm" data-show="' + k + '"><i class="bi bi-display me-1"></i> Show</button>' +
+        '<button type="button" class="btn btn-outline-secondary btn-sm" data-clear="' + k + '"><i class="bi bi-eraser me-1"></i> Clear</button>' +
+        '<span class="small text-secondary" id="' + k + '_text_state"></span>' +
+      '</div>' +
+    '</div>';
+  }
+
+  function numHtml(k, f, label, min, max) {
+    var id = k + '_' + f;
+    return '<div><label class="form-label small mb-0" for="' + id + '">' + label + '</label>' +
+      '<input type="number" id="' + id + '" class="form-control form-control-sm num" min="' + min + '" max="' + max + '"></div>';
+  }
+
+  function fillSlot(k, v) {
+    el(k, 'enabled').checked = v.enabled === true;
+    SLOT_NUMS.forEach(function(f) { if (v[f] !== undefined) el(k, f).value = v[f]; });
+    COLORS.forEach(function(c) { setColor(k + '_' + c.field, v[c.field], c.fallback); });
+    el(k, 'path').textContent = v.path ? '(' + v.path + ')' : '';
+  }
+
+  // The settings as prudynt takes them; a field left empty or invalid is not sent
+  function readNum(id, min, max) {
+    // valueAsNumber, not parseInt: "1.5" and "1e3" must not turn into 1
+    var n = $(id).valueAsNumber;
+    return (!Number.isInteger(n) || n < min || n > max) ? undefined : n;
+  }
+
+  // Every number field an integer within its min/max, every colour #rrggbbaa.
+  // Returns the first offending input (focused, marked) or null. Apply and Save
+  // refuse to run with a bad field rather than silently leaving it out.
+  function firstInvalid() {
+    var bad = null;
+    document.querySelectorAll('#slots input, #burnin_scale, #burnin_colors input[type=text], #pool_size').forEach(function(inp) {
+      if (bad) return;
+      var ok = true;
+      if (inp.type === 'number') {
+        ok = readNum(inp.id, parseInt(inp.min, 10), parseInt(inp.max, 10)) !== undefined;
+      } else if (inp.type === 'text' && /_color$/.test(inp.id)) {
+        ok = normColor(inp.value) !== null;
+      }
+      inp.classList.toggle('is-invalid', !ok);
+      if (!ok) bad = inp;
+    });
+    if (bad) {
+      bad.focus();
+      var label = document.querySelector('label[for="' + bad.id + '"]');
+      notify('danger', 'Fix the highlighted field first: ' + (label ? label.textContent.trim() : bad.id) +
+        (bad.type === 'number' ? ' must be a whole number ' + bad.min + '..' + bad.max : ' must be #rrggbbaa'));
+    }
+    return bad;
+  }
+
+  function readSlot(k) {
+    var o = {enabled: el(k, 'enabled').checked};
+    SLOT_NUMS.forEach(function(f) {
+      var inp = el(k, f);
+      var n = readNum(k + '_' + f, parseInt(inp.min, 10), parseInt(inp.max, 10));
+      if (n !== undefined) o[f] = n;
+    });
+    COLORS.forEach(function(c) {
+      var v = normColor(el(k, c.field).value);
+      if (v) o[c.field] = v;
+    });
+    return o;
+  }
+
+  function fillBurnin(v) {
+    $('burnin_enabled').checked = v.enabled === true;
+    if (v.format !== undefined && v.format !== null) $('burnin_format').value = v.format;
+    if (v.scale !== undefined) $('burnin_scale').value = v.scale;
+    COLORS.forEach(function(c) { setColor('burnin_' + c.field, v[c.field], c.field === 'outline_color' ? '#000000ff' : c.fallback); });
+  }
+
+  function readBurnin() {
+    var o = {enabled: $('burnin_enabled').checked};
+    // An empty format is not a setting anyone wants (no text at all): it is the
+    // field never having been filled (prudynt did not answer). Do not send it,
+    // or a Save would overwrite the format in the file with "".
+    var fmt = $('burnin_format').value;
+    if (fmt !== '') o.format = fmt;
+    var n = readNum('burnin_scale', 0, 10);
+    if (n !== undefined) o.scale = n;
+    COLORS.forEach(function(c) {
+      var v = normColor($('burnin_' + c.field).value);
+      if (v) o[c.field] = v;
+    });
+    return o;
+  }
+
+  function readOsd() {
+    var osd = {};
+    SLOTS.forEach(function(s) { osd[s.key] = readSlot(s.key); });
+    osd.burnin = readBurnin();
+    return osd;
+  }
+
+  // Text that prudynt cannot show, or will cut: told before "Show", not after
+  function textHint(k) {
+    var t = el(k, 'text').value;
+    var cols = readNum(k + '_cols', 1, 128) || 0, rows = readNum(k + '_rows', 1, 32) || 0;
+    var lines = t.replace(/\n$/, '').split('\n');
+    var out = [];
+    if (/[^\x20-\x7e\n\t]/.test(t)) out.push('non-ASCII characters (shown as blanks)');
+    if (rows && lines.length > rows) out.push(lines.length + ' lines, only ' + rows + ' shown');
+    var longest = lines.reduce(function(m, l) { return Math.max(m, l.length); }, 0);
+    if (cols && longest > cols) out.push('longest line ' + longest + ' > ' + cols + ' cols, cut off');
+    if (!el(k, 'enabled').checked) out.push('overlay disabled: enable it and Apply/Save to see it');
+    return out.join('; ');
+  }
+
+  function updateHint(k, shown) {
+    var st = el(k, 'text_state');
+    var hint = textHint(k);
+    if (shown !== undefined) st.dataset.shown = shown ? '1' : '';
+    var s = st.dataset.shown ? 'file present' : 'no file (hidden)';
+    st.textContent = s + (hint ? ' — ' + hint : '');
+    st.className = 'small ' + (hint ? 'text-warning' : 'text-secondary');
+  }
+
+  // ---- actions
+  async function load() {
+    var s = await api(CGI + '?action=status');
+    state = s;
+    if (s.live) {
+      SLOTS.forEach(function(sl) { if (s.live[sl.key]) fillSlot(sl.key, s.live[sl.key]); });
+      if (s.live.burnin) fillBurnin(s.live.burnin);
+    } else {
+      notify('warning', 'prudynt did not answer the osd.textfile query (not running, or built without the OSD patch)');
+    }
+    // The pool field starts from what the file asks for, not from what prudynt
+    // runs with: a value osd-config has not applied yet (or refused) must not
+    // be overwritten by a Save that did not touch the field. The confirm in
+    // save() compares with the applied value, which is what decides a restart.
+    var filePool = s.config && s.config.general && typeof s.config.general.osd_pool_size === 'number' ? s.config.general.osd_pool_size : undefined;
+    $('pool_size').value = filePool !== undefined ? filePool : s.pool_size;
+    SLOTS.forEach(function(sl) {
+      var t = s.texts ? s.texts[sl.key] : null;
+      el(sl.key, 'text').value = t == null ? '' : t;
+      updateHint(sl.key, t != null);
+    });
+    $('config_path').textContent = s.config_path;
+    var merged = (s.config && s.config_source && s.config_source !== s.config_path) ? 'the form is merged into ' + s.config_source + ' (what osd-config uses now)' : '';
+    var cstate = s.config_error ? s.config_error + (merged ? '; ' + merged : '')
+      : !s.config ? 'no file yet, created on save'
+      : merged ? 'no file yet; ' + merged
+      : 'exists';
+    $('config_state').textContent = cstate;
+    $('config_state').className = s.config_error ? 'text-warning' : '';
+    $('log').textContent = (s.log && s.log.length) ? s.log.join('\n') : '(nothing logged)';
+    renderJson();
+  }
+
+  async function reload() {
+    try { await load(); } catch (e) { notify('danger', 'Cannot read the OSD state: ' + e.message); }
+  }
+
+  async function sendText(k, text) {
+    var slot = SLOTS.filter(function(s) { return s.key === k; })[0].slot;
+    return api(CGI + '?action=text&slot=' + slot, {
+      method: 'POST', headers: {'Content-Type': 'text/plain'}, body: text
+    });
+  }
+
+  async function applyNow() {
+    if (firstInvalid()) return;
+    var btn = $('apply');
+    btn.disabled = true;
+    try {
+      var r = await fetch(PRUDYNT_CGI, {
+        method: 'POST', credentials: 'same-origin', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({osd: readOsd()})
+      });
+      var d = await r.json();
+      // prudynt answers with the sections it understood; {} means none of them
+      if (!d || !d.textfile) throw new Error('prudynt did not take the settings');
+      var pool = readNum('pool_size', 0, POOL_MAX);
+      notify('success', 'Applied to the running prudynt' + (pool !== undefined && pool !== state.pool_size ? ' (osd_pool_size only changes through Save)' : ''));
+      SLOTS.forEach(function(s) { updateHint(s.key); });
+    } catch (e) {
+      notify('danger', 'Apply failed: ' + e.message);
+    } finally {
+      btn.disabled = false;
+    }
+  }
+
+  // The prudynt-osd.json that Save writes: the form, merged into what the file
+  // already has so keys this page does not know (osd.textfile.path,
+  // substream_disabled, ...) survive. A pool size outside 0..POOL_MAX is left out.
+  function buildConfig() {
+    var cfg = (state.config && typeof state.config === 'object' && !Array.isArray(state.config)) ? JSON.parse(JSON.stringify(state.config)) : {};
+    cfg.osd = (cfg.osd && typeof cfg.osd === 'object' && !Array.isArray(cfg.osd)) ? cfg.osd : {};
+    var osd = readOsd();
+    Object.keys(osd).forEach(function(k) {
+      cfg.osd[k] = Object.assign({}, (cfg.osd[k] && typeof cfg.osd[k] === 'object' && !Array.isArray(cfg.osd[k])) ? cfg.osd[k] : {}, osd[k]);
+    });
+    var pool = readNum('pool_size', 0, POOL_MAX);
+    if (pool !== undefined) cfg.general = Object.assign({}, (cfg.general && typeof cfg.general === 'object' && !Array.isArray(cfg.general)) ? cfg.general : {}, {osd_pool_size: pool});
+    return cfg;
+  }
+
+  function configText() { return JSON.stringify(buildConfig(), null, 2) + '\n'; }
+
+  function renderJson() {
+    try { $('json_preview').value = configText(); } catch (e) { $('json_preview').value = '(' + e.message + ')'; }
+  }
+
+  function downloadJson() {
+    var blob = new Blob([configText()], {type: 'application/json'});
+    var a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'prudynt-osd.json';
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(function() { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
+  }
+
+  async function copyJson() {
+    var ta = $('json_preview');
+    renderJson();
+    var copied = false;
+    // navigator.clipboard needs https (the camera is plain http) and may be
+    // refused even then; the old execCommand on a selection is the fallback
+    if (navigator.clipboard && window.isSecureContext) {
+      try { await navigator.clipboard.writeText(ta.value); copied = true; } catch (e) { /* fall through */ }
+    }
+    ta.focus(); ta.select();
+    if (!copied) { try { copied = document.execCommand('copy'); } catch (e) { copied = false; } }
+    if (copied) notify('success', 'prudynt-osd.json copied to the clipboard');
+    else notify('warning', 'Could not copy automatically; the text is selected, press Ctrl/Cmd+C');
+  }
+
+  async function save() {
+    if (firstInvalid()) return;
+    var btn = $('save');
+    var pool = readNum('pool_size', 0, POOL_MAX);
+    if (pool !== state.pool_size) {
+      var ok = await confirm('general.osd_pool_size changes from ' + state.pool_size + ' to ' + pool + ' KB.\n\n' +
+        'osd-config will write it to /etc/prudynt.json (flash) and restart prudynt: the stream drops for a few seconds. Continue?');
+      if (!ok) return;
+    }
+    btn.disabled = true;
+    try {
+      await api(CGI + '?action=save', {
+        method: 'POST', headers: {'Content-Type': 'application/json'},
+        body: configText()
+      });
+      notify('success', 'Saved to the SD card; osd-config applies it within 5 s' + (pool !== state.pool_size ? ', then restarts prudynt' : ''));
+      setTimeout(reload, 6000);
+    } catch (e) {
+      notify('danger', 'Save failed: ' + e.message);
+    } finally {
+      btn.disabled = false;
+    }
+  }
+
+  // ---- build the page
+  $('slots').innerHTML = SLOTS.map(slotHtml).join('');
+  $('burnin_colors').innerHTML = COLORS.map(function(c) { return colorHtml('burnin', c); }).join('');
+  SLOTS.forEach(function(s) {
+    COLORS.forEach(function(c) { wireColor(s.key + '_' + c.field); });
+    ['text', 'cols', 'rows'].forEach(function(f) { el(s.key, f).addEventListener('input', function() { updateHint(s.key); }); });
+    el(s.key, 'enabled').addEventListener('change', function() { updateHint(s.key); });
+  });
+  COLORS.forEach(function(c) { wireColor('burnin_' + c.field); });
+
+  document.addEventListener('click', async function(ev) {
+    var b = ev.target.closest('button[data-show],button[data-clear]');
+    if (!b) return;
+    var k = b.dataset.show || b.dataset.clear;
+    var text = b.dataset.show ? el(k, 'text').value : '';
+    if (text && !/\n$/.test(text)) text += '\n';
+    b.disabled = true;
+    try {
+      var r = await sendText(k, text);
+      updateHint(k, r.bytes > 0);
+    } catch (e) {
+      notify('danger', (b.dataset.show ? 'Show' : 'Clear') + ' failed: ' + e.message);
+    } finally {
+      b.disabled = false;
+    }
+  });
+
+  $('reload').addEventListener('click', reload);
+  $('apply').addEventListener('click', applyNow);
+  $('save').addEventListener('click', save);
+  $('copy_json').addEventListener('click', copyJson);
+  $('download_json').addEventListener('click', downloadJson);
+  // Keep the JSON preview in step with the form (the text areas are not part of it)
+  ['input', 'change'].forEach(function(t) {
+    document.querySelector('main').addEventListener(t, function(ev) {
+      if (ev.target.type === 'number') ev.target.classList.remove('is-invalid');
+      if (ev.target.id !== 'json_preview' && !/_text$/.test(ev.target.id)) renderJson();
+    });
+  });
+
+  reload();
+})();
+</script>
+</body>
+</html>

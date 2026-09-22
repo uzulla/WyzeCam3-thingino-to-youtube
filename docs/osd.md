@@ -16,10 +16,14 @@ device/install-prudynt-osd.sh root@<camera-ip> path/to/prudynt
 - インストール時に prudynt を再起動するので、**配信が数秒切れる** (supervisor が自動で再接続する)
 - バイナリはビルドしたファーム専用。`/etc/os-release` の `BUILD_ID` がインストール時と違っていたら
   bind mount せず、標準の prudynt のまま起動する
+- Web UI にページが増える (Streamer メニューの「OSD Elements」が「OSD text」= `/osd-text.html` に差し替わる。
+  [下記](#web-ui-から編集する))
 - 元に戻す: `service disable prudynt-osd; service disable osd-config` して再起動 (すぐ戻すなら
   `service stop osd-config; service stop prudynt; /etc/init.d/S30prudynt-osd stop; service start prudynt`)。
   完全に消すなら `/etc/init.d/S30prudynt-osd` `/usr/bin/prudynt-osd` `/usr/bin/prudynt-osd.build`
-  `/usr/sbin/osd-progress-demo` `/usr/sbin/osd-config` `/etc/init.d/S93osd-config` と、置いていれば
+  `/usr/sbin/osd-progress-demo` `/usr/sbin/osd-config` `/etc/init.d/S93osd-config` `/var/www/osd-text.html`
+  `/var/www/x/json-osd-text.cgi` を削除し、メニューを戻す
+  (`sed -i 's#/osd-text.html#/streamer-osd.html#; s#"OSD text"#"OSD Elements"#' /var/www/a/plugins.js`)。置いていれば
   設定ファイル (`/etc/prudynt-osd.json` と、SD カード直下の `prudynt-osd.json` = カメラ上では
   `/mnt/mmcblk0p1/prudynt-osd.json`) を削除する。どちらかが残っていると、入れ直した時や `osd-config` を
   有効に戻した時に、古い OSD 設定が自動で反映される。設定ファイルで `general.osd_pool_size` を使っていた場合は
@@ -60,6 +64,49 @@ echo 'REC' > /run/prudynt/osd-text2.tmp && mv /run/prudynt/osd-text2.tmp /run/pr
 - 表示できるのは ASCII (8x8 フォント)。桁数・行数を超えた分は切り捨て。タブや制御文字は空白になる
 - `osd-progress-demo [秒数]` が 0.5 秒更新のプログレスバーのサンプル (`osd_text` / `osd_clear` / `bar` の
   シェル関数はそのまま流用できる)
+
+## Web UI から編集する
+
+Thingino の Web UI の Streamer メニュー → **OSD text** (`http://<camera-ip>/osd-text.html`) で、3 つの矩形の設定
+(有効、位置、桁×行、倍率、色) と日時 (`osd.burnin`) の書式・倍率・色、`general.osd_pool_size`、そして
+矩形ごとのテキストの中身を編集できる。レイアウトの確認用で、下の節の JSON を手で書くのと同じことが GUI でできる。
+
+![OSD text ページ](images/osd-text-webui.png)
+
+- プレビューは既存ページと同じ MJPEG。テキストは映像に焼き込まれるので、配信に出るものがそのまま映る
+- **Show** / **Clear** は矩形のファイル (`/run/prudynt/osd-text*`) を書く/消す (上の `mv` の手順と同じ。tmpfs のみ)。
+  桁数・行数を超える行や ASCII 以外の文字はテキスト欄の下に警告が出る (prudynt 側では切り捨て/空白になる)。
+  同じファイルを別のプログラム (プログレスバー等) が更新している時は取り合いになるので、動作確認用と割り切る
+- **Apply now** は実行中の prudynt にだけ送る (`prudyntctl json` と同じ。prudynt の再起動で消える)
+- **Save to SD card** は SD 直下の `prudynt-osd.json` を書き換える (次の節)。`osd-config` が 5 秒以内に反映するので
+  prudynt の再起動は要らない。ファイルに既にあるキーのうち、ページにない項目 (`path`、`substream_disabled` など) は
+  残る (SD にまだファイルが無い時は、`osd-config` と同じ順で `/etc/prudynt-osd.json` を読んでそれに重ねる)。`general.osd_pool_size` を変えた時だけ、`osd-config` が `/etc/prudynt.json` に書いて prudynt を再起動する
+  (配信が数秒切れる) ので、保存前に確認が出る。SD カードが挿さっていない時は保存できない (エラーになる)
+- **prudynt-osd.json** 欄に、いま Save を押したら書かれる JSON がフォームに追従して出る。**Download** で
+  `prudynt-osd.json` としてダウンロード、**Copy** でクリップボードへ (試した配置を PC に持ち帰る、別の SD カードに置く、
+  `device/prudynt-osd.json.example` のように保存しておく、といった用途)。テキスト欄の中身はこの JSON には入らない
+  (表示するテキストは設定ではなく `/run/prudynt/osd-text*` の中身なので、テキスト欄からコピーする)
+- **Log** に `logread` の `textfile` (プールに入らず縮めた警告など) と `osd-config` の行を出す。Reload で読み直す
+- Thingino 標準の OSD ページ (`/streamer-osd.html`) はメニューから外れるだけで残っている。URL で開いて
+  「Save configuration」を押すと `/etc/prudynt.json` (フラッシュ) に保存されるので、使わない
+
+裏側の CGI (`/x/json-osd-text.cgi`) は Thingino の認証 (ログインのセッション Cookie、または API キー) を通せば
+カメラの外からも叩ける。API キー (Settings → Web Interface の API key、`/etc/thingino-api.key`) は `?token=` で渡す
+(`X-API-Key` ヘッダはこの uhttpd が CGI に渡さない)。テキストを更新するプログラムをカメラの外に置く時の入口になる:
+
+```sh
+KEY=$(ssh root@<camera-ip> cat /etc/thingino-api.key)
+# 左下 (slot=1) に表示。slot=2 が右上、3 が右下。空のボディで消える
+printf 'UPLOAD job-42\n[##########----------] 50%%\n' \
+  | curl -s --data-binary @- "http://<camera-ip>/x/json-osd-text.cgi?action=text&slot=1&token=$KEY"
+# 現在の設定・テキスト・ログ
+curl -s "http://<camera-ip>/x/json-osd-text.cgi?action=status&token=$KEY"
+# prudynt-osd.json をまるごと置き換える (中身は次の節の形。osd-config が反映する)
+curl -s --data-binary @prudynt-osd.json "http://<camera-ip>/x/json-osd-text.cgi?action=save&token=$KEY"
+```
+
+書き込み先は `osd.textfileN.path` (`/run` か `/tmp` の下に限る) と SD の `prudynt-osd.json` だけで、フラッシュには何も書かない。
+カメラの中で更新するなら、この CGI を通す必要はない (`osd-progress-demo` のように直接ファイルを `mv` する)。
 
 ## 設定 (`osd.textfile.*` / `osd.textfile2.*` / `osd.textfile3.*`)
 
