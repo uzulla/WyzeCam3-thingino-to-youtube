@@ -63,7 +63,7 @@ echo 'REC' > /run/prudynt/osd-text2.tmp && mv /run/prudynt/osd-text2.tmp /run/pr
   内容が同じなら描き直さない
 - 表示できるのは ASCII (8x8 フォント)。桁数・行数を超えた分は切り捨て。タブや制御文字は空白になる
 - `osd-progress-demo [秒数]` が 0.5 秒更新のプログレスバーのサンプル (`osd_text` / `osd_clear` / `bar` の
-  シェル関数はそのまま流用できる)
+  シェル関数はそのまま流用できる)。常駐して更新し続けるプログラムは [osd-feed.md](osd-feed.md)
 
 ## Web UI から編集する
 

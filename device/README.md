@@ -15,3 +15,4 @@ Thingino 実機に置くスクリプト一式。`/etc` や `/usr` は overlayfs 
 | `osd-progress-demo` | `/usr/sbin/osd-progress-demo` | (`install-prudynt-osd.sh` が入れる) OSD テキストを書き換える側のサンプル (0.5 秒更新のプログレスバー) | [osd.md](../docs/osd.md) |
 | `www/osd-text.html` / `www/x/json-osd-text.cgi` | `/var/www/osd-text.html` / `/var/www/x/json-osd-text.cgi` | (`install-prudynt-osd.sh` が入れる) Thingino の Web UI に足す「OSD text」ページと、その CGI (テキストの書き込み、SD の `prudynt-osd.json` の保存)。Streamer メニューの「OSD Elements」の行き先を `/var/www/a/plugins.js` の書き換えでこのページに変える | [osd.md](../docs/osd.md#web-ui-から編集する) |
 | `common.sh` | (PC 側の各スクリプトが読み込む) | 対応ファームの判定。カメラの `BUILD_ID` が `ciao+da40db6` でなければ何も変更せず中止する | — |
+| `osd-feed/` / `install-osd-feed.sh` / `S94osd-feed` | (PC 側でビルド・実行) / SD カード直下の `osd-feed` と `osd-feed.json` / `/etc/init.d/S94osd-feed` | 任意。OSD テキストの中身を書き続ける常駐プログラム (Go)。バイナリと設定は SD カード、起動スクリプトだけ overlay。SD に両方あれば起動する | [osd-feed.md](../docs/osd-feed.md) |
