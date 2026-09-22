@@ -154,7 +154,32 @@ service disable youtube-relay   # boot 時の自動開始を無効化
 service enable youtube-relay    # 有効化
 ```
 
-設定変更 (`/etc/youtube-relay.json` 編集) 後は `service restart youtube-relay`。
+設定変更 (`/etc/youtube-relay.json` 編集) 後は `service restart youtube-relay`。`stop` は supervisor と ffmpeg が
+終わるまで待ってから戻る (最大 45 秒。待たずに `start` すると新旧 2 つが同じキーへ publish する)。
+
+## Web UI
+
+`install.sh` が Thingino の Web UI に **Services → YouTube Live** (`http://<camera-ip>/youtube.html`) を足す。
+上の運用コマンドと設定ファイルの編集を、ブラウザからできるようにしたもの。
+
+![YouTube Live ページ](images/youtube-webui.png)
+
+- **Stream settings**: `enabled`、ストリームキー (伏せ字、目のボタンで表示)、Ingest URL (RTMPS / 平文 RTMP のプリセットか任意)、
+  Advanced に RTSP の URL と ffmpeg のオプション。**Save** は relay が今使っているファイル (SD → `/etc` の順。無ければ SD が
+  あれば SD、なければ `/etc`) に 600 で書く。ファイルにあってページに無いキー (`ffmpeg_bin` など) は残る
+  - キー・URL・オプションを変えた時は、配信中なら「今すぐ再起動して反映するか」を聞く (配信が数秒切れる)。
+    Cancel すると保存だけして、次の再起動まで古い設定で配信を続ける
+  - `enabled` の変更だけなら聞かない: relay が 15 秒以内に自分で止める/再開する
+- **Status**: relay サービスと ffmpeg の稼働 (pid、配信の経過時間)、起動時の自動開始、使っている設定ファイル。5 秒ごとに更新
+- **Relay service**: Start / Stop / **Restart stream (ffmpeg)** (= `service restart youtube-relay`)。「Start the relay service at
+  boot」のスイッチが `service enable/disable` (init スクリプトの実行属性。切っても動いているものは止まらない)
+- **Restart prudynt**: Thingino の `/x/restart-prudynt.cgi` を呼ぶ (映像と OSD が数秒止まり、ffmpeg は自動で再接続)
+- **Log**: `logread` の youtube-relay 行 (キーは relay が伏せている)。5 秒ごとに更新
+- 裏側の CGI は `/x/json-youtube.cgi` (`?action=status` / `save[&restart=1]` / `service&op=…`)。Thingino の認証 (セッション
+  Cookie か `?token=<API キー>`) を通せばカメラ外からも使える。ストリームキーは認証済みのブラウザにそのまま返す
+  (Thingino が API キーや Wi-Fi のパスワードを画面に出すのと同じ扱い。[下記](#ストリームキーの取り扱い))
+- 消す: `/var/www/youtube.html` `/var/www/x/json-youtube.cgi` を削除し、`/var/www/a/plugins.js` から `"youtube-relay": {…},` の
+  1 行を消す
 
 ## Thingino を入れ直した / 更新した後
 

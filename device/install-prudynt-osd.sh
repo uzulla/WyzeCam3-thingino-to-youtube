@@ -114,7 +114,7 @@ push "$HERE/www/x/json-osd-text.cgi" /var/www/x/json-osd-text.cgi 755
 ssh "$CAM" 'f=/var/www/a/plugins.js
 	if grep -q "\"/streamer-osd.html\"" $f; then
 		sed -e "s#\(\"href\": *\)\"/streamer-osd.html\"#\1\"/osd-text.html\"#" \
-			-e "s#\(\"label\": *\)\"OSD Elements\"#\1\"OSD text\"#" $f > $f.new && mv $f.new $f
+			-e "s#\(\"label\": *\)\"OSD Elements\"#\1\"OSD text\"#" $f > $f.new && chmod 644 $f.new && mv $f.new $f
 		echo "  menu: Streamer > OSD Elements -> /osd-text.html"
 	fi
 	grep -q "\"/osd-text.html\"" $f || echo "  warning: could not add /osd-text.html to the menu (open it by URL)"'

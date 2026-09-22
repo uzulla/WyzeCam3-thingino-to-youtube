@@ -75,6 +75,8 @@ patches/   このリポジトリの本体。Thingino に当てる差分
              prudynt-msgchannel-warning.diff    任意: prudynt が 5 秒ごとに出す誤報の警告 (msgChannel sink clogged) を止める
 device/    カメラ側の常設運用一式 (ファイルの一覧は device/README.md、使い方は docs/)
              youtube-relay / S93youtube-relay   supervisor と起動スクリプト
+             www/youtube.html / www/x/json-youtube.cgi
+                                                Web UI の「YouTube Live」ページ (キーの設定、再起動、サービスの有効/無効)
              install.sh                         上記と ffmpeg をカメラへ入れる (自前のファイルを置くだけ)
              disable-netwatch.sh                Thingino の netwatch (OS 自動再起動) を無効化する
              install-wifi-from-sd.sh / S37wifi-from-sd
@@ -104,7 +106,7 @@ git 管理外です。必要な変更はすべて `patches/` に分離してあ�
 
 | 文書 | 内容 |
 |---|---|
-| [docs/relay.md](docs/relay.md) | 配信 supervisor: インストール、設定ファイル (SD カードモード)、ffmpeg の置き場所、運用、ストリームキーの取り扱い |
+| [docs/relay.md](docs/relay.md) | 配信 supervisor: インストール、設定ファイル (SD カードモード)、ffmpeg の置き場所、運用、Web UI (YouTube Live ページ)、ストリームキーの取り扱い |
 | [docs/osd.md](docs/osd.md) | 映像にテキストを重ねる (OSD テキストオーバーレイ): インストール、使い方、Web UI での編集、設定項目、SD カードの設定ファイル、大きさの上限 |
 | [docs/osd-feed.md](docs/osd-feed.md) | OSD テキストを自動更新する常駐プログラム `osd-feed`: データ源 (メモリ、カウンタ、時刻、HTTP JSON) とテンプレート、設定、計測 |
 | [docs/wifi-from-sd.md](docs/wifi-from-sd.md) | Wi-Fi 設定を SD カードで運ぶ |

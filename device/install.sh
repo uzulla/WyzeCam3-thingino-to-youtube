@@ -91,4 +91,22 @@ else
 fi
 
 ssh "$CAM" '/etc/init.d/S93youtube-relay start'
+
+# Web UI page (docs/relay.md, "Web UI"): Services > YouTube Live. plugins.js is
+# generated at firmware build time; our entry is inserted right after
+# "cfg.plugins = {" when it is not there yet (re-runs are no-ops). The entry
+# travels as a file and goes in with "sed r": no quoting through ssh.
+push "$HERE/www/youtube.html" /var/www/youtube.html 644
+push "$HERE/www/x/json-youtube.cgi" /var/www/x/json-youtube.cgi 755
+ssh "$CAM" 'cat > /tmp/youtube-nav.frag' <<'EOF'
+  "youtube-relay": {"label": "YouTube Live relay", "name": "youtube-relay", "nav": [{"section": "ddServices", "position": "prepend", "items": [{"href": "/youtube.html", "label": "YouTube Live"}]}]},
+EOF
+ssh "$CAM" 'f=/var/www/a/plugins.js
+	if ! grep -q "\"/youtube.html\"" $f && grep -q "^  cfg.plugins = {$" $f; then
+		sed "/^  cfg.plugins = {$/r /tmp/youtube-nav.frag" $f > $f.new && chmod 644 $f.new && mv $f.new $f
+		echo "  menu: Services > YouTube Live -> /youtube.html"
+	fi
+	rm -f /tmp/youtube-nav.frag
+	grep -q "\"/youtube.html\"" $f || echo "  warning: could not add /youtube.html to the menu (open it by URL)"'
+echo "Web UI: Services > YouTube Live (http://${CAM#*@}/youtube.html)"
 echo "Done. Logs: ssh $CAM 'logread | grep youtube-relay'"
