@@ -132,7 +132,8 @@ echo 'REC' > /run/prudynt/osd-text2.tmp && mv /run/prudynt/osd-text2.tmp /run/pr
   または値を変えた時) だけ。`logread` に `general.osd_pool_size 0 -> 2048 KB ... restarting prudynt` と出る
   - 受け付ける値は 0〜16384。範囲外や数字でないものは `logread` に 1 回出して無視する
   - 新しい値で prudynt が起動しなかった時は元の値に戻して起動し直す (`... restored 0`)。その値はファイルを
-    書き換えるまで再試行しない
+    書き換えるまで再試行しない。古い prudynt が 20 秒たっても止まらなかった時は再起動を諦め、値は
+    `/etc/prudynt.json` に残る (次に prudynt が再起動した時に効く。`... applies at its next restart`)
   - ファイルが無くなっても (SD を抜いても) この値は戻さない (メモリを予約するだけで、何も表示しない。
     戻すたびに再起動と書き込みをする方が害が大きい)。既定に戻したい時はファイルに 0 を書く
 - ログ: `logread | grep osd-config`。止めて、次回の起動でも動かないようにする:

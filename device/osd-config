@@ -104,10 +104,10 @@ prudynt_up() {
 	return 1
 }
 
-# restart_prudynt - returns 0 once the new prudynt answers, 1 if it is gone.
-# "S31prudynt stop" (and so its restart) can return before prudynt is gone, and
-# the new one then quits with "Another Prudynt instance appears to be running":
-# wait for the old one ourselves.
+# restart_prudynt - 0 once the new prudynt answers, 1 if it died, 2 if the old
+# one would not stop (nothing was restarted then). "S31prudynt stop" (and so its
+# restart) can return before prudynt is gone, and the new one then quits with
+# "Another Prudynt instance appears to be running": wait for the old one ourselves.
 restart_prudynt() {
 	"$PRUDYNT_INIT" stop >/dev/null 2>&1
 	i=0
@@ -115,6 +115,7 @@ restart_prudynt() {
 		sleep 1
 		i=$((i + 1))
 	done
+	pidof prudynt >/dev/null && return 2
 	"$PRUDYNT_INIT" start >/dev/null 2>&1
 	i=0
 	while [ $i -lt 30 ]; do
@@ -132,30 +133,44 @@ restart_prudynt() {
 # was restarted (the caller then starts over with the new pid).
 pool_bad="" # "file:value" refused or failed, not tried again until it changes
 apply_pool() {
-	want=$(jct "$1" get general.osd_pool_size 2>/dev/null) || return 1
-	[ "$1:$want" = "$pool_bad" ] && return 1
+	raw=$(jct "$1" get general.osd_pool_size 2>/dev/null) || return 1
+	[ "$1:$raw" = "$pool_bad" ] && return 1
+	want=$raw
 	case "$want" in
-	"" | *[!0-9]*) ;;
+	"" | *[!0-9]*) want="" ;;
 	*) [ "$want" -le "$POOL_MAX" ] || want="" ;;
 	esac
 	if [ -z "$want" ]; then
-		log "general.osd_pool_size in $1 must be 0..$POOL_MAX (KB) - ignored"
-		pool_bad="$1:$(jct "$1" get general.osd_pool_size 2>/dev/null)"
+		log "general.osd_pool_size in $1 must be 0..$POOL_MAX (KB), got \"$raw\" - ignored"
+		pool_bad="$1:$raw"
 		return 1
 	fi
 	have=$(jct "$PRUDYNT_CONFIG" get general.osd_pool_size 2>/dev/null) || have=0
 	[ "$want" = "$have" ] && return 1
-	if ! jct "$PRUDYNT_CONFIG" set general.osd_pool_size "$want" >/dev/null 2>&1; then
+	# Read back what was written: if it does not match, do not restart, and do
+	# not try again (that would write flash on every pass).
+	if ! jct "$PRUDYNT_CONFIG" set general.osd_pool_size "$want" >/dev/null 2>&1 ||
+		[ "$(jct "$PRUDYNT_CONFIG" get general.osd_pool_size 2>/dev/null)" != "$want" ]; then
 		log "cannot write general.osd_pool_size=$want to $PRUDYNT_CONFIG"
-		pool_bad="$1:$want"
+		pool_bad="$1:$raw"
 		return 1
 	fi
 	log "general.osd_pool_size $have -> $want KB in $PRUDYNT_CONFIG (from $1) - restarting prudynt"
-	restart_prudynt && return 0
+	restart_prudynt
+	case $? in
+	0) return 0 ;;
+	2)
+		# Old prudynt still running with the old size; the new one is in flash
+		# and applies whenever prudynt next restarts.
+		log "prudynt did not stop - osd_pool_size=$want applies at its next restart"
+		pool_bad="$1:$raw"
+		return 1
+		;;
+	esac
 	jct "$PRUDYNT_CONFIG" set general.osd_pool_size "$have" >/dev/null 2>&1
 	log "prudynt did not come up with osd_pool_size=$want - restored $have"
-	restart_prudynt
-	pool_bad="$1:$want"
+	restart_prudynt || log "prudynt is still not running after restoring osd_pool_size=$have"
+	pool_bad="$1:$raw"
 	return 0
 }
 
