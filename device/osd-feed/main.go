@@ -59,7 +59,7 @@ func main() {
 		names = append(names, n)
 	}
 	sort.Strings(names)
-	geo, answered := askPrudynt(names)
+	geo, answered := askPrudynt(context.Background(), names)
 	if !answered {
 		log.Printf("prudynt did not answer the osd.textfile query - using the documented defaults for path/cols/rows")
 	}
@@ -139,8 +139,27 @@ func main() {
 	// prudynt is restarted now and then (osd-config changing the pool size, the
 	// web UI) and its slots can be resized from the web UI while we run: ask
 	// again every so often and follow. One prudyntctl every 30 s is nothing.
-	geoTick := time.NewTicker(30 * time.Second)
-	defer geoTick.Stop()
+	// It runs off the render loop: a prudynt that does not answer must not
+	// hold up the drawing (or the exit) for the 5 s the query may take.
+	geoCh := make(chan map[string]SlotGeometry, 1)
+	go func() {
+		t := time.NewTicker(30 * time.Second)
+		defer t.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-t.C:
+				if g, ok := askPrudynt(ctx, names); ok {
+					select {
+					case geoCh <- g:
+					case <-ctx.Done():
+						return
+					}
+				}
+			}
+		}
+	}()
 	report := func(slot, msg string) {
 		if lastErr[slot] != msg {
 			log.Printf("slot %s: %s", slot, msg)
@@ -158,13 +177,11 @@ loop:
 		select {
 		case <-ctx.Done():
 			break loop
-		case <-geoTick.C:
-			if g, ok := askPrudynt(names); ok {
-				for _, s := range slots {
-					if s.follow(g[s.Name], cfg.Slots[s.Name]) {
-						log.Printf("slot %s: now %s", s.Name, g[s.Name])
-						delete(last, s.Name) // redraw with the new size
-					}
+		case g := <-geoCh:
+			for _, s := range slots {
+				if s.follow(g[s.Name], cfg.Slots[s.Name]) {
+					log.Printf("slot %s: now %s", s.Name, g[s.Name])
+					delete(last, s.Name) // redraw with the new size
 				}
 			}
 		case now := <-t.C:

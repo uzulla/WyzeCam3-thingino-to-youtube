@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"time"
 )
@@ -69,6 +70,11 @@ func loadConfig(path string) (*Config, error) {
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(&c); err != nil {
 		return nil, fmt.Errorf("%s: %w", path, err)
+	}
+	// One JSON value and nothing after it (a second object pasted below the
+	// first would otherwise be ignored without a word)
+	if err := dec.Decode(new(json.RawMessage)); err != io.EOF {
+		return nil, fmt.Errorf("%s: unexpected content after the JSON object", path)
 	}
 	if len(c.Slots) == 0 {
 		return nil, fmt.Errorf("%s: no slots", path)

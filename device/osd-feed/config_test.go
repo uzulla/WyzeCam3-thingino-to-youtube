@@ -21,6 +21,7 @@ func TestLoadConfigRejects(t *testing.T) {
 		"no slots":       `{"sources":{"m":{"type":"meminfo"}}}`,
 		"unknown source": `{"sources":{"m":{"type":"memory"}},"slots":{"textfile":{"template":"x"}}}`,
 		"broken json":    `{"slots":`,
+		"trailing value": `{"slots":{"textfile":{"template":"x"}}} {"slots":{}}`,
 	} {
 		if _, err := loadConfig(writeCfg(t, body)); err == nil {
 			t.Errorf("%s: must fail", name)

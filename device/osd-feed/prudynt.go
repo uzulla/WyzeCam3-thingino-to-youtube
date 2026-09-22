@@ -27,7 +27,7 @@ var defaultGeometry = map[string]SlotGeometry{
 // prudyntctl (the same query docs/osd.md shows). Slots it does not know (a
 // prudynt without the OSD patch) fall back to the defaults; the second result
 // says whether prudynt answered at all.
-func askPrudynt(names []string) (map[string]SlotGeometry, bool) {
+func askPrudynt(ctx context.Context, names []string) (map[string]SlotGeometry, bool) {
 	out := map[string]SlotGeometry{}
 	for _, n := range names {
 		out[n] = defaultGeometry[n]
@@ -37,7 +37,7 @@ func askPrudynt(names []string) (map[string]SlotGeometry, bool) {
 		q[n] = nil
 	}
 	body, _ := json.Marshal(map[string]any{"osd": q})
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 	raw, err := exec.CommandContext(ctx, "prudyntctl", "json", string(body)).Output()
 	if err != nil {
