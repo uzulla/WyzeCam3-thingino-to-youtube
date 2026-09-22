@@ -20,7 +20,8 @@
 # Applied on every boot, only when the content changed (no needless flash
 # writes). The card is the source of truth: fix the file and reboot to recover
 # from a typo. Pulling the card does NOT restore the previous config; that one
-# is kept once as /etc/wpa_supplicant.conf.before-sd.
+# is kept once as /etc/wpa_supplicant.conf.before-sd. The checksum of the last
+# applied file is kept in /etc/wpa_supplicant.conf.sd-md5.
 
 SRC="${WIFI_SD_SRC:-/mnt/mmcblk0p1/wpa_supplicant.conf}"
 DST="${WIFI_SD_DST:-/etc/wpa_supplicant.conf}"
@@ -66,7 +67,12 @@ if [ -f "$UENV" ] && grep -q '^wlan_ssid=' "$UENV"; then
 	log "WARNING: $UENV also sets wlan_ssid - Thingino applies it after this and overwrites the result. Remove one of the two."
 fi
 
-if [ -f "$DST" ] && [ "$(md5sum <"$tmp")" = "$(md5sum <"$DST")" ]; then
+# wpa_supplicant rewrites $DST itself while running (update_config=1: it adds
+# dik= lines, drops ap_scan=, reformats), so comparing with $DST would see a
+# change on every boot. Remember what was applied instead.
+STAMP="$DST.sd-md5"
+sum=$(md5sum <"$tmp" | cut -d' ' -f1)
+if [ -f "$STAMP" ] && [ "$(cat "$STAMP")" = "$sum" ]; then
 	exit 0
 fi
 
@@ -88,5 +94,6 @@ if ! mv "$new" "$DST"; then
 	log "FAILED to replace $DST - keeping the current Wi-Fi config"
 	exit 0
 fi
+echo "$sum" >"$STAMP"
 sync
 log "applied $SRC ($(grep -c '^[[:space:]]*network={' "$DST") network(s))"
