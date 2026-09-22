@@ -22,7 +22,10 @@ osd-feed (Go、SD カードから実行)
 - prudynt との約束は [osd.md](osd.md) のとおり: tmpfs 上に一時ファイルを書いて `mv`。**フラッシュには何も書かない**
 - 矩形の**有効化・位置・大きさは osd-feed の仕事ではない**。従来どおり SD の `prudynt-osd.json` か
   [Web UI](osd.md#web-ui-から編集する) で行う (有効になっていないスロットに書いても映らない。起動時のログに出る)
-- Web UI の Show / Clear と同じファイルを書くので、osd-feed が動いている間は Show は使わない (すぐ上書きされる)
+- Web UI の Show / Clear と同じファイルを書くので、osd-feed が動いている間は Show は使わない (次の描画で上書きされる。
+  Clear で消した場合も、ファイルが無いのに気づいて書き直す)
+- **SD カードは動作中に抜かない前提** (バイナリを SD から直接実行している。抜くとプロセスが異常終了し、終了時の
+  ファイル削除も走らないので、最後の表示が残る)
 
 ## インストール
 
@@ -72,7 +75,7 @@ device/install-osd-feed.sh root@<camera-ip>       # SD にバイナリと (無�
 | `meminfo` | `free_kb` `free_mb` `total_mb` `used_pct` (buffers/cache は空きに数える。`free` コマンドと同じ) | — |
 | `tick` | `n` (0→max をループ) `pct` (n の百分率) `max` | `step` (1 回の増分、既定 1)、`max` (既定 100)。`interval_ms` 100 で 10 秒で 1 周 |
 | `clock` | `hms` `date` `unix` (カメラのローカル時刻。`/etc/TZ` の POSIX 形式を読む。DST の規則は無視) | — |
-| `http` | GET した JSON オブジェクトのメンバーがそのままキー (入れ子もそのまま `.car.gps.lat`)。JSON でなければ `body` (文字列)。`status` は HTTP ステータス | `url` (必須)、`timeout_ms` (既定 3000)、`headers` (`{"Authorization": "..."}`) |
+| `http` | GET した JSON オブジェクトのメンバーがキー。**入れ子のオブジェクトは `_` でつないで平らにする** (`{"gps":{"lat":35.6}}` → `.car.gps_lat`。取得前や欠けている時に空文字で済ませるため)。配列はそのまま (`{{index .car.list 0}}`)。JSON でなければ `body` (文字列)。`status` は常に HTTP ステータス (同名の JSON メンバーは見えない) | `url` (必須)、`timeout_ms` (既定 3000)、`headers` (`{"Authorization": "..."}`) |
 
 どの source にも **`ok`** (直前の取得が成功した) と **`age_s`** (最後に成功してからの秒数。一度も無ければ -1) が付く。
 取得に失敗しても前回の値は残るので、外部データが途切れた時の見せ方はテンプレート側で決める:

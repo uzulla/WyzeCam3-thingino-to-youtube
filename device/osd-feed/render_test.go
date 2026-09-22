@@ -1,6 +1,7 @@
 package main
 
 import (
+	"os"
 	"testing"
 	"time"
 )
@@ -88,5 +89,23 @@ func TestFollowRespectsPinnedValues(t *testing.T) {
 	}
 	if s.follow(SlotGeometry{Path: "/run/b", Cols: 50, Rows: 8}, SlotConfig{Cols: 20}) {
 		t.Error("same geometry must not report a change")
+	}
+}
+
+func TestFileHoldsDetectsRemovalAndReplacement(t *testing.T) {
+	p := t.TempDir() + "/osd-text"
+	if err := writeSlot(p, "abc\n"); err != nil {
+		t.Fatal(err)
+	}
+	if !fileHolds(p, "abc\n") {
+		t.Error("just written file must hold the text")
+	}
+	os.WriteFile(p, []byte("x"), 0o644)
+	if fileHolds(p, "abc\n") {
+		t.Error("a file replaced by someone else must be noticed")
+	}
+	os.Remove(p)
+	if fileHolds(p, "abc\n") {
+		t.Error("a removed file must be noticed")
 	}
 }

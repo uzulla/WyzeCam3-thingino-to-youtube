@@ -215,10 +215,14 @@ func (t *tickSource) Poll(context.Context) (Values, error) {
 	return Values{"n": t.n, "pct": t.n * 100 / t.max, "max": t.max}, nil
 }
 
-// ---- http: GET url, expect a JSON object; its top-level members become the
-// keys (nested objects stay nested: .car.gps.lat). A non-object or non-JSON
-// body is exposed as "body" (string). "status" is always the HTTP status code
-// (a JSON member called "status" is not visible).
+// ---- http: GET url, expect a JSON object; its members become the keys.
+// Nested objects are flattened with "_" ({"gps":{"lat":1}} -> gps_lat), because
+// a template cannot step into a nested value that is not there yet (before
+// the first poll, or when the server left it out) without failing; one level
+// of keys, blank when missing, is what the overlay needs. Arrays are kept as
+// they are ({{index .car.list 0}}). A non-object or non-JSON body is exposed
+// as "body" (string). "status" is always the HTTP status code (a JSON member
+// called "status" is not visible).
 
 type httpSource struct {
 	url     string
@@ -255,10 +259,8 @@ func (h *httpSource) Poll(ctx context.Context) (Values, error) {
 	}
 	v := Values{}
 	var obj map[string]any
-	if json.Unmarshal(body, &obj) == nil {
-		for k, val := range obj {
-			v[k] = val
-		}
+	if json.Unmarshal(body, &obj) == nil && obj != nil { // "null" decodes to a nil map
+		flatten("", obj, v)
 	} else {
 		v["body"] = strings.TrimSpace(string(body))
 	}
@@ -266,4 +268,16 @@ func (h *httpSource) Poll(ctx context.Context) (Values, error) {
 	// JSON has a member of that name
 	v["status"] = resp.StatusCode
 	return v, nil
+}
+
+// flatten - nested objects into prefix_key entries of out
+func flatten(prefix string, obj map[string]any, out Values) {
+	for k, val := range obj {
+		key := prefix + k
+		if sub, ok := val.(map[string]any); ok {
+			flatten(key+"_", sub, out)
+			continue
+		}
+		out[key] = val
+	}
 }
