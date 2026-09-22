@@ -154,8 +154,10 @@ service disable youtube-relay   # boot 時の自動開始を無効化
 service enable youtube-relay    # 有効化
 ```
 
-設定変更 (`/etc/youtube-relay.json` 編集) 後は `service restart youtube-relay`。`stop` は supervisor と ffmpeg が
-終わるまで待ってから戻る (最大 45 秒。待たずに `start` すると新旧 2 つが同じキーへ publish する)。
+設定変更後は `service restart youtube-relay`。編集するのは **relay が使っている方のファイル** (SD カードに
+`youtube-relay.json` があればそちらが優先され、`/etc/youtube-relay.json` を直しても反映されない。次の節)。Web UI の
+ページは使っている方に書く。`stop` は supervisor と ffmpeg が終わるまで待ってから戻る (最大 45 秒。待たずに `start`
+すると新旧 2 つが同じキーへ publish する)。
 
 ## Web UI
 
@@ -177,7 +179,14 @@ service enable youtube-relay    # 有効化
 - **Log**: `logread` の youtube-relay 行 (キーは relay が伏せている)。5 秒ごとに更新
 - 裏側の CGI は `/x/json-youtube.cgi` (`?action=status` / `save[&restart=1]` / `service&op=…`)。Thingino の認証 (セッション
   Cookie か `?token=<API キー>`) を通せばカメラ外からも使える。ストリームキーは認証済みのブラウザにそのまま返す
-  (Thingino が API キーや Wi-Fi のパスワードを画面に出すのと同じ扱い。[下記](#ストリームキーの取り扱い))
+  (Thingino が API キーや Wi-Fi のパスワードを画面に出すのと同じ扱い。[下記](#ストリームキーの取り扱い))。
+  Thingino の Web UI は平文 HTTP なので、**LAN の外からは使わない** (この CGI に限らず、ログイン情報も API キーも
+  ストリームキーも平文で流れる。`?token=` は URL に残るのでブラウザ履歴やプロキシのログにも載る)。カメラ外の
+  プログラムから叩くのは同じ LAN 内 (または VPN 越し) に限る
+- Restart / Stop は supervisor の終了を待つので、詰まっている時は最大 45 秒応答が返らない (uhttpd は CGI を
+  打ち切らない設定 `-t 0`。実機で 40 秒無応答の CGI が通ることを確認)。普段は 2 秒程度
+- 「Restart prudynt」は Thingino 標準の `/x/restart-prudynt.cgi` を呼ぶ (対応ファーム ciao+da40db6 に入っている。
+  無いファームでは 404 になり、ページにエラーが出るだけ)
 - 手で入れるなら: `device/www/youtube.html` → `/var/www/youtube.html` (644)、`device/www/x/json-youtube.cgi` → `/var/www/x/json-youtube.cgi`
   (755)、メニューは `/var/www/a/plugins.js` の `cfg.plugins = {` の次の行に install.sh が挿している 1 行 (`"youtube-relay": {…},`) を足して 644 にする
   (無くても URL で開ける)
