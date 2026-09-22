@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -72,17 +73,19 @@ func parsePosixTZ(spec string) (*time.Location, bool, error) {
 	if start == i {
 		return nil, false, fmt.Errorf("no offset")
 	}
-	var h, m, s int
 	parts := strings.Split(spec[start:i], ":")
-	if _, err := fmt.Sscanf(parts[0], "%d", &h); err != nil {
-		return nil, false, err
+	if len(parts) > 3 {
+		return nil, false, fmt.Errorf("offset %q: too many parts", spec[start:i])
 	}
-	if len(parts) > 1 {
-		fmt.Sscanf(parts[1], "%d", &m)
+	var hms [3]int
+	for k, part := range parts {
+		n, err := strconv.Atoi(part)
+		if err != nil || n < 0 {
+			return nil, false, fmt.Errorf("offset %q: bad %s", spec[start:i], [...]string{"hours", "minutes", "seconds"}[k])
+		}
+		hms[k] = n
 	}
-	if len(parts) > 2 {
-		fmt.Sscanf(parts[2], "%d", &s)
-	}
+	h, m, s := hms[0], hms[1], hms[2]
 	if h > 24 || m > 59 || s > 59 {
 		return nil, false, fmt.Errorf("offset out of range")
 	}

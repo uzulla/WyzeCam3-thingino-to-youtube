@@ -18,6 +18,10 @@ func TestParsePosixTZ(t *testing.T) {
 		{"", "", 0, false, true},
 		{"JST", "", 0, false, true},
 		{"-9", "", 0, false, true},
+		{"JST-9::30", "", 0, false, true},
+		{"JST-9:", "", 0, false, true},
+		{"JST-9:30:00:1", "", 0, false, true},
+		{"JST-9:x", "", 0, false, true},
 	}
 	for _, c := range cases {
 		loc, dst, err := parsePosixTZ(c.spec)

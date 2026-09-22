@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -58,7 +59,10 @@ func loadConfig(path string) (*Config, error) {
 		return nil, err
 	}
 	var c Config
-	if err := json.Unmarshal(b, &c); err != nil {
+	// A misspelt key ("intervl_ms") must not silently become the default
+	dec := json.NewDecoder(bytes.NewReader(b))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&c); err != nil {
 		return nil, fmt.Errorf("%s: %w", path, err)
 	}
 	if len(c.Slots) == 0 {

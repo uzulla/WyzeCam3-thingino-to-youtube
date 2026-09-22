@@ -1,6 +1,7 @@
 package main
 
 import (
+	"os"
 	"testing"
 	"time"
 )
@@ -55,5 +56,20 @@ func TestRegisteredSourceRendersBlankUntilPolled(t *testing.T) {
 	}
 	if out != "v= ok=false age=-1\n" {
 		t.Errorf("got %q", out)
+	}
+}
+
+func TestTruncByRune(t *testing.T) {
+	if got := funcs["trunc"].(func(int, any) string)(2, "日A本"); got != "日A" {
+		t.Errorf("got %q", got)
+	}
+}
+
+func TestUnknownConfigKeyRejected(t *testing.T) {
+	f, _ := os.CreateTemp(t.TempDir(), "cfg")
+	f.WriteString(`{"intervl_ms": 100, "slots": {"textfile": {"template": "x"}}}`)
+	f.Close()
+	if _, err := loadConfig(f.Name()); err == nil {
+		t.Fatal("misspelt key must be an error")
 	}
 }

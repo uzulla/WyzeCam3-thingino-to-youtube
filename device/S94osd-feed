@@ -44,6 +44,11 @@ start() {
 	fi
 }
 
+# stop - TERM, then wait (up to 10 s) until the process is gone. osd-feed
+# removes the overlay files as it exits: a new instance started before the old
+# one has finished would have its first output deleted, so "restart" and the
+# installer must not go on while the old one is still there. On failure the
+# pidfile is kept and the exit status is 1.
 stop() {
 	echo -n "Stopping $DAEMON: "
 	if ! running; then
@@ -51,11 +56,21 @@ stop() {
 		rm -f "$PIDFILE"
 		return 0
 	fi
-	if start-stop-daemon -K -p "$PIDFILE" -s TERM 2>/dev/null; then
-		echo "OK"
-	else
-		echo "FAIL (not running?)"
+	pid=$(cat "$PIDFILE")
+	if ! start-stop-daemon -K -p "$PIDFILE" -s TERM 2>/dev/null; then
+		echo "FAIL (could not signal pid $pid)"
+		return 1
 	fi
+	i=0
+	while [ -d "/proc/$pid" ] && [ $i -lt 100 ]; do
+		usleep 100000
+		i=$((i + 1))
+	done
+	if [ -d "/proc/$pid" ]; then
+		echo "FAIL (pid $pid still running after 10 s)"
+		return 1
+	fi
+	echo "OK"
 	rm -f "$PIDFILE"
 }
 
@@ -63,8 +78,7 @@ case "$1" in
 	start) start ;;
 	stop) stop ;;
 	restart)
-		stop
-		sleep 1
+		stop || exit 1
 		start
 		;;
 	status)

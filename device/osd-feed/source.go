@@ -217,7 +217,8 @@ func (t *tickSource) Poll(context.Context) (Values, error) {
 
 // ---- http: GET url, expect a JSON object; its top-level members become the
 // keys (nested objects stay nested: .car.gps.lat). A non-object or non-JSON
-// body is exposed as "body" (string). "status" is the HTTP status code.
+// body is exposed as "body" (string). "status" is always the HTTP status code
+// (a JSON member called "status" is not visible).
 
 type httpSource struct {
 	url     string
@@ -252,7 +253,7 @@ func (h *httpSource) Poll(ctx context.Context) (Values, error) {
 	if resp.StatusCode/100 != 2 {
 		return nil, fmt.Errorf("HTTP %d", resp.StatusCode)
 	}
-	v := Values{"status": resp.StatusCode}
+	v := Values{}
 	var obj map[string]any
 	if json.Unmarshal(body, &obj) == nil {
 		for k, val := range obj {
@@ -261,5 +262,8 @@ func (h *httpSource) Poll(ctx context.Context) (Values, error) {
 	} else {
 		v["body"] = strings.TrimSpace(string(body))
 	}
+	// Set last: "status" is the HTTP status code as documented, even when the
+	// JSON has a member of that name
+	v["status"] = resp.StatusCode
 	return v, nil
 }

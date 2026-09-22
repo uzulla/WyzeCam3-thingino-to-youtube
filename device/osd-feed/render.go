@@ -33,11 +33,13 @@ var funcs = template.FuncMap{
 	"lpad": func(n int, v any) string { return fmt.Sprintf("%*s", n, fmt.Sprint(v)) },
 	"rpad": func(n int, v any) string { return fmt.Sprintf("%-*s", n, fmt.Sprint(v)) },
 	"trunc": func(n int, v any) string {
-		s := fmt.Sprint(v)
-		if n >= 0 && len(s) > n {
-			return s[:n]
+		// by rune, not byte: a cut inside a multi-byte character would
+		// leave invalid UTF-8 and show as two '?' instead of one
+		r := []rune(fmt.Sprint(v))
+		if n >= 0 && len(r) > n {
+			return string(r[:n])
 		}
-		return s
+		return string(r)
 	},
 }
 

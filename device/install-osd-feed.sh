@@ -36,8 +36,13 @@ fi
 
 echo "Installing osd-feed"
 # Stop first, then replace the binary: simpler than reasoning about renaming
-# over a running executable on exFAT
-ssh "$CAM" '[ -x /etc/init.d/S94osd-feed ] && /etc/init.d/S94osd-feed stop >/dev/null 2>&1; true'
+# over a running executable on exFAT. The init script's stop waits for the
+# process to be gone (its exit removes the overlay files, which must not
+# happen after the new one has started); if it will not stop, give up.
+if ! ssh "$CAM" '[ -x /etc/init.d/S94osd-feed ] || exit 0; /etc/init.d/S94osd-feed stop'; then
+	echo "the running osd-feed did not stop - nothing was changed" >&2
+	exit 1
+fi
 push "$BIN" "$SD/osd-feed" 755
 push "$HERE/S94osd-feed" /etc/init.d/S94osd-feed 755
 if ssh "$CAM" "[ -f $SD/osd-feed.json ]"; then

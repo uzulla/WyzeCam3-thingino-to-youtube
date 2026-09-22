@@ -160,7 +160,8 @@ prudynt (Thingino のストリーマ) へのパッチ `patches/prudynt-osd-textf
 0.5 秒単位で更新できます。操作側は tmpfs 上のファイルを `mv` で置き換えるだけで、ファームの焼き直しは不要です。
 矩形の位置や大きさ、表示するテキストは Thingino の Web UI (Streamer → OSD text) からも編集でき、設定は SD カードに保存されます。
 表示内容を自動で更新する側のプログラム (`osd-feed`: メモリ量やカウンタ、HTTP で取った JSON をテンプレートで並べる) は
-[docs/osd-feed.md](docs/osd-feed.md)。使い方と設定は [docs/osd.md](docs/osd.md)、ビルドは [docs/build.md](docs/build.md)。
+[docs/osd-feed.md](docs/osd-feed.md) (ビルドは `device/osd-feed/build.sh`)。OSD 自体の使い方と設定は [docs/osd.md](docs/osd.md)、
+prudynt のビルドは [docs/build.md](docs/build.md)。
 
 ## 補足
 
