@@ -165,8 +165,10 @@ extradata が作られるので不要だが、sprop を出さないカメラだ�
 
 ### ライセンス
 
-`--enable-mbedtls` は `--enable-version3` が必須 (mbedTLS が Apache-2.0 のため)。
-結果のバイナリは **LGPL v3** 相当。thingino-ffmpeg は元から version3 有効なので追加対応不要。
+`--enable-mbedtls` は `--enable-version3` が必須 (mbedTLS が Apache-2.0 のため)。thingino-ffmpeg は
+`--enable-gpl --enable-version3` なので、結果のバイナリは **GPL v3 or later** (`ffmpeg -L` がそう表示する。
+`--enable-gpl` を外せば LGPL v3 になるが、Thingino のレシピを上書きする必要がある)。バイナリを配布するなら
+GPLv3 §6 の対応ソースの提示が要る。リポジトリ全体の整理は [LICENSE.md](LICENSE.md)。
 
 ---
 
