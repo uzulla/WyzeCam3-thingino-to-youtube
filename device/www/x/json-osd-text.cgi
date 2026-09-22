@@ -46,10 +46,12 @@ fail() {
 	send_json "{\"error\":\"$(json_escape "$1")\"}" "${2:-400 Bad Request}"
 }
 
-# json_escape <string> - escape for a JSON string (the texts are ASCII, and logread
-# lines have nothing beyond quotes, backslashes and tabs worth caring about)
+# json_escape <string> - escape for a JSON string. Control characters other than
+# tab / CR / LF are dropped first: JSON.parse rejects them raw, and one stray
+# byte in an overlay file or a log line would break the whole status answer
+# (prudynt shows them as blanks anyway).
 json_escape() {
-	printf '%s' "$1" | sed \
+	printf '%s' "$1" | tr -d '\000-\010\013\014\016-\037\177' | sed \
 		-e 's/\\/\\\\/g' \
 		-e 's/"/\\"/g' \
 		-e 's/	/\\t/g' \

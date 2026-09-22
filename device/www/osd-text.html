@@ -302,7 +302,12 @@
   }
 
   function readBurnin() {
-    var o = {enabled: $('burnin_enabled').checked, format: $('burnin_format').value};
+    var o = {enabled: $('burnin_enabled').checked};
+    // An empty format is not a setting anyone wants (no text at all): it is the
+    // field never having been filled (prudynt did not answer). Do not send it,
+    // or a Save would overwrite the format in the file with "".
+    var fmt = $('burnin_format').value;
+    if (fmt !== '') o.format = fmt;
     var n = readNum('burnin_scale', 0, 10);
     if (n !== undefined) o.scale = n;
     COLORS.forEach(function(c) {
@@ -352,16 +357,22 @@
     } else {
       notify('warning', 'prudynt did not answer the osd.textfile query (not running, or built without the OSD patch)');
     }
-    $('pool_size').value = s.pool_size;
+    // The pool field starts from what the file asks for, not from what prudynt
+    // runs with: a value osd-config has not applied yet (or refused) must not
+    // be overwritten by a Save that did not touch the field. The confirm in
+    // save() compares with the applied value, which is what decides a restart.
+    var filePool = s.config && s.config.general && typeof s.config.general.osd_pool_size === 'number' ? s.config.general.osd_pool_size : undefined;
+    $('pool_size').value = filePool !== undefined ? filePool : s.pool_size;
     SLOTS.forEach(function(sl) {
       var t = s.texts ? s.texts[sl.key] : null;
       el(sl.key, 'text').value = t == null ? '' : t;
       updateHint(sl.key, t != null);
     });
     $('config_path').textContent = s.config_path;
-    var cstate = s.config_error ? s.config_error
+    var merged = (s.config && s.config_source && s.config_source !== s.config_path) ? 'the form is merged into ' + s.config_source + ' (what osd-config uses now)' : '';
+    var cstate = s.config_error ? s.config_error + (merged ? '; ' + merged : '')
       : !s.config ? 'no file yet, created on save'
-      : (s.config_source && s.config_source !== s.config_path) ? 'no file yet; the form is merged into ' + s.config_source + ' (what osd-config uses now)'
+      : merged ? 'no file yet; ' + merged
       : 'exists';
     $('config_state').textContent = cstate;
     $('config_state').className = s.config_error ? 'text-warning' : '';
