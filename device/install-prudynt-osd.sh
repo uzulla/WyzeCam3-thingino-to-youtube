@@ -83,7 +83,8 @@ if ! ssh "$CAM" 'f=/etc/init.d/S31prudynt
 		sed -e "s|pidof \"\$DAEMON\"|pidof \"\${DAEMON##*/}\"|" \
 			-e "s|killall \"\$DAEMON\"|killall \"\${DAEMON##*/}\"|" \
 			-e "s|killall -9 \"\$DAEMON\"|killall -9 \"\${DAEMON##*/}\"|" $f > $f.new \
-			&& sh -n $f.new && ! grep -q "pidof \"\$DAEMON\"" $f.new && grep -q "pidof \"\${DAEMON##\*/}\"" $f.new \
+			&& sh -n $f.new && ! grep -q "pidof \"\$DAEMON\"" $f.new && ! grep -q "killall \"\$DAEMON\"" $f.new \
+			&& grep -q "pidof \"\${DAEMON##\*/}\"" $f.new \
 			&& chmod 755 $f.new && mv $f.new $f \
 			&& echo "  S31prudynt: liveness check by name (restart works with the bind mount)" \
 			|| { rm -f $f.new; echo "could not edit $f" >&2; exit 1; }
@@ -93,8 +94,8 @@ if ! ssh "$CAM" 'f=/etc/init.d/S31prudynt
 		echo "$f does not look as expected (neither pidof \"\$DAEMON\" nor the edited form)" >&2
 		exit 1
 	fi'; then
-	echo "Thingino'"'"'s /etc/init.d/S31prudynt could not be adjusted for the bind mount (see above)." >&2
-	echo "With it unchanged, Thingino'"'"'s own \"Restart streamer\" would leave the camera without prudynt - nothing was switched." >&2
+	echo "The Thingino init script /etc/init.d/S31prudynt could not be adjusted for the bind mount (see above)." >&2
+	echo "Unchanged, the Thingino menu entry 'Restart streamer' would leave the camera without prudynt - nothing was switched." >&2
 	exit 1
 fi
 
