@@ -71,6 +71,8 @@ Thingino の Web UI の Streamer メニュー → **OSD text** (`http://<camera-
 (有効、位置、桁×行、倍率、色) と日時 (`osd.burnin`) の書式・倍率・色、`general.osd_pool_size`、そして
 矩形ごとのテキストの中身を編集できる。レイアウトの確認用で、下の節の JSON を手で書くのと同じことが GUI でできる。
 
+![OSD text ページ](images/osd-text-webui.png)
+
 - プレビューは既存ページと同じ MJPEG。テキストは映像に焼き込まれるので、配信に出るものがそのまま映る
 - **Show** / **Clear** は矩形のファイル (`/run/prudynt/osd-text*`) を書く/消す (上の `mv` の手順と同じ。tmpfs のみ)。
   桁数・行数を超える行や ASCII 以外の文字はテキスト欄の下に警告が出る (prudynt 側では切り捨て/空白になる)。
