@@ -104,6 +104,7 @@ git 管理外です。必要な変更はすべて `patches/` に分離してあ�
 | [docs/osd.md](docs/osd.md) | 映像にテキストを重ねる (OSD テキストオーバーレイ): インストール、使い方、設定項目、SD カードの設定ファイル、大きさの上限 |
 | [docs/wifi-from-sd.md](docs/wifi-from-sd.md) | Wi-Fi 設定を SD カードで運ぶ |
 | [docs/netwatch.md](docs/netwatch.md) | netwatch (ping 失敗での OS 再起動) の無効化 |
+| [docs/cellular.md](docs/cellular.md) | セルラー回線 (車載) での配信: 送信量 (RTMPS の枝葉、平文 RTMP)、切断からの復帰の実測、チューニングの選択肢 |
 | [docs/troubleshooting.md](docs/troubleshooting.md) | 症状別の対処 |
 | [docs/build.md](docs/build.md) | ffmpeg / prudynt のビルド手順 |
 | [device/README.md](device/README.md) | `device/` のファイル一覧 |
