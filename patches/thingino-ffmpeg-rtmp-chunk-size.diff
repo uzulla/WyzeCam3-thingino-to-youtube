@@ -1,3 +1,12 @@
+SPDX-License-Identifier: GPL-3.0-or-later
+Copyright (c) 2026 uzulla aka Junichi Ishida <zishida@gmail.com>
+
+A change to FFmpeg's libavformat/rtmpproto.c (LGPL-2.1-or-later upstream). The
+additions in this patch are licensed under the GNU General Public License,
+version 3 or later; see LICENSES/GPL-3.0-or-later.txt and LICENSE.md in
+https://github.com/uzulla/WyzeCam3-thingino-to-youtube. Text before the first
+"diff --git" line is ignored by patch(1) and git apply.
+
 diff --git a/libavformat/rtmpproto.c b/libavformat/rtmpproto.c
 --- a/libavformat/rtmpproto.c
 +++ b/libavformat/rtmpproto.c

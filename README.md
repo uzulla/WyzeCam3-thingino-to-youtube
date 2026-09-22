@@ -93,6 +93,7 @@ device/    カメラ側の常設運用一式 (ファイルの一覧は device/RE
 docs/      使い方と設定の文書 (下の「ドキュメント」参照)
 NOTES.md   実装の詳細・設計判断・ハマりどころ・実測値の記録 (手順は書かない)
 dist/      ビルド成果物 (git 管理外)。配布は GitHub Releases (ffmpeg バイナリ単体) で行う
+LICENSE    MIT (例外は LICENSE.md)。LICENSES/ に GPL-3.0 と FFmpeg のライセンス本文
 ```
 
 OS (Thingino) の更新・バックアップ・設定変更と、このリポジトリの成果物のインストールは分けてあります。
@@ -167,9 +168,11 @@ prudynt のビルドは [docs/build.md](docs/build.md)。
 
 ## 補足
 
-- **ライセンス**: この構成の FFmpeg バイナリは `--enable-gpl --enable-version3 --enable-mbedtls`
-  でビルドされるため **LGPL v3 / GPL v3** 相当です。バイナリ配布時は FFmpeg / mbedTLS の
-  ライセンス表記に従ってください
+- **ライセンス**: このリポジトリは **MIT** ([LICENSE](LICENSE))。例外は 2 つ: FFmpeg のソースを変える
+  `patches/thingino-ffmpeg-rtmp-chunk-size.diff` と Releases の FFmpeg バイナリは **GPL-3.0-or-later**
+  (`--enable-gpl --enable-version3 --enable-mbedtls` でビルドされ、バイナリ自身が `ffmpeg -L` でそう表示する。
+  対応ソースの入手先は [LICENSE.md](LICENSE.md))、prudynt のパッチは上流 prudynt-t にライセンス表記が無いため
+  追加分だけが MIT。部品ごとの一覧は [LICENSE.md](LICENSE.md)
 - **TLS 証明書検証**: FFmpeg 8.x のデフォルトでは無効です (通信は暗号化されます)。
   検証したい場合は CA バンドルを置き `-tls_verify 1 -ca_file <path>` を付けてください
 - **ストリームキー**: シェル履歴やログに残ります。露出した場合は YouTube Studio で再生成を
