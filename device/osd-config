@@ -104,8 +104,8 @@ prudynt_up() {
 	return 1
 }
 
-# restart_prudynt - 0 once the new prudynt answers, 1 if it died, 2 if the old
-# one would not stop (nothing was restarted then). "S31prudynt stop" (and so its
+# restart_prudynt - 0 once the new prudynt answers, 1 if it died or does not
+# answer within 30 s, 2 if the old one would not stop (nothing was restarted then). "S31prudynt stop" (and so its
 # restart) can return before prudynt is gone, and the new one then quits with
 # "Another Prudynt instance appears to be running": wait for the old one ourselves.
 restart_prudynt() {
@@ -124,8 +124,9 @@ restart_prudynt() {
 		[ $i -ge 5 ] && [ -z "$(pidof prudynt)" ] && return 1
 		i=$((i + 1))
 	done
-	# Alive but silent after 30 s: leave it, the osd loop will keep retrying
-	[ -n "$(pidof prudynt)" ]
+	# Alive but silent after 30 s (normal start-up is a few seconds): failure,
+	# the caller goes back to the old size rather than trusting it.
+	return 1
 }
 
 # apply_pool <cfg> - general.osd_pool_size from the config file into
