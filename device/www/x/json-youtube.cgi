@@ -19,6 +19,12 @@
 #           by itself within 15 s, but keeps streaming with the old key/URL.
 #   POST ?action=service&op=start|stop|restart|enable|disable
 #        -> "service <op> youtube-relay" (enable/disable = start at boot)
+#   POST ?action=service&op=restart-prudynt
+#        -> stop prudynt, wait until it is really gone, start it, wait until it
+#           answers. Thingino's own "service restart prudynt" starts the new one
+#           while the old one is still shutting down, and the new one then quits
+#           with "Another Prudynt instance appears to be running" - leaving no
+#           prudynt at all (seen on this camera).
 #
 # The stream key goes to the authenticated browser in clear, as Thingino does
 # with the API key and the Wi-Fi password.
@@ -64,7 +70,7 @@ set -f
 for pair in $(printf '%s' "$QUERY_STRING" | tr '&' ' '); do
 	case "$pair" in
 	action=status | action=save | action=service) action=${pair#action=} ;;
-	op=start | op=stop | op=restart | op=enable | op=disable) op=${pair#op=} ;;
+	op=start | op=stop | op=restart | op=enable | op=disable | op=restart-prudynt) op=${pair#op=} ;;
 	restart=1) restart=1 ;;
 	esac
 done
@@ -103,6 +109,33 @@ is_relay() {
 regular_or_absent() {
 	[ ! -e "$1" ] && [ ! -L "$1" ] && return 0
 	[ -f "$1" ] && [ ! -L "$1" ]
+}
+
+# restart_prudynt - the sequence osd-config uses (device/osd-config): stop, wait
+# for the process to be gone (its init script returns early), start, wait for
+# an answer. Sends the JSON reply itself.
+PRUDYNT_INIT=/etc/init.d/S31prudynt
+restart_prudynt() {
+	[ -f "$PRUDYNT_INIT" ] || fail "$PRUDYNT_INIT not found" "409 Conflict"
+	t0=$(date +%s)
+	sh "$PRUDYNT_INIT" stop >/dev/null 2>&1
+	i=0
+	while pidof prudynt >/dev/null && [ $i -lt 20 ]; do
+		sleep 1
+		i=$((i + 1))
+	done
+	pidof prudynt >/dev/null && fail "prudynt did not stop within 20 s - not starting a second one" "500 Internal Server Error"
+	sh "$PRUDYNT_INIT" start >/dev/null 2>&1
+	i=0
+	while [ $i -lt 30 ]; do
+		sleep 1
+		i=$((i + 1))
+		case $(prudyntctl json '{"general":{"loglevel":null}}' 2>/dev/null) in
+		"{"*) send_json "{\"ok\":true,\"op\":\"restart-prudynt\",\"pid\":$(pidof prudynt | cut -d' ' -f1),\"seconds\":$(($(date +%s) - t0))}" ;;
+		esac
+		[ $i -ge 5 ] && ! pidof prudynt >/dev/null && fail "prudynt exited right after starting - see logread" "500 Internal Server Error"
+	done
+	fail "prudynt started but does not answer after 30 s" "500 Internal Server Error"
 }
 
 # One save / service operation at a time: a Stop arriving while a restart
@@ -234,7 +267,11 @@ save)
 
 service)
 	[ "$REQUEST_METHOD" = POST ] || fail "POST required" "405 Method Not Allowed"
-	[ -n "$op" ] || fail "op=start|stop|restart|enable|disable required"
+	[ -n "$op" ] || fail "op=start|stop|restart|enable|disable|restart-prudynt required"
+	if [ "$op" = restart-prudynt ]; then
+		service_lock
+		restart_prudynt
+	fi
 	[ -f "$INIT" ] || fail "$INIT is not installed" "409 Conflict"
 	service_lock
 	# start/stop/restart mean "now", independent of "at boot": run the script

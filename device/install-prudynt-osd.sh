@@ -9,7 +9,7 @@
 # it over /usr/bin/prudynt at boot. Also adds the "OSD text" page to Thingino's web
 # UI (the Streamer menu entry that led to Thingino's own OSD page is pointed at it).
 # Undo:
-#   ssh root@<camera-ip> 'rm /etc/init.d/S30prudynt-osd /etc/init.d/S93osd-config /usr/bin/prudynt-osd /usr/bin/prudynt-osd.build /usr/sbin/osd-config /var/www/osd-text.html /var/www/x/json-osd-text.cgi; sed -i "s#/osd-text.html#/streamer-osd.html#; s#\"OSD text\"#\"OSD Elements\"#" /var/www/a/plugins.js; reboot'
+#   ssh root@<camera-ip> 'rm /etc/init.d/S30prudynt-osd /etc/init.d/S93osd-config /usr/bin/prudynt-osd /usr/bin/prudynt-osd.build /usr/sbin/osd-config /var/www/osd-text.html /var/www/x/json-osd-text.cgi; sed -i "s#/osd-text.html#/streamer-osd.html#; s#\"OSD text\"#\"OSD Elements\"#" /var/www/a/plugins.js /var/www/a/plugins/prudynt.webui.json; reboot'
 #
 # prudynt is restarted at the end, which interrupts the stream for a few seconds
 # (the youtube-relay supervisor reconnects by itself).
@@ -111,6 +111,14 @@ ssh "$CAM" '/etc/init.d/S93osd-config start' || echo "warning: osd-config did no
 # substitution, done only when the old href is still there (re-runs are no-ops).
 push "$HERE/www/osd-text.html" /var/www/osd-text.html 644
 push "$HERE/www/x/json-osd-text.cgi" /var/www/x/json-osd-text.cgi 755
+# Same change in the manifest plugins.js is generated from (thingino-pkg
+# regenerates plugins.js from /var/www/a/plugins/*.webui.json), so a
+# regeneration keeps the menu pointing at our page
+ssh "$CAM" 'm=/var/www/a/plugins/prudynt.webui.json
+	if [ -f $m ] && grep -q "\"/streamer-osd.html\"" $m; then
+		sed -e "s#\(\"href\": *\)\"/streamer-osd.html\"#\1\"/osd-text.html\"#" \
+			-e "s#\(\"label\": *\)\"OSD Elements\"#\1\"OSD text\"#" $m > $m.new && chmod 644 $m.new && mv $m.new $m
+	fi'
 ssh "$CAM" 'f=/var/www/a/plugins.js
 	if grep -q "\"/streamer-osd.html\"" $f; then
 		sed -e "s#\(\"href\": *\)\"/streamer-osd.html\"#\1\"/osd-text.html\"#" \

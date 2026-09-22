@@ -1,0 +1,25 @@
+{
+  "name": "youtube-relay",
+  "label": "YouTube Live relay",
+  "apiVersion": 1,
+  "nav": [
+    {
+      "section": "ddServices",
+      "position": "prepend",
+      "items": [
+        {
+          "label": "YouTube Live",
+          "href": "/youtube.html"
+        }
+      ]
+    }
+  ],
+  "scripts": [],
+  "styles": [],
+  "cgi": [
+    "/x/json-youtube.cgi"
+  ],
+  "pages": [
+    "/youtube.html"
+  ]
+}

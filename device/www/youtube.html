@@ -107,7 +107,7 @@
             <h6>Video (prudynt)</h6>
             <div class="d-flex flex-wrap gap-2 align-items-center">
               <button type="button" id="restart_prudynt" class="btn btn-outline-danger btn-sm"><i class="bi bi-arrow-repeat me-1"></i> Restart prudynt</button>
-              <span class="small text-secondary">Restarts the streamer (video + OSD). The stream drops for a few seconds and ffmpeg reconnects by itself.</span>
+              <span class="small text-secondary">Stops the streamer (video + OSD), waits until it is gone, starts it again (5–10 s). The stream drops meanwhile and ffmpeg reconnects by itself.</span>
             </div>
           </div>
 
@@ -291,12 +291,20 @@
   });
   $('restart_prudynt').addEventListener('click', async function() {
     if (!(await confirm('Restart prudynt (the streamer)? Video and OSD stop for a few seconds; ffmpeg reconnects by itself.'))) return;
+    // Our own stop -> wait -> start (Thingino's restart-prudynt.cgi can leave
+    // prudynt dead: the new instance starts before the old one is gone)
+    serviceButtons(true);
+    $('restart_prudynt').disabled = true;
+    notify('info', 'restarting prudynt…');
     try {
-      var r = await fetch('/x/restart-prudynt.cgi', {cache: 'no-store', credentials: 'same-origin'});
-      if (!r.ok) throw new Error('HTTP ' + r.status);
-      notify('success', 'prudynt restart initiated');
+      var d = await api(CGI + '?action=service&op=restart-prudynt', {method: 'POST'});
+      notify('success', 'prudynt restarted (pid ' + d.pid + ', ' + d.seconds + ' s)');
     } catch (e) {
       notify('danger', 'prudynt restart failed: ' + e.message);
+    } finally {
+      serviceButtons(false);
+      $('restart_prudynt').disabled = false;
+      load(true).catch(function() {});
     }
   });
 
