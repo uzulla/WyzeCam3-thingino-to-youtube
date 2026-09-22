@@ -126,8 +126,9 @@ lo() { awk '/^ *lo:/{print $10}' /proc/net/dev; }
 a=$(out4); la=$(lo); sleep 120; b=$(out4); lb=$(lo)
 echo "$(( ((b-a)-(lb-la))*8/120/1000 )) kbps"
 
-# TCP 再送の有無 (RetransSegs の列。2 時点の差分が 0 なら再送なし)
-grep '^Tcp:' /proc/net/snmp | awk 'NR==1{for(i=1;i<=NF;i++)h[i]=$i} NR==2{for(i=1;i<=NF;i++) if(h[i]=="RetransSegs") print $i}'
+# TCP 再送の回数 (2 時点の差分。0 なら再送なし)
+retrans() { grep '^Tcp:' /proc/net/snmp | awk 'NR==1{for(i=1;i<=NF;i++)h[i]=$i} NR==2{for(i=1;i<=NF;i++) if(h[i]=="RetransSegs") print $i}'; }
+r0=$(retrans); sleep 120; r1=$(retrans); echo "$((r1-r0)) retransmits"
 
 # ffmpeg の CPU (120 秒)。/proc/<pid>/stat の utime + stime は USER_HZ (Linux では常に 100) 単位
 p=$(pidof ffmpeg); set -- $(cat /proc/$p/stat); t0=$((${14}+${15})); sleep 120
@@ -143,11 +144,17 @@ pkill -f '18554:127.0.0.1:554'
 上流断の再現 (配信が止まる。netwatch が無効なことを先に確認):
 
 ```sh
-# 元のデフォルトルートを丸ごと控え、中断 (Ctrl-C、ssh 切断) しても trap で必ず戻す
-SAVED=$(ip -4 route show default | head -1)
-restore() { ip route replace $SAVED; ip -6 route del blackhole 2404:6800::/32 2>/dev/null; }
+# 元のデフォルトルート (複数あれば全部) を丸ごと控え、中断 (Ctrl-C、ssh 切断) しても trap で必ず戻す。
+# 偽の経路は metric を含めて明示的に消す (元の metric が違うと replace では消えず、偽の方が残る)
+SAVED=$(ip -4 route show default)
+BOGUS="default via 192.168.11.250 dev wlan0 metric 200"              # LAN 内の未使用アドレス (先に ping で確認)
+restore() {
+	ip route del $BOGUS 2>/dev/null
+	echo "$SAVED" | while read -r r; do [ -n "$r" ] && ip route replace $r; done
+	ip -6 route del blackhole 2404:6800::/32 2>/dev/null
+}
 trap restore EXIT INT TERM HUP
-ip route replace default via 192.168.11.250 dev wlan0 metric 200   # LAN 内の未使用アドレス (先に ping で確認)
+ip route replace $BOGUS
 ip -6 route add blackhole 2404:6800::/32                            # YouTube の IPv6 帯
 sleep 90
 restore; trap - EXIT INT TERM HUP
