@@ -17,11 +17,13 @@
 #           scan_ssid=1
 #   }
 #
-# Applied on every boot, only when the content changed (no needless flash
-# writes). The card is the source of truth: fix the file and reboot to recover
-# from a typo. Pulling the card does NOT restore the previous config; that one
-# is kept once as /etc/wpa_supplicant.conf.before-sd. The checksum of the last
-# applied file is kept in /etc/wpa_supplicant.conf.sd-md5.
+# Applied on every boot, only when the card's file changed since it was last
+# applied (no needless flash writes; the checksum of the last applied file is
+# kept in /etc/wpa_supplicant.conf.sd-md5). So the card wins whenever its file
+# changes, but a Wi-Fi change made in between on the camera itself (WebUI,
+# "wlan configure") is left alone until the card's file changes again. Fix the
+# file and reboot to recover from a typo. Pulling the card does NOT restore the
+# previous config; that one is kept once as /etc/wpa_supplicant.conf.before-sd.
 
 SRC="${WIFI_SD_SRC:-/mnt/mmcblk0p1/wpa_supplicant.conf}"
 DST="${WIFI_SD_DST:-/etc/wpa_supplicant.conf}"
@@ -72,7 +74,7 @@ fi
 # change on every boot. Remember what was applied instead.
 STAMP="$DST.sd-md5"
 sum=$(md5sum <"$tmp" | cut -d' ' -f1)
-if [ -f "$STAMP" ] && [ "$(cat "$STAMP")" = "$sum" ]; then
+if [ -f "$DST" ] && [ -f "$STAMP" ] && [ "$(cat "$STAMP")" = "$sum" ]; then
 	exit 0
 fi
 

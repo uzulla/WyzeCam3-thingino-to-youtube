@@ -65,7 +65,9 @@ network={
   起動してしまうため)。その場合ファイルは無視され、ログに理由が出る
 - 適用前の設定は一度だけ `/etc/wpa_supplicant.conf.before-sd` に退避する。最後に適用した内容の md5 を
   `/etc/wpa_supplicant.conf.sd-md5` に置き、これで「内容が変わったか」を判断する (wpa_supplicant 自身が
-  動作中に `/etc/wpa_supplicant.conf` を書き換えるので、そのファイルとの比較では毎回「変わった」ことになる)
+  動作中に `/etc/wpa_supplicant.conf` を書き換えるので、そのファイルとの比較では毎回「変わった」ことになる)。
+  裏返すと、**SD のファイルを変えない限り、その間に WebUI や `wlan configure` でカメラ側で変えた Wi-Fi 設定は
+  上書きしない** (SD のファイルを変えて再起動すれば SD が勝つ)
 - ログ: `logread | grep wifi-from-sd`。やめるとき: `rm /etc/init.d/S37wifi-from-sd /etc/wpa_supplicant.conf.sd-md5`。
   元の Wi-Fi 設定に戻すなら `mv /etc/wpa_supplicant.conf.before-sd /etc/wpa_supplicant.conf` して再起動
 - Thingino を入れ直した/更新した後は、`install.sh` と同じく入れ直しが必要
