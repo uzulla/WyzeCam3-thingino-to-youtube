@@ -651,12 +651,15 @@ A (`uenv.txt`) は未確認 (ソースの読解に基づく):
 
 wlan0 の送信が 1.8 Mbps なのに、prudynt の RTSP を録って測ると映像 + 音声は 1.05 Mbps (エンコーダは CBR 1024 の設定どおり)。
 `/proc/net/snmp6` の `Ip6OutOctets` (YouTube は IPv6) と `/proc/net/netstat` の `IpExt OutOctets` (IPv4 = LAN + loopback) に
-分けると、IPv6 = 1.77 Mbps ≒ wlan0 全体で、YouTube への RTMPS 接続そのものが 1.69 倍だった。TCP 再送は 0。
+分けると、IPv6 = 1.77 Mbps ≒ wlan0 全体で、YouTube への RTMPS 接続そのものが 1.69 倍だった (`Ip6OutOctets` は IPv6 全体の
+値だが、`netstat -tn` で他に IPv6 の接続が無い (ssh は IPv4) ことを確認した上での測定。倍率は TLS・TCP・IPv6 ヘッダを
+含む線上の実測値)。TCP 再送は 0。
 
 原因は FFmpeg の RTMP 実装: 送信チャンクは 128 バイト固定 (`rtmpproto.c` の `rt->out_chunk_size = 128`、変えるオプション無し。
 Set Chunk Size を送るコードは listen 側にしか無い) で、`ff_rtmp_packet_write` はパケットヘッダ・128 バイトのデータ・次の
 チャンクの 1 バイトの継続ヘッダをそれぞれ別の `ffurl_write` で書く。`tls_mbedtls.c` の `tls_write` は書き込み 1 回 =
-`mbedtls_ssl_write` 1 回 = TLS レコード 1 つ (バッファ無し) なので、128 バイトごとに約 58 バイトの TLS の枝葉が付き、
+`mbedtls_ssl_write` 1 回 = TLS レコード 1 つ (バッファ無し) なので、128 バイトごとに TLS レコード 2 つ (データ + 継続ヘッダ)
+= 2 × 約 29 = 約 58 バイトの枝葉が付き、
 小さな書き込みが多い分 TCP/IPv6 ヘッダの比率も上がる。平文の RTMP では TCP がまとめるので目立たない。
 
 対処 `patches/thingino-ffmpeg-rtmp-chunk-size.diff`: `rtmp_chunk_size` オプション (既定 4096、128 で宣言しない) を足し、
