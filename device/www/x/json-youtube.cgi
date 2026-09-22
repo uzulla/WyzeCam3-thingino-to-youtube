@@ -105,6 +105,26 @@ regular_or_absent() {
 	[ -f "$1" ] && [ ! -L "$1" ]
 }
 
+# One service operation at a time: a Stop arriving while a restart still
+# waits for the old supervisor would remove the pidfile the restart is about
+# to create, or start a second supervisor. mkdir is atomic; a lock older than
+# 2 minutes is stale (a CGI killed mid-way) and taken over.
+LOCK=/run/youtube-cgi.lock
+service_lock() {
+	if ! mkdir "$LOCK" 2>/dev/null; then
+		now=$(date +%s)
+		since=$(cat "$LOCK/since" 2>/dev/null || echo "$now")
+		if [ $((now - since)) -lt 120 ]; then
+			fail "another service operation is still running - try again in a moment" "409 Conflict"
+		fi
+		rm -rf "$LOCK"
+		mkdir "$LOCK" 2>/dev/null || fail "another service operation is still running" "409 Conflict"
+	fi
+	date +%s >"$LOCK/since"
+	trap 'rm -rf "$TMPD" "$LOCK"' EXIT
+	trap 'rm -rf "$TMPD" "$LOCK"; exit 1' HUP INT TERM PIPE
+}
+
 case "$action" in
 status)
 	config=null
@@ -112,11 +132,13 @@ status)
 	config_source=null
 	if src=$(config_source); then
 		# jct prints {} for broken JSON without failing: check a key it must have
-		if jct "$src" get rtmp_url >/dev/null 2>&1 || jct "$src" get stream_key >/dev/null 2>&1; then
+		# jct prints {} for broken JSON without failing: the relay needs at
+		# least a stream_key, so that key tells a config from a broken file
+		if jct "$src" get stream_key >/dev/null 2>&1; then
 			config=$(jct "$src" print 2>/dev/null)
 			config_source="\"$src\""
 		else
-			config_error="\"$src: not valid JSON\""
+			config_error="\"$src: not valid JSON, or no \\\"stream_key\\\"\""
 		fi
 	fi
 	sd=false
@@ -128,12 +150,15 @@ status)
 		service='{"running":false,"pid":null'
 	fi
 	if [ -x "$INIT" ]; then service="$service,\"autostart\":true}"; else service="$service,\"autostart\":false}"; fi
-	# ffmpeg started by the relay (not any ffmpeg: the web UI's recorder has its own)
+	# The ffmpeg started by the relay: a child of the supervisor whose command
+	# line carries the relay's fixed first options (youtube-relay: set --
+	# -nostdin -hide_banner ...). Not by name: ffmpeg_bin may point anywhere,
+	# and the web UI's recorder runs its own ffmpeg.
 	ffmpeg='{"running":false,"pid":null,"elapsed_s":null}'
 	for d in /proc/[0-9]*; do
-		[ "$(cat "$d/stat" 2>/dev/null | cut -d' ' -f2)" = "(ffmpeg)" ] || continue
-		ppid=$(cut -d' ' -f4 "$d/stat" 2>/dev/null)
+		ppid=$(cut -d' ' -f4 "$d/stat" 2>/dev/null) || continue
 		is_relay "$ppid" || continue
+		tr '\0' ' ' <"$d/cmdline" 2>/dev/null | grep -q -- ' -nostdin -hide_banner ' || continue
 		fp=${d#/proc/}
 		# elapsed = uptime - start time (field 22 of stat, in USER_HZ = 100 ticks)
 		start=$(cut -d' ' -f22 "$d/stat" 2>/dev/null)
@@ -157,10 +182,20 @@ save)
 	regular_or_absent "$target" || fail "$target exists and is not a regular file - not touching it" "409 Conflict"
 	read_body
 	[ -s "$TMPD/body" ] || fail "empty body"
-	# What the relay needs to read it: a JSON object with rtmp_url (jct fails on broken JSON)
-	jct "$TMPD/body" get rtmp_url >/dev/null 2>&1 || fail "not valid JSON, or no \"rtmp_url\""
+	# The relay's own rules (youtube-relay: config_ok): a JSON object; unless
+	# enabled is false it needs a stream_key, or it would stop the stream within
+	# 15 s. rtmp_url may be left out (the relay defaults to YouTube's RTMPS)
+	# but must be an rtmp(s) URL when given. jct fails on broken JSON.
+	case $(jct "$TMPD/body" print 2>/dev/null | head -c 1) in
+	"{") ;;
+	*) fail "not a JSON object" ;;
+	esac
+	jct "$TMPD/body" get stream_key >/dev/null 2>&1 || fail "no \"stream_key\" (the relay ignores the file without it)"
+	if [ "$(jct "$TMPD/body" get enabled 2>/dev/null)" != "false" ] && [ -z "$(jct "$TMPD/body" get stream_key 2>/dev/null)" ]; then
+		fail "stream_key is empty: the relay would stop the stream. Set a key, or set enabled to false"
+	fi
 	case $(jct "$TMPD/body" get rtmp_url 2>/dev/null) in
-	rtmp://* | rtmps://*) ;;
+	"" | rtmp://* | rtmps://*) ;;
 	*) fail "rtmp_url must start with rtmp:// or rtmps://" ;;
 	esac
 	# Same directory, then mv: the relay (and its watcher, every 15 s) never
@@ -173,6 +208,7 @@ save)
 	if [ -n "$restart" ]; then
 		# The init script's stop waits for the supervisor (and its ffmpeg) to be
 		# gone, so the new one never publishes alongside the old one
+		service_lock
 		if out=$(sh "$INIT" restart 2>&1); then
 			restarted=true
 		else
@@ -186,6 +222,7 @@ service)
 	[ "$REQUEST_METHOD" = POST ] || fail "POST required" "405 Method Not Allowed"
 	[ -n "$op" ] || fail "op=start|stop|restart|enable|disable required"
 	[ -f "$INIT" ] || fail "$INIT is not installed" "409 Conflict"
+	service_lock
 	# start/stop/restart mean "now", independent of "at boot": run the script
 	# through sh, so it works while disabled (no execute bit) too.
 	# enable/disable = the execute bit, via "service" like the docs say.

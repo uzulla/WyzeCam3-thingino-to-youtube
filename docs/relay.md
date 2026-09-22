@@ -169,7 +169,7 @@ service enable youtube-relay    # 有効化
   あれば SD、なければ `/etc`) に 600 で書く。ファイルにあってページに無いキー (`ffmpeg_bin` など) は残る
   - キー・URL・オプションを変えた時は、配信中なら「今すぐ再起動して反映するか」を聞く (配信が数秒切れる)。
     Cancel すると保存だけして、次の再起動まで古い設定で配信を続ける
-  - `enabled` の変更だけなら聞かない: relay が 15 秒以内に自分で止める/再開する
+  - `enabled` の変更だけなら聞かない: relay が自分で追従する (OFF は watcher が 15 秒以内に止める、ON は待機ループが 10 秒以内に再開する)
 - **Status**: relay サービスと ffmpeg の稼働 (pid、配信の経過時間)、起動時の自動開始、使っている設定ファイル。5 秒ごとに更新
 - **Relay service**: Start / Stop / **Restart stream (ffmpeg)** (= `service restart youtube-relay`)。「Start the relay service at
   boot」のスイッチが `service enable/disable` (init スクリプトの実行属性。切っても動いているものは止まらない)
@@ -178,6 +178,10 @@ service enable youtube-relay    # 有効化
 - 裏側の CGI は `/x/json-youtube.cgi` (`?action=status` / `save[&restart=1]` / `service&op=…`)。Thingino の認証 (セッション
   Cookie か `?token=<API キー>`) を通せばカメラ外からも使える。ストリームキーは認証済みのブラウザにそのまま返す
   (Thingino が API キーや Wi-Fi のパスワードを画面に出すのと同じ扱い。[下記](#ストリームキーの取り扱い))
+- 手で入れるなら: `device/www/youtube.html` → `/var/www/youtube.html` (644)、`device/www/x/json-youtube.cgi` → `/var/www/x/json-youtube.cgi`
+  (755)、メニューは `/var/www/a/plugins.js` の `cfg.plugins = {` の次の行に install.sh が挿している 1 行 (`"youtube-relay": {…},`) を足して 644 にする
+  (無くても URL で開ける)
+- Save や Start / Stop / Restart は CGI 側で 1 つずつ直列化される (同時に押すと 409)。ボタンは操作中はまとめて無効になる
 - 消す: `/var/www/youtube.html` `/var/www/x/json-youtube.cgi` を削除し、`/var/www/a/plugins.js` から `"youtube-relay": {…},` の
   1 行を消す
 

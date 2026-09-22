@@ -117,6 +117,9 @@ ssh "$CAM" 'f=/var/www/a/plugins.js
 			-e "s#\(\"label\": *\)\"OSD Elements\"#\1\"OSD text\"#" $f > $f.new && chmod 644 $f.new && mv $f.new $f
 		echo "  menu: Streamer > OSD Elements -> /osd-text.html"
 	fi
+	# Earlier versions left the edited file 0600 (ssh umask), which uhttpd then
+	# refused to serve: fix that on re-runs too
+	chmod 644 $f
 	grep -q "\"/osd-text.html\"" $f || echo "  warning: could not add /osd-text.html to the menu (open it by URL)"'
 
 echo "Done. Try it:  ssh $CAM osd-progress-demo 20"

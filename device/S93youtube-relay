@@ -63,9 +63,17 @@ stop() {
 	done
 	if grep -q "$DAEMON" "/proc/$pid/cmdline" 2>/dev/null; then
 		echo -n "(did not exit, killing) "
-		pkill -P "$pid" 2>/dev/null # its ffmpeg first, or it would be orphaned
+		pkill -KILL -P "$pid" 2>/dev/null # its ffmpeg first, or it would be orphaned
 		kill -9 "$pid" 2>/dev/null
-		sleep 1
+		i=0
+		while grep -q "$DAEMON" "/proc/$pid/cmdline" 2>/dev/null && [ $i -lt 5 ]; do
+			sleep 1
+			i=$((i + 1))
+		done
+		if grep -q "$DAEMON" "/proc/$pid/cmdline" 2>/dev/null; then
+			echo "FAIL (pid $pid will not die)"
+			return 1
+		fi
 	fi
 	echo "OK"
 	rm -f "$PIDFILE"

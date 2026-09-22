@@ -179,9 +179,16 @@
     $(id).style.backgroundColor = on ? (warn ? '#f0ad4e' : '#3fb950') : '#6c757d';
   }
 
+  // The relay's defaults for keys a file may leave out (youtube-relay)
+  var DEFAULTS = {rtmp_url: 'rtmps://a.rtmps.youtube.com:443/live2', rtsp_url: 'rtsp://thingino:thingino@127.0.0.1:554/ch0'};
+
   function fillForm(c) {
-    $('enabled').checked = c.enabled !== false;
-    FIELDS.forEach(function(f) { $(f).value = c[f] == null ? '' : String(c[f]); });
+    // "false" as a string (a hand-edited file) disables the stream in the relay too
+    $('enabled').checked = c.enabled !== false && c.enabled !== 'false';
+    FIELDS.forEach(function(f) {
+      var v = c[f] == null || c[f] === '' ? (DEFAULTS[f] || '') : String(c[f]);
+      $(f).value = v;
+    });
     syncPreset();
   }
 
@@ -191,7 +198,7 @@
   async function load(quiet) {
     var s = await api(CGI + '?action=status');
     state = s;
-    if (s.config && !formTouched) fillForm(s.config);
+    if (!formTouched) fillForm(s.config || {enabled: true}); // no file yet: the relay's defaults, key empty
     $('config_path').textContent = s.config_path;
     $('config_note').textContent = s.config_error ? s.config_error
       : !s.config ? 'no config file yet, ' + s.config_path + ' is created on save' : '';
@@ -232,7 +239,7 @@
       var r = await confirm('The key / URL / options changed. Restart the stream now so they take effect?\n\nThe stream drops for a few seconds. "Cancel" saves without restarting (the old settings keep streaming until the next restart).');
       restart = !!r;
     }
-    $('save').disabled = true;
+    serviceButtons(true);
     try {
       var d = await api(CGI + '?action=save' + (restart ? '&restart=1' : ''), {
         method: 'POST', headers: {'Content-Type': 'application/json'},
@@ -244,16 +251,20 @@
     } catch (e) {
       notify('danger', 'Save failed: ' + e.message);
     } finally {
-      $('save').disabled = false;
+      serviceButtons(false);
     }
   }
 
   // ---- service buttons
-  async function serviceOp(op, btn) {
+  function serviceButtons(disabled) {
+    document.querySelectorAll('button[data-op], #autostart, #save').forEach(function(b) { b.disabled = disabled; });
+  }
+
+  async function serviceOp(op) {
     var warn = {stop: 'Stop the relay service? The stream ends until it is started again.',
                 restart: 'Restart the relay? The stream drops for a few seconds.'}[op];
-    if (warn && !(await confirm(warn))) return;
-    if (btn) btn.disabled = true;
+    if (warn && !(await confirm(warn))) { load(true).catch(function() {}); return; }
+    serviceButtons(true); // one at a time: the CGI refuses a second one anyway (409)
     notify('info', op + '…');
     try {
       var d = await api(CGI + '?action=service&op=' + op, {method: 'POST'});
@@ -261,15 +272,15 @@
     } catch (e) {
       notify('danger', op + ' failed: ' + e.message);
     } finally {
-      if (btn) btn.disabled = false;
+      serviceButtons(false);
       load(true).catch(function() {});
     }
   }
   document.querySelectorAll('button[data-op]').forEach(function(b) {
-    b.addEventListener('click', function() { serviceOp(b.dataset.op, b); });
+    b.addEventListener('click', function() { serviceOp(b.dataset.op); });
   });
   $('autostart').addEventListener('change', function() {
-    serviceOp($('autostart').checked ? 'enable' : 'disable', null);
+    serviceOp($('autostart').checked ? 'enable' : 'disable');
   });
   $('restart_prudynt').addEventListener('click', async function() {
     if (!(await confirm('Restart prudynt (the streamer)? Video and OSD stop for a few seconds; ffmpeg reconnects by itself.'))) return;

@@ -9,9 +9,10 @@
 # The ffmpeg argument is optional; without it only scripts are (re)installed.
 # An existing /etc/youtube-relay.json on the camera is never overwritten.
 #
-# Scope: this only places OUR files (ffmpeg, supervisor, init script, config).
-# It never touches Thingino's own files or settings; updating or backing up
-# the OS is out of scope.
+# Scope: this places OUR files (ffmpeg, supervisor, init script, config, the
+# web UI page and its CGI). The one Thingino file it edits is
+# /var/www/a/plugins.js (one line, the menu entry for the page); it never
+# touches Thingino's settings. Updating or backing up the OS is out of scope.
 
 set -e
 
@@ -103,10 +104,15 @@ ssh "$CAM" 'cat > /tmp/youtube-nav.frag' <<'EOF'
 EOF
 ssh "$CAM" 'f=/var/www/a/plugins.js
 	if ! grep -q "\"/youtube.html\"" $f && grep -q "^  cfg.plugins = {$" $f; then
-		sed "/^  cfg.plugins = {$/r /tmp/youtube-nav.frag" $f > $f.new && chmod 644 $f.new && mv $f.new $f
-		echo "  menu: Services > YouTube Live -> /youtube.html"
+		if sed "/^  cfg.plugins = {$/r /tmp/youtube-nav.frag" $f > $f.new && chmod 644 $f.new && mv $f.new $f; then
+			echo "  menu: Services > YouTube Live -> /youtube.html"
+		else
+			rm -f $f.new
+			echo "  warning: editing $f failed" >&2
+		fi
 	fi
 	rm -f /tmp/youtube-nav.frag
+	chmod 644 $f # an edit by an older version may have left it 0600, which uhttpd refuses to serve
 	grep -q "\"/youtube.html\"" $f || echo "  warning: could not add /youtube.html to the menu (open it by URL)"'
 echo "Web UI: Services > YouTube Live (http://${CAM#*@}/youtube.html)"
 echo "Done. Logs: ssh $CAM 'logread | grep youtube-relay'"

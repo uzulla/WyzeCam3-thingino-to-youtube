@@ -77,7 +77,7 @@ device/    カメラ側の常設運用一式 (ファイルの一覧は device/RE
              youtube-relay / S93youtube-relay   supervisor と起動スクリプト
              www/youtube.html / www/x/json-youtube.cgi
                                                 Web UI の「YouTube Live」ページ (キーの設定、再起動、サービスの有効/無効)
-             install.sh                         上記と ffmpeg をカメラへ入れる (自前のファイルを置くだけ)
+             install.sh                         上記と ffmpeg をカメラへ入れる (自前のファイルを置く + メニュー 1 行の追記)
              disable-netwatch.sh                Thingino の netwatch (OS 自動再起動) を無効化する
              install-wifi-from-sd.sh / S37wifi-from-sd
                                                 任意: SD の wpa_supplicant.conf (複数 Wi-Fi 可) を起動時に適用

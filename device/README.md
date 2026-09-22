@@ -5,7 +5,7 @@ Thingino 実機に置くスクリプト一式。`/etc` や `/usr` は overlayfs 
 
 | ファイル | インストール先 | 役割 | 文書 |
 |---|---|---|---|
-| `install.sh` | (PC 側で実行) | ffmpeg と配信 supervisor をまとめて入れる。再実行可能。自前のファイルを置くだけで、Thingino の設定には触らない | [relay.md](../docs/relay.md) |
+| `install.sh` | (PC 側で実行) | ffmpeg と配信 supervisor、Web UI のページをまとめて入れる。再実行可能。Thingino の設定には触らない (書き換えるのは `/var/www/a/plugins.js` のメニュー 1 行だけ) | [relay.md](../docs/relay.md) |
 | `youtube-relay` / `S93youtube-relay` | `/usr/sbin/youtube-relay` / `/etc/init.d/S93youtube-relay` | 配信 supervisor (ffmpeg を監視・再起動) と起動スクリプト | [relay.md](../docs/relay.md) |
 | `youtube-relay.json.example` | SD カード直下または `/etc/youtube-relay.json` | 配信の設定 (ストリームキー等) | [relay.md](../docs/relay.md) |
 | `www/youtube.html` / `www/x/json-youtube.cgi` | `/var/www/youtube.html` / `/var/www/x/json-youtube.cgi` | (`install.sh` が入れる) Web UI の「YouTube Live」ページと CGI。設定の編集、配信 / prudynt の再起動、サービスの開始・停止・自動起動の切り替え。Services メニューに項目を足す (`plugins.js` に 1 行追記) | [relay.md](../docs/relay.md#web-ui) |
