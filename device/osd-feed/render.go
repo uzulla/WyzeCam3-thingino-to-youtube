@@ -30,17 +30,26 @@ var funcs = template.FuncMap{
 		fill := inner * p / 100
 		return "[" + strings.Repeat("#", fill) + strings.Repeat("-", inner-fill) + "]"
 	},
-	"lpad": func(n int, v any) string { return fmt.Sprintf("%*s", n, fmt.Sprint(v)) },
-	"rpad": func(n int, v any) string { return fmt.Sprintf("%-*s", n, fmt.Sprint(v)) },
+	"lpad": func(n int, v any) string { return fmt.Sprintf("%*s", n, str(v)) },
+	"rpad": func(n int, v any) string { return fmt.Sprintf("%-*s", n, str(v)) },
 	"trunc": func(n int, v any) string {
 		// by rune, not byte: a cut inside a multi-byte character would
 		// leave invalid UTF-8 and show as two '?' instead of one
-		r := []rune(fmt.Sprint(v))
+		r := []rune(str(v))
 		if n >= 0 && len(r) > n {
 			return string(r[:n])
 		}
 		return string(r)
 	},
+}
+
+// str - a value as text; a key the source has not produced yet reaches a
+// function as nil, which must print as nothing (fmt.Sprint would say "<nil>")
+func str(v any) string {
+	if v == nil {
+		return ""
+	}
+	return fmt.Sprint(v)
 }
 
 // toInt - template arguments come as int (our sources), float64 (JSON from
@@ -87,6 +96,24 @@ func newSlot(name string, cfg SlotConfig, geo SlotGeometry) (*Slot, error) {
 		s.Rows = cfg.Rows
 	}
 	return s, nil
+}
+
+// follow - take over prudynt's current geometry, except for values the
+// config pins. Reports whether anything changed.
+func (s *Slot) follow(geo SlotGeometry, cfg SlotConfig) bool {
+	n := *s
+	if cfg.Path == "" && geo.Path != "" {
+		n.Path = geo.Path
+	}
+	if cfg.Cols <= 0 && geo.Cols > 0 {
+		n.Cols = geo.Cols
+	}
+	if cfg.Rows <= 0 && geo.Rows > 0 {
+		n.Rows = geo.Rows
+	}
+	changed := n.Path != s.Path || n.Cols != s.Cols || n.Rows != s.Rows
+	*s = n
+	return changed
 }
 
 // render - the text for this slot from a snapshot, cut to rows x cols and

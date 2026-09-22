@@ -44,9 +44,14 @@ type SlotConfig struct {
 	Rows     int    `json:"rows"`
 }
 
+// interval - the redraw period. prudynt looks at the files every 100 ms, so
+// anything shorter only burns CPU: clamp there.
 func (c *Config) interval() time.Duration {
 	if c.IntervalMs <= 0 {
 		return 250 * time.Millisecond
+	}
+	if c.IntervalMs < 100 {
+		return 100 * time.Millisecond
 	}
 	return time.Duration(c.IntervalMs) * time.Millisecond
 }

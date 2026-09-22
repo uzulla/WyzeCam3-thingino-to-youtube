@@ -43,6 +43,14 @@ func askPrudynt(names []string) (map[string]SlotGeometry, bool) {
 	if err != nil {
 		return out, false
 	}
+	return parseGeometry(raw, out)
+}
+
+// parseGeometry - prudynt's answer ({"textfile":{"path":...,"cols":..},...})
+// merged over the defaults. An empty or {} answer (stock prudynt, or one that
+// is still starting) leaves the defaults and reports no answer; a slot missing
+// from the answer or without a path keeps its default.
+func parseGeometry(raw []byte, out map[string]SlotGeometry) (map[string]SlotGeometry, bool) {
 	var ans map[string]struct {
 		Path    string `json:"path"`
 		Cols    int    `json:"cols"`

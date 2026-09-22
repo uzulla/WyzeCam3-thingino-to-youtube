@@ -60,10 +60,10 @@ device/install-osd-feed.sh root@<camera-ip>       # SD にバイナリと (無�
 
 | キー | 意味 |
 |---|---|
-| `interval_ms` | 描く間隔 (既定 250)。prudynt 側がファイルを見るのは 100ms ごとなので、それ以下にしても速くならない |
+| `interval_ms` | 描く間隔 (既定 250、下限 100)。prudynt 側がファイルを見るのは 100ms ごとなので、それより短くしても速くならない |
 | `clear_on_exit` | 終了時にスロットのファイルを消す (既定 true) |
 | `sources.<名前>` | データ源。`type` と `interval_ms` (取得間隔、既定 1000)、type ごとの項目 (下表)。名前はテンプレートから `.<名前>.<キー>` で参照する |
-| `slots.<スロット>` | `textfile` / `textfile2` / `textfile3`。`template` は Go の text/template。`path` / `cols` / `rows` は普通は書かない (起動時に prudynt から読む。prudynt が答えない時だけ docs/osd.md の既定値になり、ここに書けば上書きできる) |
+| `slots.<スロット>` | `textfile` / `textfile2` / `textfile3`。`template` は Go の text/template。`path` / `cols` / `rows` は普通は書かない: 起動時と以後 30 秒ごとに prudynt から読んで追従する (Web UI で大きさを変えれば 30 秒以内に切る幅も変わる。prudynt が答えない時は docs/osd.md の既定値)。**ここに書いた値は prudynt の値より常に優先される**ので、Web UI で変えたのに反映されない時はここに古い値が残っていないか見る |
 
 ### source の種類
 
@@ -76,7 +76,8 @@ device/install-osd-feed.sh root@<camera-ip>       # SD にバイナリと (無�
 
 どの source にも **`ok`** (直前の取得が成功した) と **`age_s`** (最後に成功してからの秒数。一度も無ければ -1) が付く。
 取得に失敗しても前回の値は残るので、外部データが途切れた時の見せ方はテンプレート側で決める:
-`{{if .car.ok}}{{.car.speed}} km/h{{else}}-- km/h{{end}}`。失敗は種類が変わった時と復帰した時だけログに出る。
+`{{if .car.ok}}{{.car.speed}} km/h{{else}}-- km/h{{end}}`。失敗は種類が変わった時と復帰した時だけログに出る
+(ファイルの書き込みエラーも同じ)。取得が `timeout_ms` を超えると打ち切られ、その間も他の source と描画は止まらない。
 
 ### テンプレートで使える関数
 
@@ -90,7 +91,7 @@ text/template 標準の `printf` `if` `range` などに加えて:
 | `trunc 桁 値` | `{{trunc 10 .car.name}}` | 先頭 10 文字 |
 
 - 行数・桁数を超えた分は切る (prudynt も切るが、こちらで切っておくと何が映るか手元で分かる)。タブは空白、ASCII 以外は `?`
-- source がまだ値を持っていないキーは空文字になる。**設定に無い source をテンプレートが参照していると起動時にエラーで止まる** (綴り間違いをその場で見つけるため)
+- source がまだ値を持っていないキーは空文字になる (`lpad` などの関数に渡しても同じ。`bar` は 0)。**設定に無い source をテンプレートが参照していると起動時にエラーで止まる** (綴り間違いをその場で見つけるため)
 - `http` の JSON の数値は小数として入る (`{{printf "%.0f" .car.speed}}` で整数表示)。`bar` はそのまま受け付ける
 
 ### 外部データを足す

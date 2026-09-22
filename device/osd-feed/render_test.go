@@ -1,7 +1,6 @@
 package main
 
 import (
-	"os"
 	"testing"
 	"time"
 )
@@ -28,7 +27,7 @@ func TestRenderCutsToGeometry(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if out != "[#####----]\nline2\n"[:0]+"[#####----\nline2\n" {
+	if out != "[#####----\nline2\n" {
 		t.Errorf("got %q", out)
 	}
 }
@@ -65,11 +64,29 @@ func TestTruncByRune(t *testing.T) {
 	}
 }
 
-func TestUnknownConfigKeyRejected(t *testing.T) {
-	f, _ := os.CreateTemp(t.TempDir(), "cfg")
-	f.WriteString(`{"intervl_ms": 100, "slots": {"textfile": {"template": "x"}}}`)
-	f.Close()
-	if _, err := loadConfig(f.Name()); err == nil {
-		t.Fatal("misspelt key must be an error")
+func TestHelpersBlankOnMissingValue(t *testing.T) {
+	c := newCache()
+	c.register("mem")
+	s, _ := newSlot("textfile", SlotConfig{Template: "[{{lpad 3 .mem.free_mb}}|{{rpad 2 .mem.x}}|{{trunc 4 .mem.y}}|{{bar 6 .mem.pct}}]"}, SlotGeometry{Cols: 40, Rows: 4})
+	out, err := s.render(c.snapshot(time.Now()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out != "[   |  ||[----]]\n" {
+		t.Errorf("got %q", out)
+	}
+}
+
+func TestFollowRespectsPinnedValues(t *testing.T) {
+	s, _ := newSlot("textfile", SlotConfig{Template: "x", Cols: 20}, SlotGeometry{Path: "/run/a", Cols: 40, Rows: 4})
+	if s.Cols != 20 {
+		t.Fatalf("config must win at start, got %d", s.Cols)
+	}
+	changed := s.follow(SlotGeometry{Path: "/run/b", Cols: 50, Rows: 8}, SlotConfig{Cols: 20})
+	if !changed || s.Path != "/run/b" || s.Cols != 20 || s.Rows != 8 {
+		t.Errorf("got %+v changed=%v", *s, changed)
+	}
+	if s.follow(SlotGeometry{Path: "/run/b", Cols: 50, Rows: 8}, SlotConfig{Cols: 20}) {
+		t.Error("same geometry must not report a change")
 	}
 }

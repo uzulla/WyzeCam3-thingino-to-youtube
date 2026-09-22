@@ -23,7 +23,9 @@ import (
 	"log/syslog"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"sort"
+	"sync"
 	"syscall"
 	"time"
 )
@@ -96,15 +98,21 @@ func main() {
 	if *once {
 		// Poll every source once, in turn, then render: what the templates
 		// would show a moment after start-up
+		var wg sync.WaitGroup
 		for name, src := range sources {
-			pctx, cancel := context.WithTimeout(ctx, pollTimeout(cfg.Sources[name]))
-			v, err := src.Poll(pctx)
-			cancel()
-			cache.put(name, v, err)
-			if err != nil {
-				log.Printf("source %s: %v", name, err)
-			}
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				pctx, cancel := context.WithTimeout(ctx, pollTimeout(cfg.Sources[name]))
+				v, err := src.Poll(pctx)
+				cancel()
+				cache.put(name, v, err)
+				if err != nil {
+					log.Printf("source %s: %v", name, err)
+				}
+			}()
 		}
+		wg.Wait()
 		data := cache.snapshot(time.Now())
 		for _, s := range slots {
 			text, err := s.render(data)
@@ -119,16 +127,46 @@ func main() {
 	for name, src := range sources {
 		go runSource(ctx, name, cfg.Sources[name], src, cache)
 	}
+	if cfg.IntervalMs > 0 && cfg.IntervalMs < 100 {
+		log.Printf("interval_ms %d is below prudynt's 100 ms poll: using 100", cfg.IntervalMs)
+	}
 	log.Printf("osd-feed: %d slots, %d sources, redraw every %v", len(slots), len(cfg.Sources), cfg.interval())
-	last := map[string]string{}
+	last := map[string]string{}    // what each slot's file holds (or "error")
+	lastErr := map[string]string{} // last problem reported per slot, once
 	writes := 0
 	t := time.NewTicker(cfg.interval())
 	defer t.Stop()
+	// prudynt is restarted now and then (osd-config changing the pool size, the
+	// web UI) and its slots can be resized from the web UI while we run: ask
+	// again every so often and follow. One prudyntctl every 30 s is nothing.
+	geoTick := time.NewTicker(30 * time.Second)
+	defer geoTick.Stop()
+	report := func(slot, msg string) {
+		if lastErr[slot] != msg {
+			log.Printf("slot %s: %s", slot, msg)
+			lastErr[slot] = msg
+		}
+	}
+	recovered := func(slot string) {
+		if lastErr[slot] != "" {
+			log.Printf("slot %s: ok again", slot)
+			lastErr[slot] = ""
+		}
+	}
 loop:
 	for {
 		select {
 		case <-ctx.Done():
 			break loop
+		case <-geoTick.C:
+			if g, ok := askPrudynt(names); ok {
+				for _, s := range slots {
+					if s.follow(g[s.Name], cfg.Slots[s.Name]) {
+						log.Printf("slot %s: now %s", s.Name, g[s.Name])
+						delete(last, s.Name) // redraw with the new size
+					}
+				}
+			}
 		case now := <-t.C:
 			data := cache.snapshot(now)
 			for _, s := range slots {
@@ -136,19 +174,17 @@ loop:
 				if err != nil {
 					// A template that fails at run time (bad field type) is a
 					// config problem: say so once per slot, keep the others going
-					if last[s.Name] != "error" {
-						log.Printf("slot %s: %v", s.Name, err)
-						last[s.Name] = "error"
-					}
+					report(s.Name, "template: "+err.Error())
 					continue
 				}
 				if text == last[s.Name] {
 					continue
 				}
 				if err := writeSlot(s.Path, text); err != nil {
-					log.Printf("slot %s: %v", s.Name, err)
+					report(s.Name, err.Error())
 					continue
 				}
+				recovered(s.Name)
 				last[s.Name] = text
 				writes++
 			}
@@ -168,6 +204,11 @@ loop:
 // UI's Show) never share one.
 func writeSlot(path, text string) error {
 	tmp := fmt.Sprintf("%s.tmp.%d", path, os.Getpid())
+	// /run/prudynt is prudynt's; should it be gone (prudynt not started yet
+	// after a reboot), create it rather than fail until it appears
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
 	if err := os.WriteFile(tmp, []byte(text), 0o644); err != nil {
 		os.Remove(tmp)
 		return err
