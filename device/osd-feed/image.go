@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"image"
+	"image/color"
 	"image/draw"
 	_ "image/png" // the format the config points at; others registered here would work too
 	"os"
@@ -26,8 +27,9 @@ type ImageSlot struct {
 
 	pngMod  time.Time
 	pngSize int64
-	pngData []byte // the PNG's bytes at the last conversion: a touched but unchanged file is not decoded again
-	pixels  []byte // the last conversion, or nil when the PNG could not be read
+	pngData []byte // the PNG's bytes at the last attempt: a touched but unchanged file is not decoded again
+	pixels  []byte // the last conversion, or nil when the PNG could not be read / converted
+	lastErr error  // why the last attempt on pngData failed (nil = it worked)
 
 	// The slot file as we last wrote it, to notice (cheaply, by stat) when
 	// someone else removed or replaced it. The picture is megabytes: reading
@@ -96,8 +98,9 @@ func (s *ImageSlot) follow(geo SlotGeometry, cfg SlotConfig) bool {
 	}
 	changed := n.Path != s.Path || n.Width != s.Width || n.Height != s.Height
 	if changed {
-		n.pngMod = time.Time{} // convert again for the new size
-		n.pixels = nil
+		// Convert again for the new size (a cached failure may pass now too)
+		n.pngMod, n.pngData, n.pixels, n.lastErr = time.Time{}, nil, nil, nil
+		n.written = fileID{}
 	}
 	*s = n
 	return changed
@@ -115,24 +118,27 @@ func (s *ImageSlot) render() (pix []byte, changed bool, err error) {
 		s.pngMod = time.Time{}
 		return nil, changed, statErr
 	}
-	if s.pixels != nil && st.ModTime().Equal(s.pngMod) && st.Size() == s.pngSize {
-		return s.pixels, false, nil
+	// Same file as last time (by mtime and size): the last outcome stands,
+	// whether it was pixels or an error - a broken PNG left in place must not
+	// be decoded again every tick
+	if s.pngData != nil && st.ModTime().Equal(s.pngMod) && st.Size() == s.pngSize {
+		return s.pixels, false, s.lastErr
 	}
 	// mtime or size changed: read the file (a PNG is small) and decode only
 	// when its bytes really differ (a plain touch, or a re-save of the same
 	// image, would otherwise cost a full decode + conversion every time)
 	data, readErr := os.ReadFile(s.PNG)
-	s.pngMod, s.pngSize = st.ModTime(), st.Size()
-	if readErr == nil && s.pixels != nil && bytes.Equal(data, s.pngData) {
-		return s.pixels, false, nil
-	}
 	if readErr != nil {
-		changed = s.pixels != nil
-		s.pixels = nil
-		return nil, changed, readErr
+		// Transient (e.g. mid-replace): try again next tick, keep what we show
+		return s.pixels, false, readErr
 	}
-	pix, err = convertPNGBytes(data, s.PNG, s.Width, s.Height, s.Fit)
+	s.pngMod, s.pngSize = st.ModTime(), st.Size()
+	if s.pngData != nil && bytes.Equal(data, s.pngData) {
+		return s.pixels, false, s.lastErr
+	}
 	s.pngData = data
+	pix, err = convertPNGBytes(data, s.PNG, s.Width, s.Height, s.Fit)
+	s.lastErr = err
 	if err != nil {
 		changed = s.pixels != nil
 		s.pixels = nil
@@ -158,11 +164,15 @@ func convertPNG(path string, w, h int, fit string) ([]byte, error) {
 // The slot is at most maxImageWidth x maxImageHeight (prudynt's limits); a
 // source much larger than that is only shrunk anyway, and decoding it costs
 // two full-size copies (the decoded image and its RGBA conversion) on a
-// camera with a few tens of MB free. Read the header first and refuse.
+// camera with a few tens of MB free. Read the header first and refuse:
+// by bytes (16-bit PNGs decode to 8 bytes per pixel), and per side (a
+// 1 x 1,800,000 strip is not a picture, and would overflow 32-bit products).
 const (
 	maxImageWidth   = 1280
 	maxImageHeight  = 720
-	maxSourcePixels = 2 * maxImageWidth * maxImageHeight // ~7 MB RGBA per copy
+	maxSourceSide   = 4096
+	maxSourceBytes  = 2 * maxImageWidth * maxImageHeight * 4 // ~7.4 MB for the decoded copy
+	maxSourcePixels = maxSourceBytes / 4                     // for 8-bit images
 )
 
 func convertPNGBytes(data []byte, path string, w, h int, fit string) ([]byte, error) {
@@ -170,9 +180,15 @@ func convertPNGBytes(data []byte, path string, w, h int, fit string) ([]byte, er
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", path, err)
 	}
-	if hdr.Width <= 0 || hdr.Height <= 0 || hdr.Width*hdr.Height > maxSourcePixels {
-		return nil, fmt.Errorf("%s: %dx%d is too large to decode here (at most %d pixels, e.g. %dx%d): shrink it first",
-			path, hdr.Width, hdr.Height, maxSourcePixels, 2*maxImageWidth, maxImageHeight)
+	bpp := int64(4)
+	switch hdr.ColorModel {
+	case color.RGBA64Model, color.NRGBA64Model, color.Gray16Model:
+		bpp = 8
+	}
+	if hdr.Width <= 0 || hdr.Height <= 0 || hdr.Width > maxSourceSide || hdr.Height > maxSourceSide ||
+		int64(hdr.Width)*int64(hdr.Height)*bpp > maxSourceBytes {
+		return nil, fmt.Errorf("%s: %dx%d (%d bytes/pixel) is too large to decode here (at most %d pixels of 8-bit, %d per side): shrink it first",
+			path, hdr.Width, hdr.Height, bpp, maxSourcePixels, maxSourceSide)
 	}
 	src, _, err := image.Decode(bytes.NewReader(data))
 	if err != nil {
@@ -190,12 +206,14 @@ func convertPNGBytes(data []byte, path string, w, h int, fit string) ([]byte, er
 	sw, sh := rgba.Rect.Dx(), rgba.Rect.Dy()
 	dw, dh := sw, sh
 	if fit == "contain" && (sw > w || sh > h) {
-		// Largest size within w x h with the source's aspect ratio
-		if sw*h > sh*w {
-			dw, dh = w, max(1, sh*w/sw)
+		// Largest size within w x h with the source's aspect ratio (int64: the
+		// products would overflow a 32-bit int on MIPS with large sources)
+		if int64(sw)*int64(h) > int64(sh)*int64(w) {
+			dw, dh = w, max(1, int(int64(sh)*int64(w)/int64(sw)))
 		} else {
-			dw, dh = max(1, sw*h/sh), h
+			dw, dh = max(1, int(int64(sw)*int64(h)/int64(sh))), h
 		}
+		dw, dh = min(dw, sw), min(dh, sh) // shrink only
 	}
 	scaled := rgba
 	if dw != sw || dh != sh {
@@ -235,12 +253,12 @@ func boxScale(src *image.RGBA, dw, dh int) *image.RGBA {
 	sw, sh := src.Rect.Dx(), src.Rect.Dy()
 	dst := image.NewRGBA(image.Rect(0, 0, dw, dh))
 	for y := 0; y < dh; y++ {
-		y0, y1 := y*sh/dh, (y+1)*sh/dh
+		y0, y1 := int(int64(y)*int64(sh)/int64(dh)), int(int64(y+1)*int64(sh)/int64(dh))
 		if y1 <= y0 {
 			y1 = y0 + 1
 		}
 		for x := 0; x < dw; x++ {
-			x0, x1 := x*sw/dw, (x+1)*sw/dw
+			x0, x1 := int(int64(x)*int64(sw)/int64(dw)), int(int64(x+1)*int64(sw)/int64(dw))
 			if x1 <= x0 {
 				x1 = x0 + 1
 			}

@@ -136,9 +136,12 @@ B G R A の順、アルファはストレート) で、`width` × `height` × 4 
 | `pos_x` / `pos_y` | -8 / 8 (右上) | 位置。0 以上は左/上端から、負の値は右/下端からの距離 |
 
 - OSD プールの予算はテキスト 3 枚の**後**に割り当てる。入らなければ**縮めずに表示しない** (切れた絵は意味が無い) で、
-  `logread | grep imagefile` に理由が出る。必要なプールは画像の `width × height × 4` + テキスト分:
-  200 × 200 なら 160KB (既定のプールに入る)、640 × 360 で 921KB、**1280 × 720 で 3.6MB (`osd_pool_size` 8192)**
+  `logread | grep imagefile` に理由が出る。必要なプールは画像の `width × height × 4` + テキスト分 (`osd_pool_size` と
+  同じ KiB 換算): 200 × 200 なら 156KB (既定のプールに入る)、640 × 360 で 900KB、**1280 × 720 で 3600KB (`osd_pool_size` 8192)**
 - 映像 (720p なら 1280 × 720) より大きい画像は表示しない
+- prudynt は `osd.sei.enabled` と `osd.burnin.enabled` が**両方 false** だと OSD の処理自体を起動しない (テキストの節と同じ)。
+  その構成で画像だけ出すなら `/etc/prudynt.json` に `osd.imagefile.enabled: true` を書いて起動する必要がある
+  (SD の `prudynt-osd.json` は起動後に送られるので、それだけでは OSD オブジェクトが作られない)
 - 描画の順序はテキストの上 (重なったら画像が手前)
 - 設定は他のスロットと同じく `prudyntctl json '{"osd":{"imagefile":{...}}}'`、`prudynt-osd.json`、[Web UI](#web-ui-から編集する) の
   Image カードから。`prudynt-osd.json` から `imagefile` のブロックを消すと `osd-config` が無効に戻す
@@ -179,7 +182,7 @@ cat /tmp/osd-image.raw | ssh root@<camera-ip> 'cat > /run/prudynt/osd-image.tmp 
 | `background_color` | `#00000080` | 背景ボックスの色。alpha が 0 なら背景なし |
 
 - prudynt は `osd.sei.enabled` と `osd.burnin.enabled` が**両方 false** だと OSD の処理自体を起動しない。その構成で
-  テキストだけ出したい時は、`/etc/prudynt.json` に `osd.textfile.enabled: true` (または `textfile2` / `textfile3`) を書いて
+  テキスト (や画像) だけ出したい時は、`/etc/prudynt.json` に `osd.textfile.enabled: true` (または `textfile2` / `textfile3` / `imagefile`) を書いて
   起動する必要がある (実行中に `prudyntctl json` で有効化しても出ない)。どちらかが true なら (既定は両方 true)
   実行中に有効化できる
 - `path` と色の変更が映像に出るまで最大 1 秒かかる (文字列の設定は 1 秒に 1 回だけ読み直す。ファイルの中身の

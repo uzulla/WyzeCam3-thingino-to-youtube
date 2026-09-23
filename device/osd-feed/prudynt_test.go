@@ -30,3 +30,14 @@ func TestParseGeometry(t *testing.T) {
 		t.Errorf("got ok=%v %+v", ok, g)
 	}
 }
+
+func TestParseGeometryImageSlot(t *testing.T) {
+	d := map[string]SlotGeometry{"imagefile": defaultGeometry["imagefile"]}
+	g, ok := parseGeometry([]byte(`{"imagefile":{"enabled":true,"width":640,"height":360,"path":"/run/prudynt/osd-image"}}`), d)
+	if !ok || g["imagefile"].Width != 640 || g["imagefile"].Height != 360 || !g["imagefile"].Enabled {
+		t.Errorf("got %+v", g["imagefile"])
+	}
+	if s := g["imagefile"].String(); s != "/run/prudynt/osd-image 640x360 px enabled" {
+		t.Errorf("String(): %q", s)
+	}
+}

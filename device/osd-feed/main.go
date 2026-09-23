@@ -149,6 +149,7 @@ func main() {
 	}
 	log.Printf("osd-feed: %d slots, %d sources, redraw every %v", nslots, len(cfg.Sources), cfg.interval())
 	last := map[string]string{}    // what each slot's file holds (or "error")
+	imgPending := true             // the image file does not match the picture yet
 	lastErr := map[string]string{} // last problem reported per slot, once
 	writes := 0
 	t := time.NewTicker(cfg.interval())
@@ -203,7 +204,7 @@ loop:
 			}
 			if img != nil && img.follow(g[img.Name], cfg.Slots[img.Name]) {
 				log.Printf("slot imagefile: now %s", g[img.Name])
-				delete(last, img.Name)
+				imgPending = true
 			}
 		case now := <-t.C:
 			data := cache.snapshot(now)
@@ -234,23 +235,30 @@ loop:
 				if err != nil {
 					report(img.Name, err.Error())
 				}
-				// Written when the picture changed, or when the file is not what
-				// we last wrote (removed, replaced); no picture -> no file.
-				// "ok again" only once the file is right (written, or nothing to
-				// write): a write that keeps failing must not be logged every tick.
-				key := fmt.Sprintf("%d", len(pix))
+				if changed {
+					imgPending = true // new pixels (or none): the file must follow
+				}
+				// No picture -> no file: also one left over from an earlier run,
+				// and again next tick if the remove failed
 				if pix == nil {
-					if last[img.Name] != "" || changed {
-						os.Remove(img.Path)
-						last[img.Name] = ""
+					if _, statErr := os.Stat(img.Path); statErr == nil {
+						if rmErr := os.Remove(img.Path); rmErr != nil {
+							report(img.Name, rmErr.Error())
+						} else {
+							imgPending = false
+						}
+					} else {
+						imgPending = false
 					}
-				} else if changed || last[img.Name] != key || !img.holdsOurFile() {
+				} else if imgPending || !img.holdsOurFile() {
+					// Pending until a write succeeds: a failed write of a picture
+					// with the same size as the old one must not be forgotten
 					if err := writeSlotBytes(img.Path, pix); err != nil {
 						report(img.Name, err.Error())
 					} else {
 						recovered(img.Name)
 						img.wrote()
-						last[img.Name] = key
+						imgPending = false
 						writes++
 					}
 				} else if err == nil {

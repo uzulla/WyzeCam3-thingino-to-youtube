@@ -324,7 +324,7 @@ index 500c5fb..c7ee1fc 100644
  }
  
 diff --git a/src/video/OSD.hpp b/src/video/OSD.hpp
-index e0ba5b2..7e7b5dc 100644
+index e0ba5b2..a855287 100644
 --- a/src/video/OSD.hpp
 +++ b/src/video/OSD.hpp
 @@ -14,8 +14,14 @@
@@ -342,7 +342,7 @@ index e0ba5b2..7e7b5dc 100644
  #if defined(OSD_BURN_TIMESTAMP) && defined(USE_OSD_FONT_LIBSCHRIFT)
  #include "schrift.h"
  #include <unordered_map>
-@@ -156,6 +162,84 @@ private:
+@@ -156,6 +162,85 @@ private:
    bool osd_group_started_{false};
    std::string last_ts_text_;
  
@@ -403,7 +403,8 @@ index e0ba5b2..7e7b5dc 100644
 +    bool region_created{false};
 +    bool attr_set{false};
 +    bool shown{false};
-+    bool failed{false};         // IMP_OSD_SetRgnAttr refused this geometry
++    bool pending{false};        // buf changed and libimp has not taken it yet
++    bool failed{false};         // IMP_OSD_SetRgnAttr refused this geometry/position
 +    bool over_budget{false};    // no room in the OSD pool
 +    bool too_big{false};        // larger than the frame
 +    bool size_warned{false};    // file size mismatch already reported
@@ -429,10 +430,10 @@ index e0ba5b2..7e7b5dc 100644
    // until ts_scale_ changes (osd.burnin.scale takes effect live).
 diff --git a/src/video/OSDImagefile.cpp b/src/video/OSDImagefile.cpp
 new file mode 100644
-index 0000000..4e6eb2f
+index 0000000..976fbd0
 --- /dev/null
 +++ b/src/video/OSDImagefile.cpp
-@@ -0,0 +1,279 @@
+@@ -0,0 +1,300 @@
 +// -- image overlay --------------------------------------------------------
 +// One burned-in OSD region (osd.imagefile) showing a raw BGRA bitmap read
 +// from a file (the slot's path, meant to live on tmpfs): exactly
@@ -599,25 +600,27 @@ index 0000000..4e6eb2f
 +  const size_t bytes = (size_t)width * height * 4;
 +
 +  if (width > stream_width || height > stream_height) {
-+    if (!s.too_big)
++    if (!s.too_big) {
 +      LOG_WARN("OSD: imagefile overlay " << width << "x" << height
 +               << " is larger than the " << stream_width << "x" << stream_height
 +               << " frame - not shown");
-+    destroyImagefileSlot();
-+    s.too_big = true;
++      destroyImagefileSlot(); // once: destroy resets the slot (and conf_valid)
++      s.too_big = true;
++    }
 +    return;
 +  }
 +  s.too_big = false;
 +  if (bytes > budget) {
 +    // Not shrunk: a cut-off picture is useless. Released so the text slots
 +    // keep their room; recreated once it fits (bigger pool, smaller text).
-+    if (!s.over_budget)
++    if (!s.over_budget) {
 +      LOG_WARN("OSD: imagefile overlay " << width << "x" << height << " ("
 +               << (bytes / 1024) << " KB) not shown: only " << (budget / 1024)
 +               << " KB of the OSD pool left after the text overlays "
 +                  "(see general.osd_pool_size)");
-+    destroyImagefileSlot();
-+    s.over_budget = true;
++      destroyImagefileSlot(); // once, see above
++      s.over_budget = true;
++    }
 +    return;
 +  }
 +  s.over_budget = false;
@@ -633,11 +636,13 @@ index 0000000..4e6eb2f
 +  const int x = resolveImagePos(c.pos_x, width, stream_width);
 +  const int y = resolveImagePos(c.pos_y, height, stream_height);
 +  const bool geometry_changed = width != s.width || height != s.height;
++  const bool moved = x != s.x || y != s.y;
 +  const bool path_changed = path != s.path;
-+  if (geometry_changed)
-+    s.failed = false;
++  if (geometry_changed || moved)
++    s.failed = false; // a new geometry or position is worth another attempt
 +  bool present = false;
-+  const bool changed = reloadImagefile(path, bytes, path_changed || geometry_changed, present);
++  if (reloadImagefile(path, bytes, path_changed || geometry_changed, present))
++    s.pending = true; // new pixels, not handed to libimp yet
 +  s.path = path;
 +
 +  if (!present || s.failed) {
@@ -653,12 +658,20 @@ index 0000000..4e6eb2f
 +      s.create_error_logged = true;
 +      return;
 +    }
++    if (IMP_OSD_RegisterRgn(s.rgn, osdGrp, nullptr) != 0) {
++      // Retried next tick with a fresh handle
++      if (!s.create_error_logged)
++        LOG_ERROR("OSD: IMP_OSD_RegisterRgn failed for imagefile overlay");
++      s.create_error_logged = true;
++      IMP_OSD_DestroyRgn(s.rgn);
++      s.rgn = INVHANDLE;
++      return;
++    }
 +    s.create_error_logged = false;
-+    IMP_OSD_RegisterRgn(s.rgn, osdGrp, nullptr);
 +    s.region_created = true;
 +  }
 +
-+  const bool attr_stale = !s.attr_set || geometry_changed || s.x != x || s.y != y;
++  const bool attr_stale = !s.attr_set || geometry_changed || moved;
 +  if (attr_stale) {
 +    memset(&s.attr, 0, sizeof(s.attr));
 +    s.attr.type = OSD_REG_PIC;
@@ -686,7 +699,12 @@ index 0000000..4e6eb2f
 +      grp.gAlphaEn = 1;               // per-pixel alpha from the file
 +      grp.fgAlhpa = 255;
 +      grp.bgAlhpa = 0;
-+      IMP_OSD_SetGrpRgnAttr(s.rgn, osdGrp, &grp);
++      if (IMP_OSD_SetGrpRgnAttr(s.rgn, osdGrp, &grp) != 0) {
++        // The region exists but is not in the group's display list: try
++        // the whole attribute step again next tick
++        LOG_ERROR("OSD: IMP_OSD_SetGrpRgnAttr failed for imagefile overlay");
++        return;
++      }
 +      if (!osd_group_started_) {
 +        IMP_OSD_Start(osdGrp);
 +        osd_group_started_ = true;
@@ -694,20 +712,24 @@ index 0000000..4e6eb2f
 +      s.shown = true;
 +    }
 +    s.attr_set = true;
++    s.pending = false; // SetRgnAttr took the current buffer
 +    s.width = width;
 +    s.height = height;
 +    s.x = x;
 +    s.y = y;
 +    LOG_INFO("OSD: imagefile overlay " << width << "x" << height << " at " << x << ","
 +             << y << " (" << (bytes / 1024) << " KB) from " << path);
-+  } else if (changed) {
++  } else if (s.pending) {
 +    s.attr.data.picData.pData = s.buf.data();
-+    IMP_OSD_UpdateRgnAttrData(s.rgn, &s.attr.data);
++    if (IMP_OSD_UpdateRgnAttrData(s.rgn, &s.attr.data) == 0)
++      s.pending = false; // else: still pending, tried again next tick
++    else
++      LOG_ERROR("OSD: IMP_OSD_UpdateRgnAttrData failed for imagefile overlay, retrying");
 +  }
 +
 +  if (!s.shown) {
-+    IMP_OSD_ShowRgn(s.rgn, osdGrp, 1);
-+    s.shown = true;
++    if (IMP_OSD_ShowRgn(s.rgn, osdGrp, 1) == 0)
++      s.shown = true;
 +  }
 +}
 +

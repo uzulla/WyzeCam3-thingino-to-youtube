@@ -178,3 +178,68 @@ func TestConvertPNGRefusesHugeSource(t *testing.T) {
 		t.Errorf("huge header must be refused before decoding, got %v", err)
 	}
 }
+
+func TestImageSlotBrokenPNGIsNotDecodedEveryCall(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "bad.png")
+	os.WriteFile(p, []byte("not a png at all"), 0o644)
+	s := newImageSlot("imagefile", SlotConfig{PNG: p}, SlotGeometry{Path: "/tmp/x", Width: 4, Height: 4})
+	_, _, err1 := s.render()
+	if err1 == nil {
+		t.Fatal("garbage must fail")
+	}
+	// second call: same file -> same error, without touching pngData (no re-decode)
+	before := s.pngData
+	_, changed, err2 := s.render()
+	if err2 == nil || changed || !bytes.Equal(before, s.pngData) {
+		t.Errorf("cached failure expected, got err=%v changed=%v", err2, changed)
+	}
+	// fixing the file recovers
+	good := writeTestPNG(t, 4, 4)
+	data, _ := os.ReadFile(good)
+	os.WriteFile(p, data, 0o644)
+	future := s.pngMod.Add(2 * 1e9)
+	os.Chtimes(p, future, future)
+	if pix, changed, err := s.render(); err != nil || !changed || len(pix) != 64 {
+		t.Errorf("after fixing: %v %v %d", err, changed, len(pix))
+	}
+}
+
+func TestConvertPNGRefusesExtremeShapesAnd16Bit(t *testing.T) {
+	// a 1 x 1,800,000 strip fits the pixel budget but not the per-side limit
+	img := image.NewNRGBA(image.Rect(0, 0, 1, 1))
+	var buf bytes.Buffer
+	png.Encode(&buf, img)
+	data := buf.Bytes()
+	copy(data[16:20], []byte{0, 0, 0, 1})
+	binary.BigEndian.PutUint32(data[20:24], 1800000)
+	binary.BigEndian.PutUint32(data[29:33], crc32.ChecksumIEEE(data[12:29]))
+	if _, err := convertPNGBytes(data, "strip.png", 4, 4, "contain"); err == nil || !strings.Contains(err.Error(), "too large") {
+		t.Errorf("extreme strip must be refused, got %v", err)
+	}
+	// 16-bit: 1000x1000 NRGBA64 = 8 MB decoded, over the byte budget; 8-bit of the same size is fine
+	img16 := image.NewNRGBA64(image.Rect(0, 0, 1, 1))
+	buf.Reset()
+	png.Encode(&buf, img16)
+	d16 := buf.Bytes()
+	binary.BigEndian.PutUint32(d16[16:20], 1000)
+	binary.BigEndian.PutUint32(d16[20:24], 1000)
+	binary.BigEndian.PutUint32(d16[29:33], crc32.ChecksumIEEE(d16[12:29]))
+	if _, err := convertPNGBytes(d16, "big16.png", 4, 4, "contain"); err == nil || !strings.Contains(err.Error(), "too large") {
+		t.Errorf("16-bit 1000x1000 must be refused by bytes, got %v", err)
+	}
+	// a 3000x2 source (wide) shrinks without overflow and never enlarges
+	wide := image.NewNRGBA(image.Rect(0, 0, 3000, 2))
+	for x := 0; x < 3000; x++ {
+		wide.SetNRGBA(x, 0, color.NRGBA{R: 255, A: 255})
+		wide.SetNRGBA(x, 1, color.NRGBA{R: 255, A: 255})
+	}
+	buf.Reset()
+	png.Encode(&buf, wide)
+	out, err := convertPNGBytes(buf.Bytes(), "wide.png", 100, 50, "contain")
+	if err != nil || len(out) != 100*50*4 {
+		t.Fatalf("wide: %v %d", err, len(out))
+	}
+	if px(out, 100, 50, 24)[3] != 255 || px(out, 100, 50, 0)[3] != 0 { // 1 row, centred: (50-1)/2 = 24
+		t.Errorf("wide strip must land as one row in the middle: %v %v", px(out, 100, 50, 24), px(out, 100, 50, 0))
+	}
+}
