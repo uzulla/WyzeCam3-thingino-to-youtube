@@ -16,7 +16,7 @@ device/install-prudynt-osd.sh root@<camera-ip> path/to/prudynt
 - インストール時に prudynt を再起動するので、**配信が数秒切れる** (supervisor が自動で再接続する)
 - バイナリはビルドしたファーム専用。`/etc/os-release` の `BUILD_ID` がインストール時と違っていたら
   bind mount せず、標準の prudynt のまま起動する
-- Web UI にページが増える (Streamer メニューの「OSD Elements」が「OSD text」= `/osd-text.html` に差し替わる。
+- Web UI にページが増える (Streamer メニューの「OSD Elements」が「OSD Settings」= `/osd-settings.html` に差し替わる。
   [下記](#web-ui-から編集する))
 - **Thingino の `/etc/init.d/S31prudynt` を 2 行書き換える**: 生存確認の `pidof "$DAEMON"` (`/usr/bin/prudynt` のフルパス)
   を名前一致にする。bind mount した prudynt は `/proc/<pid>/exe` が `/usr/bin/prudynt-osd` になり、フルパスの `pidof` に
@@ -29,9 +29,9 @@ device/install-prudynt-osd.sh root@<camera-ip> path/to/prudynt
 - 元に戻す: `service disable prudynt-osd; service disable osd-config` して再起動 (すぐ戻すなら
   `service stop osd-config; service stop prudynt; /etc/init.d/S30prudynt-osd stop; service start prudynt`)。
   完全に消すなら `/etc/init.d/S30prudynt-osd` `/usr/bin/prudynt-osd` `/usr/bin/prudynt-osd.build`
-  `/usr/sbin/osd-progress-demo` `/usr/sbin/osd-config` `/etc/init.d/S93osd-config` `/var/www/osd-text.html`
+  `/usr/sbin/osd-progress-demo` `/usr/sbin/osd-config` `/etc/init.d/S93osd-config` `/var/www/osd-settings.html`
   `/var/www/x/json-osd-text.cgi` を削除し、メニューを戻す
-  (`sed -i 's#/osd-text.html#/streamer-osd.html#; s#"OSD text"#"OSD Elements"#' /var/www/a/plugins.js /var/www/a/plugins/prudynt.webui.json`)。
+  (`sed -i 's#/osd-settings.html#/streamer-osd.html#; s#"OSD Settings"#"OSD Elements"#' /var/www/a/plugins.js /var/www/a/plugins/prudynt.webui.json`)。
   `S31prudynt` の書き換えは残しても害は無い (戻すなら `sed -i 's|${DAEMON##\*/}|$DAEMON|g' /etc/init.d/S31prudynt`)。置いていれば
   設定ファイル (`/etc/prudynt-osd.json` と、SD カード直下の `prudynt-osd.json` = カメラ上では
   `/mnt/mmcblk0p1/prudynt-osd.json`) を削除する。どちらかが残っていると、入れ直した時や `osd-config` を
@@ -77,11 +77,11 @@ echo 'REC' > /run/prudynt/osd-text2.tmp && mv /run/prudynt/osd-text2.tmp /run/pr
 
 ## Web UI から編集する
 
-Thingino の Web UI の Streamer メニュー → **OSD text** (`http://<camera-ip>/osd-text.html`) で、3 つの矩形の設定
+Thingino の Web UI の Streamer メニュー → **OSD Settings** (`http://<camera-ip>/osd-settings.html`) で、3 つの矩形の設定
 (有効、位置、桁×行、倍率、色) と日時 (`osd.burnin`) の書式・倍率・色、`general.osd_pool_size`、そして
 矩形ごとのテキストの中身を編集できる。レイアウトの確認用で、下の節の JSON を手で書くのと同じことが GUI でできる。
 
-![OSD text ページ](images/osd-text-webui.png)
+![OSD Settings ページ](images/osd-settings-webui.png)
 
 - プレビューは既存ページと同じ MJPEG。テキストは映像に焼き込まれるので、配信に出るものがそのまま映る
 - **Show** / **Clear** は矩形のファイル (`/run/prudynt/osd-text*`) を書く/消す (上の `mv` の手順と同じ。tmpfs のみ)。
@@ -92,8 +92,8 @@ Thingino の Web UI の Streamer メニュー → **OSD text** (`http://<camera-
   prudynt の再起動は要らない。ファイルに既にあるキーのうち、ページにない項目 (`path`、`substream_disabled` など) は
   残る (SD にまだファイルが無い時は、`osd-config` と同じ順で `/etc/prudynt-osd.json` を読んでそれに重ねる)。`general.osd_pool_size` を変えた時だけ、`osd-config` が `/etc/prudynt.json` に書いて prudynt を再起動する
   (配信が数秒切れる) ので、保存前に確認が出る。SD カードが挿さっていない時は保存できない (エラーになる)
-- **Image** カードは `osd.imagefile` (有効、位置、幅・高さ)。ファイルの有無と大きさが合っているかを表示する。
-  中身 (PNG) は [osd-feed](osd-feed.md) が SD カードから変換して置く
+- **Image** カードは `osd.imagefile` (有効、位置、幅・高さ)。**PNG を置く場所** (osd-feed.json の `slots.imagefile.png`、通常は SD カードの
+  `logo.png`) と、prudynt が読む生ファイルの場所、ファイルの有無と大きさが合っているかを表示する。中身の変換は [osd-feed](osd-feed.md)
 - **prudynt-osd.json** 欄に、いま Save を押したら書かれる JSON がフォームに追従して出る。**Download** で
   `prudynt-osd.json` としてダウンロード、**Copy** でクリップボードへ (試した配置を PC に持ち帰る、別の SD カードに置く、
   `device/prudynt-osd.json.example` のように保存しておく、といった用途)。テキスト欄の中身はこの JSON には入らない

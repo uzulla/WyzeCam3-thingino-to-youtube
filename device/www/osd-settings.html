@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>thingino · OSD text</title>
+  <title>thingino · OSD Settings</title>
   <script src="/a/theme-init.js"></script>
   <link rel="icon" type="image/svg+xml" href="/a/favicon.svg">
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -28,7 +28,7 @@
   </style>
 </head>
 
-<body id="page-osd-text">
+<body id="page-osd-settings">
 <nav data-app-nav></nav>
 
 <main class="pb-4">
@@ -37,7 +37,7 @@
 
     <section>
       <div class="d-flex justify-content-between align-items-center mb-3">
-        <h3>OSD text</h3>
+        <h3>OSD Settings</h3>
         <button type="button" id="reload" class="btn btn-outline-secondary btn-sm" title="Read everything again from the camera">
           <i class="bi bi-arrow-clockwise me-1"></i> Reload
         </button>
@@ -73,10 +73,14 @@
               <div><label class="form-label small mb-0" for="imagefile_height">Height</label><input type="number" id="imagefile_height" class="form-control form-control-sm num" min="2" max="720" step="2"></div>
               <div class="small text-secondary align-self-center" id="imagefile_state"></div>
             </div>
+            <p class="small text-secondary mb-1">
+              <strong>Put the picture (a PNG, alpha allowed) at <code id="imagefile_png">…</code></strong> on the SD card
+              <span id="imagefile_png_note"></span>. osd-feed converts it to this slot's size and writes the raw file
+              <code id="imagefile_path">/run/prudynt/osd-image</code> that prudynt shows; replace the PNG and the overlay follows within a second.
+            </p>
             <p class="small text-secondary mb-0">
-              Even sizes only; the file must be exactly width × height × 4 bytes, so osd-feed converts the PNG to this size
-              (<code>slots.imagefile.png</code> in osd-feed.json, docs/osd-feed.md). Needs width × height × 4 bytes of OSD pool
-              on top of the text overlays (1280 × 720 = 3.6 MB: osd_pool_size 8192).
+              Even sizes only; the raw file must be exactly width × height × 4 bytes. Needs width × height × 4 bytes of OSD pool
+              on top of the text overlays (1280 × 720 = 3.6 MB: osd_pool_size 8192). The PNG is shrunk to fit, never enlarged.
             </p>
           </div>
 
@@ -372,6 +376,21 @@
   function fillImage(v) {
     $('imagefile_enabled').checked = v.enabled === true;
     IMAGE_NUMS.forEach(function(f) { if (v[f] !== undefined) $('imagefile_' + f).value = v[f]; });
+    if (v.path) $('imagefile_path').textContent = v.path;
+  }
+
+  // Where osd-feed takes the picture from (slots.imagefile.png in its config)
+  function showImageSource(s) {
+    var png = s.image_png, note = '';
+    if (!png) {
+      png = '/mnt/mmcblk0p1/logo.png';
+      note = s.osd_feed_config ? '(not configured: add "imagefile": {"png": "' + png + '"} to slots in ' + s.osd_feed_config + ')'
+        : '(osd-feed is not installed: see docs/osd-feed.md)';
+    } else {
+      note = '(from ' + s.osd_feed_config + ')';
+    }
+    $('imagefile_png').textContent = png;
+    $('imagefile_png_note').textContent = note;
   }
 
   function readImage() {
@@ -450,6 +469,7 @@
     });
     imageBytes = s.texts ? s.texts.imagefile : null;
     updateImageState(imageBytes);
+    showImageSource(s);
     $('config_path').textContent = s.config_path;
     var merged = (s.config && s.config_source && s.config_source !== s.config_path) ? 'the form is merged into ' + s.config_source + ' (what osd-config uses now)' : '';
     var cstate = s.config_error ? s.config_error + (merged ? '; ' + merged : '')

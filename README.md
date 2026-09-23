@@ -85,8 +85,8 @@ device/    カメラ側の常設運用一式 (ファイルの一覧は device/RE
                                                 任意: 上記 OSD パッチ入りの prudynt を入れる、操作側のサンプル
              osd-config / S93osd-config / prudynt-osd.json.example
                                                 任意: OSD の設定を SD カードのファイルから読んで prudynt に送り直す
-             www/osd-text.html / www/x/json-osd-text.cgi
-                                                任意: Thingino の Web UI に足す OSD テキストの編集ページと CGI
+             www/osd-settings.html / www/x/json-osd-text.cgi
+                                                任意: Thingino の Web UI に足す OSD 設定ページ (テキスト・画像) と CGI
              osd-feed/ / S94osd-feed / install-osd-feed.sh
                                                 任意: OSD テキストを自動更新する常駐プログラム (Go、SD カードから実行)
              common.sh                          対応ファームの判定 (違えば何も変更せず中止)
@@ -161,7 +161,7 @@ git 管理外です。必要な変更はすべて `patches/` に分離してあ�
 prudynt (Thingino のストリーマ) へのパッチ `patches/prudynt-osd-textfile.diff` で、配信映像に任意の複数行テキスト
 (プログレスバーなどの ASCII アート) を 3 か所 (既定は左下・右上・右下) まで焼き込み、カメラ上の別のプログラムから
 0.5 秒単位で更新できます。操作側は tmpfs 上のファイルを `mv` で置き換えるだけで、ファームの焼き直しは不要です。
-矩形の位置や大きさ、表示するテキストは Thingino の Web UI (Streamer → OSD text) からも編集でき、設定は SD カードに保存されます。
+矩形の位置や大きさ、表示するテキストは Thingino の Web UI (Streamer → OSD Settings) からも編集でき、設定は SD カードに保存されます。
 表示内容を自動で更新する側のプログラム (`osd-feed`: メモリ量やカウンタ、HTTP で取った JSON をテンプレートで並べる) は
 [docs/osd-feed.md](docs/osd-feed.md) (ビルドは `device/osd-feed/build.sh`)。OSD 自体の使い方と設定は [docs/osd.md](docs/osd.md)、
 prudynt のビルドは [docs/build.md](docs/build.md)。

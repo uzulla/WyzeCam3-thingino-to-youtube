@@ -1,6 +1,6 @@
 #!/bin/sh
 # shellcheck disable=SC1091,SC3043
-# json-osd-text.cgi - backend of /osd-text.html (Thingino web UI page for the
+# json-osd-text.cgi - backend of /osd-settings.html (Thingino web UI page for the
 # text-file OSD overlay, docs/osd.md). Install to /var/www/x/json-osd-text.cgi.
 # Runs under uhttpd as root, like Thingino's own CGIs; authentication is
 # Thingino's: the web UI session cookie, or the API key from /etc/thingino-api.key
@@ -13,7 +13,8 @@
 #            or null>, "config_error":...,
 #            "pool_size":<general.osd_pool_size in /etc/prudynt.json>,
 #            "live":<prudyntctl json osd.textfile/2/3/burnin>,
-#            "texts":{"textfile":"...", ...}  (current overlay files, null = none),
+#            "texts":{"textfile":"...", ..., "imagefile": <bytes>}  (current overlay files, null = none),
+#            "osd_feed_config": <osd-feed.json on the SD card or null>, "image_png": <its slots.imagefile.png or null>,
 #            "log":[...]}                     (last logread lines about textfile/osd-config)
 #   POST ?action=text&slot=1|2|3   body: the text (plain, ASCII)
 #        -> writes the slot's file (osd.textfileN.path) with the tmp + mv contract from
@@ -179,6 +180,16 @@ status)
 	else
 		texts="$texts,\"imagefile\":null"
 	fi
+	# Where osd-feed takes the picture from (its config on the SD card), so the
+	# page can tell the user where to put the PNG
+	feed_cfg=null
+	image_png=null
+	for fc in /mnt/mmcblk0p1/osd-feed.json; do
+		[ -f "$fc" ] || continue
+		feed_cfg="\"$fc\""
+		png=$(jct "$fc" get slots.imagefile.png 2>/dev/null)
+		[ -n "$png" ] && image_png="\"$(json_escape "$png")\""
+	done
 	log=""
 	# The patched prudynt tags its warnings "textfile" / "imagefile" (reduced to / not shown)
 	while IFS= read -r line; do
@@ -186,7 +197,7 @@ status)
 	done <<EOF
 $(logread 2>/dev/null | grep -E 'textfile|imagefile|osd-config|osd-feed' | tail -n 12)
 EOF
-	send_json "{\"config_path\":\"$CONFIG\",\"config_source\":$config_source,\"config\":$config,\"config_error\":$config_error,\"pool_size\":$pool,\"live\":$live,\"texts\":{$texts},\"log\":[$log]}"
+	send_json "{\"config_path\":\"$CONFIG\",\"config_source\":$config_source,\"config\":$config,\"config_error\":$config_error,\"pool_size\":$pool,\"live\":$live,\"texts\":{$texts},\"osd_feed_config\":$feed_cfg,\"image_png\":$image_png,\"log\":[$log]}"
 	;;
 
 text)
