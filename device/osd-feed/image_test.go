@@ -1,11 +1,15 @@
 package main
 
 import (
+	"bytes"
+	"encoding/binary"
+	"hash/crc32"
 	"image"
 	"image/color"
 	"image/png"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -157,5 +161,20 @@ func TestImageSlotHoldsOurFile(t *testing.T) {
 	os.Remove(s.Path)
 	if s.holdsOurFile() {
 		t.Error("removed must be noticed")
+	}
+}
+
+func TestConvertPNGRefusesHugeSource(t *testing.T) {
+	// header claims 5000x5000: DecodeConfig must stop us before decoding
+	img := image.NewNRGBA(image.Rect(0, 0, 1, 1))
+	var buf bytes.Buffer
+	png.Encode(&buf, img)
+	data := buf.Bytes()
+	// patch the IHDR width/height (bytes 16..23, big endian) and fix its CRC
+	copy(data[16:20], []byte{0, 0, 0x13, 0x88})
+	copy(data[20:24], []byte{0, 0, 0x13, 0x88})
+	binary.BigEndian.PutUint32(data[29:33], crc32.ChecksumIEEE(data[12:29]))
+	if _, err := convertPNGBytes(data, "huge.png", 4, 4, "contain"); err == nil || !strings.Contains(err.Error(), "too large") {
+		t.Errorf("huge header must be refused before decoding, got %v", err)
 	}
 }

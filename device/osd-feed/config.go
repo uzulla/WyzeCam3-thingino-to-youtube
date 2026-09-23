@@ -98,6 +98,14 @@ func loadConfig(path string) (*Config, error) {
 			if sc.Fit != "" && sc.Fit != "contain" && sc.Fit != "none" {
 				return nil, fmt.Errorf("%s: slot imagefile: fit must be \"contain\" or \"none\"", path)
 			}
+			// prudynt's own rules for osd.imagefile.width/height: a value it
+			// would refuse makes a file it can never show
+			if sc.Width < 0 || sc.Width > maxImageWidth || sc.Width%2 != 0 || (sc.Width != 0 && sc.Width < 2) {
+				return nil, fmt.Errorf("%s: slot imagefile: width must be an even number 2..%d (or left out)", path, maxImageWidth)
+			}
+			if sc.Height < 0 || sc.Height > maxImageHeight || sc.Height%2 != 0 || (sc.Height != 0 && sc.Height < 2) {
+				return nil, fmt.Errorf("%s: slot imagefile: height must be an even number 2..%d (or left out)", path, maxImageHeight)
+			}
 		} else if sc.PNG != "" || sc.Fit != "" || sc.Width != 0 || sc.Height != 0 {
 			return nil, fmt.Errorf("%s: slot %s: png/fit/width/height are for the imagefile slot", path, name)
 		}

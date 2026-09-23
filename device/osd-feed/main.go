@@ -233,11 +233,11 @@ loop:
 				pix, changed, err := img.render()
 				if err != nil {
 					report(img.Name, err.Error())
-				} else {
-					recovered(img.Name)
 				}
 				// Written when the picture changed, or when the file is not what
-				// we last wrote (removed, replaced); no picture -> no file
+				// we last wrote (removed, replaced); no picture -> no file.
+				// "ok again" only once the file is right (written, or nothing to
+				// write): a write that keeps failing must not be logged every tick.
 				key := fmt.Sprintf("%d", len(pix))
 				if pix == nil {
 					if last[img.Name] != "" || changed {
@@ -253,6 +253,8 @@ loop:
 						last[img.Name] = key
 						writes++
 					}
+				} else if err == nil {
+					recovered(img.Name)
 				}
 			}
 		}

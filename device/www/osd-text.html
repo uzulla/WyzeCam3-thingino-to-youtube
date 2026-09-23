@@ -367,6 +367,7 @@
   }
 
   var IMAGE_NUMS = ['pos_x', 'pos_y', 'width', 'height'];
+  var imageBytes = null; // size of the slot's file at the last status, for updateImageState
 
   function fillImage(v) {
     $('imagefile_enabled').checked = v.enabled === true;
@@ -447,7 +448,8 @@
       el(sl.key, 'text').value = t == null ? '' : t;
       updateHint(sl.key, t != null);
     });
-    updateImageState(s.texts ? s.texts.imagefile : null);
+    imageBytes = s.texts ? s.texts.imagefile : null;
+    updateImageState(imageBytes);
     $('config_path').textContent = s.config_path;
     var merged = (s.config && s.config_source && s.config_source !== s.config_path) ? 'the form is merged into ' + s.config_source + ' (what osd-config uses now)' : '';
     var cstate = s.config_error ? s.config_error + (merged ? '; ' + merged : '')
@@ -572,6 +574,7 @@
     el(s.key, 'enabled').addEventListener('change', function() { updateHint(s.key); });
   });
   COLORS.forEach(function(c) { wireColor('burnin_' + c.field); });
+  ['width', 'height'].forEach(function(f) { $('imagefile_' + f).addEventListener('input', function() { updateImageState(imageBytes); }); });
 
   document.addEventListener('click', async function(ev) {
     var b = ev.target.closest('button[data-show],button[data-clear]');

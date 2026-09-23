@@ -17,11 +17,15 @@ func writeCfg(t *testing.T, body string) string {
 
 func TestLoadConfigRejects(t *testing.T) {
 	for name, body := range map[string]string{
-		"unknown slot":   `{"slots":{"nope":{"template":"x"}}}`,
-		"no slots":       `{"sources":{"m":{"type":"meminfo"}}}`,
-		"unknown source": `{"sources":{"m":{"type":"memory"}},"slots":{"textfile":{"template":"x"}}}`,
-		"broken json":    `{"slots":`,
-		"trailing value": `{"slots":{"textfile":{"template":"x"}}} {"slots":{}}`,
+		"unknown slot":    `{"slots":{"nope":{"template":"x"}}}`,
+		"no slots":        `{"sources":{"m":{"type":"meminfo"}}}`,
+		"unknown source":  `{"sources":{"m":{"type":"memory"}},"slots":{"textfile":{"template":"x"}}}`,
+		"broken json":     `{"slots":`,
+		"trailing value":  `{"slots":{"textfile":{"template":"x"}}} {"slots":{}}`,
+		"odd image width": `{"slots":{"imagefile":{"png":"/x.png","width":201}}}`,
+		"image too wide":  `{"slots":{"imagefile":{"png":"/x.png","width":1282}}}`,
+		"negative height": `{"slots":{"imagefile":{"png":"/x.png","height":-2}}}`,
+		"image no png":    `{"slots":{"imagefile":{"width":200}}}`,
 	} {
 		if _, err := loadConfig(writeCfg(t, body)); err == nil {
 			t.Errorf("%s: must fail", name)

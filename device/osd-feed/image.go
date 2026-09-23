@@ -155,7 +155,25 @@ func convertPNG(path string, w, h int, fit string) ([]byte, error) {
 	return convertPNGBytes(data, path, w, h, fit)
 }
 
+// The slot is at most maxImageWidth x maxImageHeight (prudynt's limits); a
+// source much larger than that is only shrunk anyway, and decoding it costs
+// two full-size copies (the decoded image and its RGBA conversion) on a
+// camera with a few tens of MB free. Read the header first and refuse.
+const (
+	maxImageWidth   = 1280
+	maxImageHeight  = 720
+	maxSourcePixels = 2 * maxImageWidth * maxImageHeight // ~7 MB RGBA per copy
+)
+
 func convertPNGBytes(data []byte, path string, w, h int, fit string) ([]byte, error) {
+	hdr, _, err := image.DecodeConfig(bytes.NewReader(data))
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w", path, err)
+	}
+	if hdr.Width <= 0 || hdr.Height <= 0 || hdr.Width*hdr.Height > maxSourcePixels {
+		return nil, fmt.Errorf("%s: %dx%d is too large to decode here (at most %d pixels, e.g. %dx%d): shrink it first",
+			path, hdr.Width, hdr.Height, maxSourcePixels, 2*maxImageWidth, maxImageHeight)
+	}
 	src, _, err := image.Decode(bytes.NewReader(data))
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", path, err)

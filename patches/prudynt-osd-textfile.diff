@@ -324,7 +324,7 @@ index 500c5fb..c7ee1fc 100644
  }
  
 diff --git a/src/video/OSD.hpp b/src/video/OSD.hpp
-index e0ba5b2..c2a428e 100644
+index e0ba5b2..7e7b5dc 100644
 --- a/src/video/OSD.hpp
 +++ b/src/video/OSD.hpp
 @@ -14,8 +14,14 @@
@@ -342,7 +342,7 @@ index e0ba5b2..c2a428e 100644
  #if defined(OSD_BURN_TIMESTAMP) && defined(USE_OSD_FONT_LIBSCHRIFT)
  #include "schrift.h"
  #include <unordered_map>
-@@ -156,6 +162,82 @@ private:
+@@ -156,6 +162,84 @@ private:
    bool osd_group_started_{false};
    std::string last_ts_text_;
  
@@ -413,7 +413,9 @@ index e0ba5b2..c2a428e 100644
 +    off_t file_size{0};
 +    struct timespec file_mtime{};
 +  };
-+  void updateImagefileOverlay(size_t budget, bool once_per_second);
++  // release_only: just give the region up when it no longer fits or is
++  // disabled (called before the text slots grow), do not create or update
++  void updateImagefileOverlay(size_t budget, bool once_per_second, bool release_only);
 +  void hideImagefileSlot();
 +  void destroyImagefileSlot();
 +  // Reload the pixels if the file changed; true when the picture changed.
@@ -427,10 +429,10 @@ index e0ba5b2..c2a428e 100644
    // until ts_scale_ changes (osd.burnin.scale takes effect live).
 diff --git a/src/video/OSDImagefile.cpp b/src/video/OSDImagefile.cpp
 new file mode 100644
-index 0000000..c031d22
+index 0000000..4e6eb2f
 --- /dev/null
 +++ b/src/video/OSDImagefile.cpp
-@@ -0,0 +1,269 @@
+@@ -0,0 +1,279 @@
 +// -- image overlay --------------------------------------------------------
 +// One burned-in OSD region (osd.imagefile) showing a raw BGRA bitmap read
 +// from a file (the slot's path, meant to live on tmpfs): exactly
@@ -444,7 +446,9 @@ index 0000000..c031d22
 +// reported once and not shown (it is a writer bug, and half a picture would
 +// only hide it). The region is laid out after the text slots, from what they
 +// left of the OSD pool, and is never shrunk: a picture either fits or is not
-+// shown.
++// shown. It is given up BEFORE the text slots grow (release_only pass) so
++// that their IMP_OSD_SetRgnAttr() finds the room the planner promised them -
++// libimp does not report a region that does not fit, it just never shows.
 +
 +#ifdef OSD_BURN_TIMESTAMP
 +
@@ -575,7 +579,7 @@ index 0000000..c031d22
 +  return true;
 +}
 +
-+void OSD::updateImagefileOverlay(size_t budget, bool once_per_second) {
++void OSD::updateImagefileOverlay(size_t budget, bool once_per_second, bool release_only) {
 +  ImagefileSlot &s = img_slot_;
 +  const _osd_imagefile &c = cfg->osd.imagefile;
 +  const bool enabled = c.enabled && !(is_substream_ && c.substream_disabled);
@@ -617,6 +621,14 @@ index 0000000..c031d22
 +    return;
 +  }
 +  s.over_budget = false;
++  if (release_only) {
++    // A region of another size is given up now too, so that the text slots
++    // never grow while the old picture still holds its memory; the second
++    // call creates it again at the new size.
++    if (s.region_created && (width != s.width || height != s.height))
++      destroyImagefileSlot();
++    return;
++  }
 +
 +  const int x = resolveImagePos(c.pos_x, width, stream_width);
 +  const int y = resolveImagePos(c.pos_y, height, stream_height);
@@ -930,10 +942,10 @@ index 0000000..ea05235
 +} // namespace osdtext
 diff --git a/src/video/OSDTextfile.cpp b/src/video/OSDTextfile.cpp
 new file mode 100644
-index 0000000..dfe33a1
+index 0000000..789fee0
 --- /dev/null
 +++ b/src/video/OSDTextfile.cpp
-@@ -0,0 +1,419 @@
+@@ -0,0 +1,424 @@
 +// -- text-file overlay --------------------------------------------------
 +// Extra burned-in OSD regions ("slots": osd.textfile, osd.textfile2,
 +// osd.textfile3) that each show the contents of a text file (the slot's
@@ -1183,6 +1195,11 @@ index 0000000..dfe33a1
 +    p.y = resolvePos(c.pos_y, p.layout.height, stream_height);
 +  }
 +
++  // The image overlay is planned last (it gets what the text slots leave)
++  // but must give its pool memory up first, before any text slot grows into
++  // that room. Created / updated after pass 2 (second call below).
++  updateImagefileOverlay(remaining, once_per_second, true);
++
 +  // Pass 2: apply. Slots that release pool memory (disabled, or shrinking)
 +  // go first, so that the ones that grow find the room they were promised.
 +  for (int pass = 0; pass < 2; ++pass) {
@@ -1198,14 +1215,14 @@ index 0000000..dfe33a1
 +
 +  // The image overlay comes last: it gets what the text slots left, and is
 +  // not shrunk to fit (a cut-off picture is of no use) - see OSDImagefile.cpp.
-+  updateImagefileOverlay(remaining, once_per_second);
++  updateImagefileOverlay(remaining, once_per_second, false);
 +
 +  // The timestamp region changed size (osd.burnin.scale, or it was just
 +  // created): upstream set its new size before the slots above gave way, and
 +  // a region that did not fit at that moment stays invisible without any
 +  // error. Now that there is room, set its attributes once more.
 +  if (ts_bytes != tf_ts_bytes_) {
-+    bool any = false;
++    bool any = img_slot_.attr_set;
 +    for (const auto &s : tf_slots_)
 +      any = any || s.attr_set;
 +    if (any && ts_region_created_ && !ts_buf_.empty()) {
