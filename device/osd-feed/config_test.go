@@ -17,11 +17,17 @@ func writeCfg(t *testing.T, body string) string {
 
 func TestLoadConfigRejects(t *testing.T) {
 	for name, body := range map[string]string{
-		"unknown slot":   `{"slots":{"nope":{"template":"x"}}}`,
-		"no slots":       `{"sources":{"m":{"type":"meminfo"}}}`,
-		"unknown source": `{"sources":{"m":{"type":"memory"}},"slots":{"textfile":{"template":"x"}}}`,
-		"broken json":    `{"slots":`,
-		"trailing value": `{"slots":{"textfile":{"template":"x"}}} {"slots":{}}`,
+		"unknown slot":    `{"slots":{"nope":{"template":"x"}}}`,
+		"no slots":        `{"sources":{"m":{"type":"meminfo"}}}`,
+		"unknown source":  `{"sources":{"m":{"type":"memory"}},"slots":{"textfile":{"template":"x"}}}`,
+		"broken json":     `{"slots":`,
+		"trailing value":  `{"slots":{"textfile":{"template":"x"}}} {"slots":{}}`,
+		"odd image width": `{"slots":{"imagefile":{"png":"/x.png","width":201}}}`,
+		"image too wide":  `{"slots":{"imagefile":{"png":"/x.png","width":1282}}}`,
+		"negative height": `{"slots":{"imagefile":{"png":"/x.png","height":-2}}}`,
+		"image no png":    `{"slots":{"imagefile":{"width":200}}}`,
+		"image bad fit":   `{"slots":{"imagefile":{"png":"/x.png","fit":"cover"}}}`,
+		"png on text":     `{"slots":{"textfile":{"template":"x","png":"/x.png"}}}`,
 	} {
 		if _, err := loadConfig(writeCfg(t, body)); err == nil {
 			t.Errorf("%s: must fail", name)
@@ -52,5 +58,15 @@ func TestLoadConfigRejectsUnknownKeys(t *testing.T) {
 		if _, err := loadConfig(writeCfg(t, body)); err == nil {
 			t.Errorf("%s: misspelt key must be an error", name)
 		}
+	}
+}
+
+func TestLoadConfigAcceptsImageSlot(t *testing.T) {
+	c, err := loadConfig(writeCfg(t, `{"slots":{"textfile":{"template":"x"},"imagefile":{"png":"/mnt/mmcblk0p1/logo.png","fit":"none","width":200,"height":200}}}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.Slots["imagefile"].PNG == "" || c.Slots["imagefile"].Fit != "none" {
+		t.Errorf("got %+v", c.Slots["imagefile"])
 	}
 }

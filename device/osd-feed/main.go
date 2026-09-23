@@ -16,6 +16,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"flag"
 	"fmt"
@@ -64,14 +65,19 @@ func main() {
 		log.Printf("prudynt did not answer the osd.textfile query - using the documented defaults for path/cols/rows")
 	}
 	slots := make([]*Slot, 0, len(names))
+	var img *ImageSlot // at most one: prudynt has a single imagefile slot
 	for _, n := range names {
-		s, err := newSlot(n, cfg.Slots[n], geo[n])
-		if err != nil {
-			log.Fatalf("%v", err)
+		if n == "imagefile" {
+			img = newImageSlot(n, cfg.Slots[n], geo[n])
+		} else {
+			s, err := newSlot(n, cfg.Slots[n], geo[n])
+			if err != nil {
+				log.Fatalf("%v", err)
+			}
+			slots = append(slots, s)
 		}
-		slots = append(slots, s)
 		if answered && !geo[n].Enabled {
-			log.Printf("slot %s is not enabled in prudynt (%s): the text is written but not shown until osd.%s.enabled is true (prudynt-osd.json or the web UI)", n, geo[n], n)
+			log.Printf("slot %s is not enabled in prudynt (%s): the file is written but not shown until osd.%s.enabled is true (prudynt-osd.json or the web UI)", n, geo[n], n)
 		}
 	}
 
@@ -121,6 +127,13 @@ func main() {
 			}
 			fmt.Printf("--- %s (%s, %dx%d)\n%s", s.Name, s.Path, s.Cols, s.Rows, text)
 		}
+		if img != nil {
+			pix, _, err := img.render()
+			if err != nil {
+				log.Fatalf("slot imagefile: %v", err)
+			}
+			fmt.Printf("--- imagefile (%s, %dx%d px): %s -> %d bytes BGRA (fit %s)\n", img.Path, img.Width, img.Height, img.PNG, len(pix), img.Fit)
+		}
 		return
 	}
 
@@ -130,8 +143,13 @@ func main() {
 	if cfg.IntervalMs > 0 && cfg.IntervalMs < 100 {
 		log.Printf("interval_ms %d is below prudynt's 100 ms poll: using 100", cfg.IntervalMs)
 	}
-	log.Printf("osd-feed: %d slots, %d sources, redraw every %v", len(slots), len(cfg.Sources), cfg.interval())
+	nslots := len(slots)
+	if img != nil {
+		nslots++
+	}
+	log.Printf("osd-feed: %d slots, %d sources, redraw every %v", nslots, len(cfg.Sources), cfg.interval())
 	last := map[string]string{}    // what each slot's file holds (or "error")
+	imgPending := true             // the image file does not match the picture yet
 	lastErr := map[string]string{} // last problem reported per slot, once
 	writes := 0
 	t := time.NewTicker(cfg.interval())
@@ -184,6 +202,10 @@ loop:
 					delete(last, s.Name) // redraw with the new size
 				}
 			}
+			if img != nil && img.follow(g[img.Name], cfg.Slots[img.Name]) {
+				log.Printf("slot imagefile: now %s", g[img.Name])
+				imgPending = true
+			}
 		case now := <-t.C:
 			data := cache.snapshot(now)
 			for _, s := range slots {
@@ -208,11 +230,49 @@ loop:
 				last[s.Name] = text
 				writes++
 			}
+			if img != nil {
+				pix, changed, err := img.render()
+				if err != nil {
+					report(img.Name, err.Error())
+				}
+				if changed {
+					imgPending = true // new pixels (or none): the file must follow
+				}
+				// No picture -> no file: also one left over from an earlier run,
+				// and again next tick if the remove failed
+				if pix == nil {
+					if _, statErr := os.Stat(img.Path); statErr == nil {
+						if rmErr := os.Remove(img.Path); rmErr != nil {
+							report(img.Name, rmErr.Error())
+						} else {
+							imgPending = false
+						}
+					} else {
+						imgPending = false
+					}
+				} else if imgPending || !img.holdsOurFile() {
+					// Pending until a write succeeds: a failed write of a picture
+					// with the same size as the old one must not be forgotten
+					if err := writeSlotBytes(img.Path, pix); err != nil {
+						report(img.Name, err.Error())
+					} else {
+						recovered(img.Name)
+						img.wrote()
+						imgPending = false
+						writes++
+					}
+				} else if err == nil {
+					recovered(img.Name)
+				}
+			}
 		}
 	}
 	if cfg.clearOnExit() {
 		for _, s := range slots {
 			os.Remove(s.Path)
+		}
+		if img != nil {
+			os.Remove(img.Path)
 		}
 	}
 	log.Printf("osd-feed: stopped after %d writes", writes)
@@ -222,14 +282,16 @@ loop:
 // The temp file sits in the same directory (same tmpfs), so the rename is
 // atomic; its name carries the pid so two writers (this and, say, the web
 // UI's Show) never share one.
-func writeSlot(path, text string) error {
+func writeSlot(path, text string) error { return writeSlotBytes(path, []byte(text)) }
+
+func writeSlotBytes(path string, data []byte) error {
 	tmp := fmt.Sprintf("%s.tmp.%d", path, os.Getpid())
 	// /run/prudynt is prudynt's; should it be gone (prudynt not started yet
 	// after a reboot), create it rather than fail until it appears
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
-	if err := os.WriteFile(tmp, []byte(text), 0o644); err != nil {
+	if err := os.WriteFile(tmp, data, 0o644); err != nil {
 		os.Remove(tmp)
 		return err
 	}
@@ -255,7 +317,9 @@ func sourceNames(cfg *Config) []string {
 // fileHolds - the file exists and holds exactly text (a few hundred bytes
 // read from tmpfs per slot per tick; another writer's text of the same size
 // must be noticed too)
-func fileHolds(path, text string) bool {
+func fileHolds(path, text string) bool { return fileHoldsBytes(path, []byte(text)) }
+
+func fileHoldsBytes(path string, data []byte) bool {
 	b, err := os.ReadFile(path)
-	return err == nil && string(b) == text
+	return err == nil && bytes.Equal(b, data)
 }

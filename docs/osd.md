@@ -16,7 +16,7 @@ device/install-prudynt-osd.sh root@<camera-ip> path/to/prudynt
 - インストール時に prudynt を再起動するので、**配信が数秒切れる** (supervisor が自動で再接続する)
 - バイナリはビルドしたファーム専用。`/etc/os-release` の `BUILD_ID` がインストール時と違っていたら
   bind mount せず、標準の prudynt のまま起動する
-- Web UI にページが増える (Streamer メニューの「OSD Elements」が「OSD text」= `/osd-text.html` に差し替わる。
+- Web UI にページが増える (Streamer メニューの「OSD Elements」が「OSD Settings」= `/osd-settings.html` に差し替わる。
   [下記](#web-ui-から編集する))
 - **Thingino の `/etc/init.d/S31prudynt` を 2 行書き換える**: 生存確認の `pidof "$DAEMON"` (`/usr/bin/prudynt` のフルパス)
   を名前一致にする。bind mount した prudynt は `/proc/<pid>/exe` が `/usr/bin/prudynt-osd` になり、フルパスの `pidof` に
@@ -29,9 +29,9 @@ device/install-prudynt-osd.sh root@<camera-ip> path/to/prudynt
 - 元に戻す: `service disable prudynt-osd; service disable osd-config` して再起動 (すぐ戻すなら
   `service stop osd-config; service stop prudynt; /etc/init.d/S30prudynt-osd stop; service start prudynt`)。
   完全に消すなら `/etc/init.d/S30prudynt-osd` `/usr/bin/prudynt-osd` `/usr/bin/prudynt-osd.build`
-  `/usr/sbin/osd-progress-demo` `/usr/sbin/osd-config` `/etc/init.d/S93osd-config` `/var/www/osd-text.html`
+  `/usr/sbin/osd-progress-demo` `/usr/sbin/osd-config` `/etc/init.d/S93osd-config` `/var/www/osd-settings.html`
   `/var/www/x/json-osd-text.cgi` を削除し、メニューを戻す
-  (`sed -i 's#/osd-text.html#/streamer-osd.html#; s#"OSD text"#"OSD Elements"#' /var/www/a/plugins.js /var/www/a/plugins/prudynt.webui.json`)。
+  (`sed -i 's#/osd-settings.html#/streamer-osd.html#; s#"OSD Settings"#"OSD Elements"#' /var/www/a/plugins.js /var/www/a/plugins/prudynt.webui.json`)。
   `S31prudynt` の書き換えは残しても害は無い (戻すなら `sed -i 's|${DAEMON##\*/}|$DAEMON|g' /etc/init.d/S31prudynt`)。置いていれば
   設定ファイル (`/etc/prudynt-osd.json` と、SD カード直下の `prudynt-osd.json` = カメラ上では
   `/mnt/mmcblk0p1/prudynt-osd.json`) を削除する。どちらかが残っていると、入れ直した時や `osd-config` を
@@ -63,6 +63,7 @@ echo 'REC' > /run/prudynt/osd-text2.tmp && mv /run/prudynt/osd-text2.tmp /run/pr
 | `osd.textfile` | 左下 (`pos_x` 8, `pos_y` -8) | `/run/prudynt/osd-text` | 40×4 |
 | `osd.textfile2` | 右上 (-8, 8) | `/run/prudynt/osd-text2` | 24×2 |
 | `osd.textfile3` | 右下 (-8, -8) | `/run/prudynt/osd-text3` | 24×2 |
+| `osd.imagefile` (画像、[下記](#画像-ロゴなど-を重ねる-osdimagefile)) | 右上 (-8, 8) | `/run/prudynt/osd-image` | 200×200 px |
 
 位置はどれも自由に変えられる (3 つの違いは既定値だけ)。矩形同士が重なった場合は番号の大きい方が手前。
 
@@ -76,11 +77,11 @@ echo 'REC' > /run/prudynt/osd-text2.tmp && mv /run/prudynt/osd-text2.tmp /run/pr
 
 ## Web UI から編集する
 
-Thingino の Web UI の Streamer メニュー → **OSD text** (`http://<camera-ip>/osd-text.html`) で、3 つの矩形の設定
+Thingino の Web UI の Streamer メニュー → **OSD Settings** (`http://<camera-ip>/osd-settings.html`) で、3 つの矩形の設定
 (有効、位置、桁×行、倍率、色) と日時 (`osd.burnin`) の書式・倍率・色、`general.osd_pool_size`、そして
 矩形ごとのテキストの中身を編集できる。レイアウトの確認用で、下の節の JSON を手で書くのと同じことが GUI でできる。
 
-![OSD text ページ](images/osd-text-webui.png)
+![OSD Settings ページ](images/osd-settings-webui.png)
 
 - プレビューは既存ページと同じ MJPEG。テキストは映像に焼き込まれるので、配信に出るものがそのまま映る
 - **Show** / **Clear** は矩形のファイル (`/run/prudynt/osd-text*`) を書く/消す (上の `mv` の手順と同じ。tmpfs のみ)。
@@ -91,6 +92,8 @@ Thingino の Web UI の Streamer メニュー → **OSD text** (`http://<camera-
   prudynt の再起動は要らない。ファイルに既にあるキーのうち、ページにない項目 (`path`、`substream_disabled` など) は
   残る (SD にまだファイルが無い時は、`osd-config` と同じ順で `/etc/prudynt-osd.json` を読んでそれに重ねる)。`general.osd_pool_size` を変えた時だけ、`osd-config` が `/etc/prudynt.json` に書いて prudynt を再起動する
   (配信が数秒切れる) ので、保存前に確認が出る。SD カードが挿さっていない時は保存できない (エラーになる)
+- **Image** カードは `osd.imagefile` (有効、位置、幅・高さ)。**PNG を置く場所** (osd-feed.json の `slots.imagefile.png`、通常は SD カードの
+  `logo.png`) と、prudynt が読む生ファイルの場所、ファイルの有無と大きさが合っているかを表示する。中身の変換は [osd-feed](osd-feed.md)
 - **prudynt-osd.json** 欄に、いま Save を押したら書かれる JSON がフォームに追従して出る。**Download** で
   `prudynt-osd.json` としてダウンロード、**Copy** でクリップボードへ (試した配置を PC に持ち帰る、別の SD カードに置く、
   `device/prudynt-osd.json.example` のように保存しておく、といった用途)。テキスト欄の中身はこの JSON には入らない
@@ -117,6 +120,50 @@ curl -s --data-binary @prudynt-osd.json "http://<camera-ip>/x/json-osd-text.cgi?
 書き込み先は `osd.textfileN.path` (`/run` か `/tmp` の下に限る) と SD の `prudynt-osd.json` だけで、フラッシュには何も書かない。
 カメラの中で更新するなら、この CGI を通す必要はない (`osd-progress-demo` のように直接ファイルを `mv` する)。
 
+## 画像 (ロゴなど) を重ねる: `osd.imagefile`
+
+テキストの 3 枚とは別に、**ラスタ画像を 1 枚**重ねられる。prudynt が読むのは**ヘッダなしの生 BGRA** (1 画素 4 バイト、
+B G R A の順、アルファはストレート) で、`width` × `height` × 4 バイトちょうどのファイル。PNG などのデコードは prudynt
+ではなく書き込み側がやる — [osd-feed](osd-feed.md) の `imagefile` スロットが SD カード上の透過 PNG を読んでこの形式に
+変換して置く (下記)。更新の契約はテキストと同じ: tmpfs に書いて `mv`、0.1 秒以内に反映、無い/空なら非表示。
+
+| キー | 既定値 | 意味 |
+|---|---|---|
+| `enabled` | `false` | 表示する |
+| `substream_disabled` | `true` | サブストリーム (ch1) には出さない |
+| `path` | `/run/prudynt/osd-image` | 映すファイル |
+| `width` / `height` | 200 / 200 | 大きさ (px)。**偶数のみ**、上限 1280 × 720。リージョンは常にこの大きさで確保され、ファイルはこの大きさ × 4 バイトでないと表示されない (`logread` に 1 回出る) |
+| `pos_x` / `pos_y` | -8 / 8 (右上) | 位置。0 以上は左/上端から、負の値は右/下端からの距離 |
+
+- OSD プールの予算はテキスト 3 枚の**後**に割り当てる。入らなければ**縮めずに表示しない** (切れた絵は意味が無い) で、
+  `logread | grep imagefile` に理由が出る。必要なプールは画像の `width × height × 4` + テキスト分 (`osd_pool_size` と
+  同じ KiB 換算): 200 × 200 なら 156KB (既定のプールに入る)、640 × 360 で 900KB、**1280 × 720 で 3600KB (`osd_pool_size` 8192)**
+- 映像 (720p なら 1280 × 720) より大きい画像は表示しない
+- prudynt は `osd.sei.enabled` と `osd.burnin.enabled` が**両方 false** だと OSD の処理自体を起動しない (テキストの節と同じ)。
+  その構成で画像だけ出すなら `/etc/prudynt.json` に `osd.imagefile.enabled: true` を書いて起動する必要がある
+  (SD の `prudynt-osd.json` は起動後に送られるので、それだけでは OSD オブジェクトが作られない)
+- 描画の順序はテキストの上 (重なったら画像が手前)
+- 設定は他のスロットと同じく `prudyntctl json '{"osd":{"imagefile":{...}}}'`、`prudynt-osd.json`、[Web UI](#web-ui-から編集する) の
+  Image カードから。`prudynt-osd.json` から `imagefile` のブロックを消すと `osd-config` が無効に戻す
+
+![ロゴ 200×200 (右上)](images/osd-image-logo.jpg)
+
+720p 配信中の実測 (400×400 の透過 PNG をロゴに、テキスト 3 枚と同時表示):
+
+| 画像の大きさ | プール | 結果 | prudynt の CPU | 備考 |
+|---|---|---|---|---|
+| 200×200 (156KB) | 2048 | 表示 | 7.1% | 既定のプール 616KB でも入る大きさ |
+| 640×360 (900KB) | 2048 | 表示 | — | |
+| **1280×720 (3.6MB)** | **8192** | **表示** (全面) | 11.0% | 全面のリージョンは prudynt (OSD 合成) が約 4% 増える。Linux 側の空きメモリは 31MB → 14MB (osd-feed と prudynt が 3.6MB のバッファを持つ分) |
+
+書き込み側 (osd-feed) の CPU は [osd-feed.md](osd-feed.md#画像-ロゴ-を出す) の表。
+
+```sh
+# 手で試す (ImageMagick で 200x200 の生 BGRA を作って置く)
+magick logo.png -resize 200x200 -background none -gravity center -extent 200x200 -depth 8 bgra:/tmp/osd-image.raw
+cat /tmp/osd-image.raw | ssh root@<camera-ip> 'cat > /run/prudynt/osd-image.tmp && mv /run/prudynt/osd-image.tmp /run/prudynt/osd-image'
+```
+
 ## 設定 (`osd.textfile.*` / `osd.textfile2.*` / `osd.textfile3.*`)
 
 3 つとも同じキーを持つ。`prudyntctl json '{"osd":{"textfile":{...}}}'` で実行中に変えられる。現在値は
@@ -135,7 +182,7 @@ curl -s --data-binary @prudynt-osd.json "http://<camera-ip>/x/json-osd-text.cgi?
 | `background_color` | `#00000080` | 背景ボックスの色。alpha が 0 なら背景なし |
 
 - prudynt は `osd.sei.enabled` と `osd.burnin.enabled` が**両方 false** だと OSD の処理自体を起動しない。その構成で
-  テキストだけ出したい時は、`/etc/prudynt.json` に `osd.textfile.enabled: true` (または `textfile2` / `textfile3`) を書いて
+  テキスト (や画像) だけ出したい時は、`/etc/prudynt.json` に `osd.textfile.enabled: true` (または `textfile2` / `textfile3` / `imagefile`) を書いて
   起動する必要がある (実行中に `prudyntctl json` で有効化しても出ない)。どちらかが true なら (既定は両方 true)
   実行中に有効化できる
 - `path` と色の変更が映像に出るまで最大 1 秒かかる (文字列の設定は 1 秒に 1 回だけ読み直す。ファイルの中身の

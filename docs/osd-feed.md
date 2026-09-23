@@ -11,6 +11,7 @@ osd-feed (Go、SD カードから実行)
     tick     0→100 をループするカウンタ                  ├─▶ スロットごとの text/template
     clock    時刻                                        │      → cols×rows に切る → ASCII 以外を ? に
     http     URL を GET して JSON をそのまま値に          ┘      → 前回と違う時だけ tmp + mv で書く
+  imagefile ─ SD の透過 PNG → 生 BGRA (width×height) ──────▶ 画像スロットのファイル (PNG が変わった時だけ)
 ```
 
 - **言語は Go**。カメラにはインタプリタが無く、Mac で `go build` したバイナリ (静的、libc 非依存) がそのまま動く。
@@ -66,6 +67,7 @@ device/install-osd-feed.sh root@<camera-ip>       # SD にバイナリと (無�
 | `interval_ms` | 描く間隔 (既定 250、下限 100)。prudynt 側がファイルを見るのは 100ms ごとなので、それより短くしても速くならない |
 | `clear_on_exit` | 終了時にスロットのファイルを消す (既定 true) |
 | `sources.<名前>` | データ源。`type` と `interval_ms` (取得間隔、既定 1000)、type ごとの項目 (下表)。名前はテンプレートから `.<名前>.<キー>` で参照する |
+| `slots.imagefile` | 画像スロット ([osd.md](osd.md#画像-ロゴなど-を重ねる-osdimagefile))。`png` (必須、SD カード上の透過 PNG)、`fit` (`contain` = 縮めて収める・拡大はしない・中央配置、`none` = そのまま中央に置き、はみ出た分は切る。既定 `contain`)。`width` / `height` / `path` は普通は書かない (prudynt から読む) |
 | `slots.<スロット>` | `textfile` / `textfile2` / `textfile3`。`template` は Go の text/template。`path` / `cols` / `rows` は普通は書かない: 起動時と以後 30 秒ごとに prudynt から読んで追従する (Web UI で大きさを変えれば 30 秒以内に切る幅も変わる。prudynt が答えない時は docs/osd.md の既定値)。**ここに書いた値は prudynt の値より常に優先される**ので、Web UI で変えたのに反映されない時はここに古い値が残っていないか見る |
 
 ### source の種類
@@ -96,6 +98,32 @@ text/template 標準の `printf` `if` `range` などに加えて:
 - 行数・桁数を超えた分は切る (prudynt も切るが、こちらで切っておくと何が映るか手元で分かる)。タブは空白、ASCII 以外は `?`
 - source がまだ値を持っていないキーは空文字になる (`lpad` などの関数に渡しても同じ。`bar` は 0)。**設定に無い source をテンプレートが参照していると起動時にエラーで止まる** (綴り間違いをその場で見つけるため)
 - `http` の JSON の数値は小数として入る (`{{printf "%.0f" .car.speed}}` で整数表示)。`bar` はそのまま受け付ける
+
+### 画像 (ロゴ) を出す
+
+```json
+"imagefile": { "png": "/mnt/mmcblk0p1/logo.png", "fit": "contain" }
+```
+
+- PNG は Go の `image/png` でデコードし、prudynt の `osd.imagefile` の `width × height` に収めて (アスペクト比を保って縮小、
+  拡大はしない、余白は透明、中央配置)、**ヘッダなしの生 BGRA (ストレートアルファ)** に変換して `mv` で置く。透過 PNG の
+  アルファはそのまま映像に合成される
+- 変換は起動時と、PNG の mtime / サイズが変わった時、スロットの大きさが変わった時 (Web UI で変えると 30 秒以内に追従)。
+  1280 × 720 でも起動時 1 回なので softfloat の MIPS でも問題ない
+- PNG が読めない (無い、壊れている、大きすぎる: 1 辺 4096 px 超、または 8-bit で約 184 万画素 (16-bit はその半分) 超) 時は
+  ファイルを消して非表示にし、ログに 1 回出す。壊れた PNG が置かれたままでも再デコードはしない (同じ中身なら結果を覚えている)。直れば戻る
+- 大きい画像は OSD プールが要る (`prudynt-osd.json` の `general.osd_pool_size`。1280 × 720 なら 8192)
+- 実測 (720p 配信中、400×400 の PNG、テキスト 3 枚と同時):
+
+  | 状況 | osd-feed の CPU | RSS |
+  |---|---|---|
+  | 200×200、変化なし | 0.8% | 6.5MB |
+  | 1280×720、変化なし | 0.9% | 11.6MB |
+  | 1280×720、PNG を毎秒 touch (中身は同じ) | 0.9% | 〃 |
+  | 1280×720、PNG の**中身**が毎秒変わる (毎秒デコード + 変換) | 10% | 〃 |
+
+  待機中は PNG とスロットのファイルを stat するだけなので大きさに依らず軽い。毎秒デコードするような使い方 (グラフ等)
+  は 200×200 程度の大きさにするか、PNG を経由せず直接 BGRA を描く (将来の拡張) 方が向く
 
 ### 外部データを足す
 

@@ -3,6 +3,7 @@
   "osd": {
     "textfile":  { "enabled": true, "cols": 40, "rows": 10 },
     "textfile2": { "enabled": true, "cols": 24, "rows": 2 },
-    "textfile3": { "enabled": true, "cols": 24, "rows": 4 }
+    "textfile3": { "enabled": true, "cols": 24, "rows": 4 },
+    "imagefile": { "enabled": true, "width": 200, "height": 200, "pos_x": -8, "pos_y": 8 }
   }
 }

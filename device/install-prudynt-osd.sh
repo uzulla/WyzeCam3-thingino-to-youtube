@@ -6,10 +6,10 @@
 # OPTIONAL, and separate from install.sh because it replaces a Thingino program
 # (the streamer) at run time. Thingino's own /usr/bin/prudynt is NOT overwritten:
 # the new binary is stored as /usr/bin/prudynt-osd and S30prudynt-osd bind-mounts
-# it over /usr/bin/prudynt at boot. Also adds the "OSD text" page to Thingino's web
+# it over /usr/bin/prudynt at boot. Also adds the "OSD Settings" page to Thingino's web
 # UI (the Streamer menu entry that led to Thingino's own OSD page is pointed at it).
 # Undo:
-#   ssh root@<camera-ip> 'rm /etc/init.d/S30prudynt-osd /etc/init.d/S93osd-config /usr/bin/prudynt-osd /usr/bin/prudynt-osd.build /usr/sbin/osd-config /var/www/osd-text.html /var/www/x/json-osd-text.cgi; sed -i "s#/osd-text.html#/streamer-osd.html#; s#\"OSD text\"#\"OSD Elements\"#" /var/www/a/plugins.js /var/www/a/plugins/prudynt.webui.json; sed -i "s|\${DAEMON##\*/}|\$DAEMON|g" /etc/init.d/S31prudynt; reboot'
+#   ssh root@<camera-ip> 'rm /etc/init.d/S30prudynt-osd /etc/init.d/S93osd-config /usr/bin/prudynt-osd /usr/bin/prudynt-osd.build /usr/sbin/osd-config /var/www/osd-settings.html /var/www/x/json-osd-text.cgi; sed -i "s#/osd-settings.html#/streamer-osd.html#; s#\"OSD Settings\"#\"OSD Elements\"#" /var/www/a/plugins.js /var/www/a/plugins/prudynt.webui.json; sed -i "s|\${DAEMON##\*/}|\$DAEMON|g" /etc/init.d/S31prudynt; reboot'
 # (the S31prudynt edit may also just stay: it is harmless with the stock prudynt)
 #
 # prudynt is restarted at the end, which interrupts the stream for a few seconds
@@ -146,27 +146,29 @@ ssh "$CAM" '/etc/init.d/S93osd-config start' || echo "warning: osd-config did no
 # over the same settings, and the old page's Save writes /etc/prudynt.json.
 # plugins.js is generated at firmware build time, so the edit is a plain
 # substitution, done only when the old href is still there (re-runs are no-ops).
-push "$HERE/www/osd-text.html" /var/www/osd-text.html 644
+push "$HERE/www/osd-settings.html" /var/www/osd-settings.html 644
+ssh "$CAM" 'rm -f /var/www/osd-text.html' # the page's name before the image overlay existed
 push "$HERE/www/x/json-osd-text.cgi" /var/www/x/json-osd-text.cgi 755
 # Same change in the manifest plugins.js is generated from (thingino-pkg
 # regenerates plugins.js from /var/www/a/plugins/*.webui.json), so a
 # regeneration keeps the menu pointing at our page
-ssh "$CAM" 'm=/var/www/a/plugins/prudynt.webui.json
-	if [ -f $m ] && grep -q "\"/streamer-osd.html\"" $m; then
-		sed -e "s#\(\"href\": *\)\"/streamer-osd.html\"#\1\"/osd-text.html\"#" \
-			-e "s#\(\"label\": *\)\"OSD Elements\"#\1\"OSD text\"#" $m > $m.new && chmod 644 $m.new && mv $m.new $m
-	fi'
-ssh "$CAM" 'f=/var/www/a/plugins.js
-	if grep -q "\"/streamer-osd.html\"" $f; then
-		sed -e "s#\(\"href\": *\)\"/streamer-osd.html\"#\1\"/osd-text.html\"#" \
-			-e "s#\(\"label\": *\)\"OSD Elements\"#\1\"OSD text\"#" $f > $f.new && chmod 644 $f.new && mv $f.new $f
-		echo "  menu: Streamer > OSD Elements -> /osd-text.html"
+# Both files: Thingino's original entry, or the one an earlier version of this
+# installer wrote ("OSD text"), become the "OSD Settings" page
+MENU_SED='s#\("href": *\)"/streamer-osd.html"#\1"/osd-settings.html"#; s#\("href": *\)"/osd-text.html"#\1"/osd-settings.html"#; s#\("label": *\)"OSD Elements"#\1"OSD Settings"#; s#\("label": *\)"OSD text"#\1"OSD Settings"#'
+ssh "$CAM" "m=/var/www/a/plugins/prudynt.webui.json
+	if [ -f \$m ] && grep -q -e '\"/streamer-osd.html\"' -e '\"/osd-text.html\"' \$m; then
+		sed '$MENU_SED' \$m > \$m.new && chmod 644 \$m.new && mv \$m.new \$m
+	fi"
+ssh "$CAM" "f=/var/www/a/plugins.js
+	if grep -q -e '\"/streamer-osd.html\"' -e '\"/osd-text.html\"' \$f; then
+		sed '$MENU_SED' \$f > \$f.new && chmod 644 \$f.new && mv \$f.new \$f
+		echo '  menu: Streamer > OSD Elements -> /osd-settings.html'
 	fi
 	# Earlier versions left the edited file 0600 (ssh umask), which uhttpd then
 	# refused to serve: fix that on re-runs too
-	chmod 644 $f
-	grep -q "\"/osd-text.html\"" $f || echo "  warning: could not add /osd-text.html to the menu (open it by URL)"'
+	chmod 644 \$f
+	grep -q '\"/osd-settings.html\"' \$f || echo '  warning: could not add /osd-settings.html to the menu (open it by URL)'"
 
 echo "Done. Try it:  ssh $CAM osd-progress-demo 20"
-echo "Web UI: Streamer > OSD text (http://${CAM#*@}/osd-text.html)"
+echo "Web UI: Streamer > OSD Settings (http://${CAM#*@}/osd-settings.html)"
 echo "Settings that survive restarts: put prudynt-osd.json on the SD card (see docs/osd.md)"

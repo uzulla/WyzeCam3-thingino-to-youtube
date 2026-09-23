@@ -1,9 +1,18 @@
 {
   "interval_ms": 250,
   "sources": {
-    "mem":   { "type": "meminfo", "interval_ms": 1000 },
-    "tick":  { "type": "tick",    "interval_ms": 100 },
-    "clock": { "type": "clock",   "interval_ms": 1000 }
+    "mem": {
+      "type": "meminfo",
+      "interval_ms": 1000
+    },
+    "tick": {
+      "type": "tick",
+      "interval_ms": 100
+    },
+    "clock": {
+      "type": "clock",
+      "interval_ms": 1000
+    }
   },
   "slots": {
     "textfile": {
@@ -11,6 +20,10 @@
     },
     "textfile2": {
       "template": "{{.clock.hms}}"
+    },
+    "imagefile": {
+      "png": "/mnt/mmcblk0p1/logo.png",
+      "fit": "contain"
     }
   }
 }
