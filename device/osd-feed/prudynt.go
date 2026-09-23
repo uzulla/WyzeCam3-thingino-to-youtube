@@ -11,8 +11,10 @@ import (
 // SlotGeometry - the slot as the running prudynt has it (osd.textfileN.*).
 type SlotGeometry struct {
 	Path    string
-	Cols    int
+	Cols    int // text slots
 	Rows    int
+	Width   int // imagefile
+	Height  int
 	Enabled bool
 }
 
@@ -21,6 +23,7 @@ var defaultGeometry = map[string]SlotGeometry{
 	"textfile":  {Path: "/run/prudynt/osd-text", Cols: 40, Rows: 4},
 	"textfile2": {Path: "/run/prudynt/osd-text2", Cols: 24, Rows: 2},
 	"textfile3": {Path: "/run/prudynt/osd-text3", Cols: 24, Rows: 2},
+	"imagefile": {Path: "/run/prudynt/osd-image", Width: 200, Height: 200},
 }
 
 // askPrudynt - the geometry of the named slots from the running prudynt via
@@ -55,6 +58,8 @@ func parseGeometry(raw []byte, out map[string]SlotGeometry) (map[string]SlotGeom
 		Path    string `json:"path"`
 		Cols    int    `json:"cols"`
 		Rows    int    `json:"rows"`
+		Width   int    `json:"width"`
+		Height  int    `json:"height"`
 		Enabled bool   `json:"enabled"`
 	}
 	if json.Unmarshal(raw, &ans) != nil || len(ans) == 0 {
@@ -64,7 +69,7 @@ func parseGeometry(raw []byte, out map[string]SlotGeometry) (map[string]SlotGeom
 		if _, want := out[n]; !want || a.Path == "" {
 			continue
 		}
-		out[n] = SlotGeometry{Path: a.Path, Cols: a.Cols, Rows: a.Rows, Enabled: a.Enabled}
+		out[n] = SlotGeometry{Path: a.Path, Cols: a.Cols, Rows: a.Rows, Width: a.Width, Height: a.Height, Enabled: a.Enabled}
 	}
 	return out, true
 }
@@ -73,6 +78,9 @@ func (g SlotGeometry) String() string {
 	state := "enabled"
 	if !g.Enabled {
 		state = "DISABLED"
+	}
+	if g.Width > 0 {
+		return fmt.Sprintf("%s %dx%d px %s", g.Path, g.Width, g.Height, state)
 	}
 	return fmt.Sprintf("%s %dx%d %s", g.Path, g.Cols, g.Rows, state)
 }

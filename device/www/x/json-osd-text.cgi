@@ -155,7 +155,7 @@ status)
 	mountpoint -q "$SD" || config_error='"SD card not mounted"'
 	pool=$(jct "$PRUDYNT_CONFIG" get general.osd_pool_size 2>/dev/null)
 	case "$pool" in "" | *[!0-9]*) pool=0 ;; esac
-	live=$(prudyntctl json '{"osd":{"textfile":null,"textfile2":null,"textfile3":null,"burnin":null}}' 2>/dev/null)
+	live=$(prudyntctl json '{"osd":{"textfile":null,"textfile2":null,"textfile3":null,"imagefile":null,"burnin":null}}' 2>/dev/null)
 	case "$live" in "{"*) ;; *) live=null ;; esac
 	texts=""
 	for n in 1 2 3; do
@@ -167,12 +167,24 @@ status)
 		fi
 		texts="$texts${texts:+,}\"textfile${n#1}\":$t"
 	done
+	# The image slot's file is binary: report its size only (null = none)
+	ip=""
+	if [ "$live" != null ]; then
+		printf '%s' "$live" >"$TMP"
+		ip=$(jct "$TMP" get imagefile.path 2>/dev/null)
+	fi
+	[ -n "$ip" ] || ip=/run/prudynt/osd-image
+	if [ -f "$ip" ]; then
+		texts="$texts,\"imagefile\":$(wc -c <"$ip" | tr -d ' ')"
+	else
+		texts="$texts,\"imagefile\":null"
+	fi
 	log=""
-	# The patched prudynt tags its warnings "textfile" (reduced to / not shown)
+	# The patched prudynt tags its warnings "textfile" / "imagefile" (reduced to / not shown)
 	while IFS= read -r line; do
 		[ -n "$line" ] && log="$log${log:+,}\"$(json_escape "$line")\""
 	done <<EOF
-$(logread 2>/dev/null | grep -E 'textfile|osd-config' | tail -n 12)
+$(logread 2>/dev/null | grep -E 'textfile|imagefile|osd-config|osd-feed' | tail -n 12)
 EOF
 	send_json "{\"config_path\":\"$CONFIG\",\"config_source\":$config_source,\"config\":$config,\"config_error\":$config_error,\"pool_size\":$pool,\"live\":$live,\"texts\":{$texts},\"log\":[$log]}"
 	;;

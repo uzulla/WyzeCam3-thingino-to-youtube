@@ -63,6 +63,7 @@ echo 'REC' > /run/prudynt/osd-text2.tmp && mv /run/prudynt/osd-text2.tmp /run/pr
 | `osd.textfile` | 左下 (`pos_x` 8, `pos_y` -8) | `/run/prudynt/osd-text` | 40×4 |
 | `osd.textfile2` | 右上 (-8, 8) | `/run/prudynt/osd-text2` | 24×2 |
 | `osd.textfile3` | 右下 (-8, -8) | `/run/prudynt/osd-text3` | 24×2 |
+| `osd.imagefile` (画像、[下記](#画像-ロゴなど-を重ねる-osdimagefile)) | 右上 (-8, 8) | `/run/prudynt/osd-image` | 200×200 px |
 
 位置はどれも自由に変えられる (3 つの違いは既定値だけ)。矩形同士が重なった場合は番号の大きい方が手前。
 
@@ -91,6 +92,8 @@ Thingino の Web UI の Streamer メニュー → **OSD text** (`http://<camera-
   prudynt の再起動は要らない。ファイルに既にあるキーのうち、ページにない項目 (`path`、`substream_disabled` など) は
   残る (SD にまだファイルが無い時は、`osd-config` と同じ順で `/etc/prudynt-osd.json` を読んでそれに重ねる)。`general.osd_pool_size` を変えた時だけ、`osd-config` が `/etc/prudynt.json` に書いて prudynt を再起動する
   (配信が数秒切れる) ので、保存前に確認が出る。SD カードが挿さっていない時は保存できない (エラーになる)
+- **Image** カードは `osd.imagefile` (有効、位置、幅・高さ)。ファイルの有無と大きさが合っているかを表示する。
+  中身 (PNG) は [osd-feed](osd-feed.md) が SD カードから変換して置く
 - **prudynt-osd.json** 欄に、いま Save を押したら書かれる JSON がフォームに追従して出る。**Download** で
   `prudynt-osd.json` としてダウンロード、**Copy** でクリップボードへ (試した配置を PC に持ち帰る、別の SD カードに置く、
   `device/prudynt-osd.json.example` のように保存しておく、といった用途)。テキスト欄の中身はこの JSON には入らない
@@ -116,6 +119,35 @@ curl -s --data-binary @prudynt-osd.json "http://<camera-ip>/x/json-osd-text.cgi?
 
 書き込み先は `osd.textfileN.path` (`/run` か `/tmp` の下に限る) と SD の `prudynt-osd.json` だけで、フラッシュには何も書かない。
 カメラの中で更新するなら、この CGI を通す必要はない (`osd-progress-demo` のように直接ファイルを `mv` する)。
+
+## 画像 (ロゴなど) を重ねる: `osd.imagefile`
+
+テキストの 3 枚とは別に、**ラスタ画像を 1 枚**重ねられる。prudynt が読むのは**ヘッダなしの生 BGRA** (1 画素 4 バイト、
+B G R A の順、アルファはストレート) で、`width` × `height` × 4 バイトちょうどのファイル。PNG などのデコードは prudynt
+ではなく書き込み側がやる — [osd-feed](osd-feed.md) の `imagefile` スロットが SD カード上の透過 PNG を読んでこの形式に
+変換して置く (下記)。更新の契約はテキストと同じ: tmpfs に書いて `mv`、0.1 秒以内に反映、無い/空なら非表示。
+
+| キー | 既定値 | 意味 |
+|---|---|---|
+| `enabled` | `false` | 表示する |
+| `substream_disabled` | `true` | サブストリーム (ch1) には出さない |
+| `path` | `/run/prudynt/osd-image` | 映すファイル |
+| `width` / `height` | 200 / 200 | 大きさ (px)。**偶数のみ**、上限 1280 × 720。リージョンは常にこの大きさで確保され、ファイルはこの大きさ × 4 バイトでないと表示されない (`logread` に 1 回出る) |
+| `pos_x` / `pos_y` | -8 / 8 (右上) | 位置。0 以上は左/上端から、負の値は右/下端からの距離 |
+
+- OSD プールの予算はテキスト 3 枚の**後**に割り当てる。入らなければ**縮めずに表示しない** (切れた絵は意味が無い) で、
+  `logread | grep imagefile` に理由が出る。必要なプールは画像の `width × height × 4` + テキスト分:
+  200 × 200 なら 160KB (既定のプールに入る)、640 × 360 で 921KB、**1280 × 720 で 3.6MB (`osd_pool_size` 8192)**
+- 映像 (720p なら 1280 × 720) より大きい画像は表示しない
+- 描画の順序はテキストの上 (重なったら画像が手前)
+- 設定は他のスロットと同じく `prudyntctl json '{"osd":{"imagefile":{...}}}'`、`prudynt-osd.json`、[Web UI](#web-ui-から編集する) の
+  Image カードから。`prudynt-osd.json` から `imagefile` のブロックを消すと `osd-config` が無効に戻す
+
+```sh
+# 手で試す (ImageMagick で 200x200 の生 BGRA を作って置く)
+magick logo.png -resize 200x200 -background none -gravity center -extent 200x200 -depth 8 bgra:/tmp/osd-image.raw
+cat /tmp/osd-image.raw | ssh root@<camera-ip> 'cat > /run/prudynt/osd-image.tmp && mv /run/prudynt/osd-image.tmp /run/prudynt/osd-image'
+```
 
 ## 設定 (`osd.textfile.*` / `osd.textfile2.*` / `osd.textfile3.*`)
 

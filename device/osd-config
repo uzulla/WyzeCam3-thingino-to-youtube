@@ -26,8 +26,8 @@
 # If prudynt does not come back up with the new size, the old one is restored.
 #
 # Re-sent when prudynt was restarted (new pid) or the file changed / appeared /
-# moved (SD inserted). File gone (SD pulled), or a text overlay block removed from
-# it -> the text overlays it had turned on are turned off again; slots it never
+# moved (SD inserted). File gone (SD pulled), or an overlay block (text or image)
+# removed from it -> the overlays it had turned on are turned off again; slots it never
 # mentioned are not touched. No config file
 # ever seen -> prudynt is left alone.
 
@@ -60,10 +60,10 @@ send() {
 	return 1
 }
 
-# Slots (textfile, textfile2, textfile3) that the config file mentions: only those
-# are ours to turn off again when the file goes away.
+# Slots (textfile, textfile2, textfile3, imagefile) that the config file mentions:
+# only those are ours to turn off again when the file goes away.
 slots_in() {
-	for slot in textfile textfile2 textfile3; do
+	for slot in textfile textfile2 textfile3 imagefile; do
 		case $(jct "$1" get "osd.$slot" 2>/dev/null) in "{"*) printf '%s ' "$slot" ;; esac
 	done
 }

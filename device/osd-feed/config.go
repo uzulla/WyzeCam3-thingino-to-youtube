@@ -43,6 +43,14 @@ type SlotConfig struct {
 	Path     string `json:"path"`
 	Cols     int    `json:"cols"`
 	Rows     int    `json:"rows"`
+	// imagefile only (image.go): the PNG to show, and how to fit it into the
+	// slot's width x height ("contain" = shrink to fit keeping the aspect
+	// ratio, "none" = as is, cropped). width/height pin the geometry like
+	// cols/rows do for text.
+	PNG    string `json:"png"`
+	Fit    string `json:"fit"`
+	Width  int    `json:"width"`
+	Height int    `json:"height"`
 }
 
 // interval - the redraw period. prudynt looks at the files every 100 ms, so
@@ -79,9 +87,19 @@ func loadConfig(path string) (*Config, error) {
 	if len(c.Slots) == 0 {
 		return nil, fmt.Errorf("%s: no slots", path)
 	}
-	for name := range c.Slots {
+	for name, sc := range c.Slots {
 		if !validSlot(name) {
-			return nil, fmt.Errorf("%s: unknown slot %q (textfile, textfile2 or textfile3)", path, name)
+			return nil, fmt.Errorf("%s: unknown slot %q (textfile, textfile2, textfile3 or imagefile)", path, name)
+		}
+		if name == "imagefile" {
+			if sc.PNG == "" {
+				return nil, fmt.Errorf("%s: slot imagefile needs \"png\" (the file to show)", path)
+			}
+			if sc.Fit != "" && sc.Fit != "contain" && sc.Fit != "none" {
+				return nil, fmt.Errorf("%s: slot imagefile: fit must be \"contain\" or \"none\"", path)
+			}
+		} else if sc.PNG != "" || sc.Fit != "" || sc.Width != 0 || sc.Height != 0 {
+			return nil, fmt.Errorf("%s: slot %s: png/fit/width/height are for the imagefile slot", path, name)
 		}
 	}
 	for name, s := range c.Sources {
@@ -93,5 +111,5 @@ func loadConfig(path string) (*Config, error) {
 }
 
 func validSlot(name string) bool {
-	return name == "textfile" || name == "textfile2" || name == "textfile3"
+	return name == "textfile" || name == "textfile2" || name == "textfile3" || name == "imagefile"
 }

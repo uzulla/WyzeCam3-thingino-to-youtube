@@ -58,6 +58,28 @@
         <div class="col col-xl-8">
           <div id="slots"></div>
 
+          <div class="card bg-dark-subtle mb-3 p-2" id="image_card">
+            <div class="d-flex align-items-center mb-2">
+              <h6 class="mb-0 me-3">Image <span class="text-secondary fw-normal small">osd.imagefile · a raw BGRA picture, written from a PNG by osd-feed</span></h6>
+              <span class="form-switch mb-0">
+                <input type="checkbox" id="imagefile_enabled" role="switch" class="form-check-input">
+                <label for="imagefile_enabled" class="form-check-label small">Enabled</label>
+              </span>
+            </div>
+            <div class="d-flex flex-wrap align-items-end gap-2 mb-2">
+              <div><label class="form-label small mb-0" for="imagefile_pos_x">X</label><input type="number" id="imagefile_pos_x" class="form-control form-control-sm num" min="-8192" max="8192"></div>
+              <div><label class="form-label small mb-0" for="imagefile_pos_y">Y</label><input type="number" id="imagefile_pos_y" class="form-control form-control-sm num" min="-8192" max="8192"></div>
+              <div><label class="form-label small mb-0" for="imagefile_width">Width</label><input type="number" id="imagefile_width" class="form-control form-control-sm num" min="2" max="1280" step="2"></div>
+              <div><label class="form-label small mb-0" for="imagefile_height">Height</label><input type="number" id="imagefile_height" class="form-control form-control-sm num" min="2" max="720" step="2"></div>
+              <div class="small text-secondary align-self-center" id="imagefile_state"></div>
+            </div>
+            <p class="small text-secondary mb-0">
+              Even sizes only; the file must be exactly width × height × 4 bytes, so osd-feed converts the PNG to this size
+              (<code>slots.imagefile.png</code> in osd-feed.json, docs/osd-feed.md). Needs width × height × 4 bytes of OSD pool
+              on top of the text overlays (1280 × 720 = 3.6 MB: osd_pool_size 8192).
+            </p>
+          </div>
+
           <div class="card bg-dark-subtle mb-3 p-2">
             <div class="d-flex align-items-center mb-2">
               <h6 class="mb-0 me-3">Date/time (osd.burnin)</h6>
@@ -286,11 +308,12 @@
   // refuse to run with a bad field rather than silently leaving it out.
   function firstInvalid() {
     var bad = null;
-    document.querySelectorAll('#slots input, #burnin_scale, #burnin_colors input[type=text], #pool_size').forEach(function(inp) {
+    document.querySelectorAll('#slots input, #image_card input, #burnin_scale, #burnin_colors input[type=text], #pool_size').forEach(function(inp) {
       if (bad) return;
       var ok = true;
       if (inp.type === 'number') {
-        ok = readNum(inp.id, parseInt(inp.min, 10), parseInt(inp.max, 10)) !== undefined;
+        var n = readNum(inp.id, parseInt(inp.min, 10), parseInt(inp.max, 10));
+        ok = n !== undefined && !(inp.step === '2' && n % 2 !== 0); // image sizes: even only
       } else if (inp.type === 'text' && /_color$/.test(inp.id)) {
         ok = normColor(inp.value) !== null;
       }
@@ -301,7 +324,7 @@
       bad.focus();
       var label = document.querySelector('label[for="' + bad.id + '"]');
       notify('danger', 'Fix the highlighted field first: ' + (label ? label.textContent.trim() : bad.id) +
-        (bad.type === 'number' ? ' must be a whole number ' + bad.min + '..' + bad.max : ' must be #rrggbbaa'));
+        (bad.type === 'number' ? ' must be a whole number ' + bad.min + '..' + bad.max + (bad.step === '2' ? ' (even)' : '') : ' must be #rrggbbaa'));
     }
     return bad;
   }
@@ -343,9 +366,38 @@
     return o;
   }
 
+  var IMAGE_NUMS = ['pos_x', 'pos_y', 'width', 'height'];
+
+  function fillImage(v) {
+    $('imagefile_enabled').checked = v.enabled === true;
+    IMAGE_NUMS.forEach(function(f) { if (v[f] !== undefined) $('imagefile_' + f).value = v[f]; });
+  }
+
+  function readImage() {
+    var o = {enabled: $('imagefile_enabled').checked};
+    IMAGE_NUMS.forEach(function(f) {
+      var inp = $('imagefile_' + f);
+      var n = readNum(inp.id, parseInt(inp.min, 10), parseInt(inp.max, 10));
+      if (n !== undefined) o[f] = n;
+    });
+    return o;
+  }
+
+  // What the image file holds vs. what the slot needs
+  function updateImageState(bytes) {
+    var w = readNum('imagefile_width', 2, 1280), h = readNum('imagefile_height', 2, 720);
+    var need = (w && h) ? w * h * 4 : 0;
+    var st = $('imagefile_state');
+    if (bytes == null) { st.textContent = 'no file (hidden)'; st.className = 'small text-secondary align-self-center'; return; }
+    var ok = need && bytes === need;
+    st.textContent = 'file: ' + bytes + ' bytes' + (need ? (ok ? ' = ' + w + '×' + h + '×4' : ', but ' + w + '×' + h + '×4 = ' + need + ' expected: not shown') : '');
+    st.className = 'small align-self-center ' + (ok ? 'text-secondary' : 'text-warning');
+  }
+
   function readOsd() {
     var osd = {};
     SLOTS.forEach(function(s) { osd[s.key] = readSlot(s.key); });
+    osd.imagefile = readImage();
     osd.burnin = readBurnin();
     return osd;
   }
@@ -380,6 +432,7 @@
     if (s.live) {
       SLOTS.forEach(function(sl) { if (s.live[sl.key]) fillSlot(sl.key, s.live[sl.key]); });
       if (s.live.burnin) fillBurnin(s.live.burnin);
+      if (s.live.imagefile) fillImage(s.live.imagefile);
     } else {
       notify('warning', 'prudynt did not answer the osd.textfile query (not running, or built without the OSD patch)');
     }
@@ -394,6 +447,7 @@
       el(sl.key, 'text').value = t == null ? '' : t;
       updateHint(sl.key, t != null);
     });
+    updateImageState(s.texts ? s.texts.imagefile : null);
     $('config_path').textContent = s.config_path;
     var merged = (s.config && s.config_source && s.config_source !== s.config_path) ? 'the form is merged into ' + s.config_source + ' (what osd-config uses now)' : '';
     var cstate = s.config_error ? s.config_error + (merged ? '; ' + merged : '')
