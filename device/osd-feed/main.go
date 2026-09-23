@@ -244,11 +244,12 @@ loop:
 						os.Remove(img.Path)
 						last[img.Name] = ""
 					}
-				} else if changed || last[img.Name] != key || !fileHoldsBytes(img.Path, pix) {
+				} else if changed || last[img.Name] != key || !img.holdsOurFile() {
 					if err := writeSlotBytes(img.Path, pix); err != nil {
 						report(img.Name, err.Error())
 					} else {
 						recovered(img.Name)
+						img.wrote()
 						last[img.Name] = key
 						writes++
 					}

@@ -7,6 +7,7 @@ import (
 	"image/draw"
 	_ "image/png" // the format the config points at; others registered here would work too
 	"os"
+	"syscall"
 	"time"
 )
 
@@ -25,8 +26,43 @@ type ImageSlot struct {
 
 	pngMod  time.Time
 	pngSize int64
+	pngData []byte // the PNG's bytes at the last conversion: a touched but unchanged file is not decoded again
 	pixels  []byte // the last conversion, or nil when the PNG could not be read
-	err     string
+
+	// The slot file as we last wrote it, to notice (cheaply, by stat) when
+	// someone else removed or replaced it. The picture is megabytes: reading
+	// it back every tick, as the text slots do, would cost real CPU here.
+	written fileID
+}
+
+type fileID struct {
+	ino  uint64
+	size int64
+	mod  time.Time
+}
+
+func statID(path string) (fileID, bool) {
+	st, err := os.Stat(path)
+	if err != nil {
+		return fileID{}, false
+	}
+	id := fileID{size: st.Size(), mod: st.ModTime()}
+	if sys, ok := st.Sys().(*syscall.Stat_t); ok {
+		id.ino = sys.Ino
+	}
+	return id, true
+}
+
+// holdsOurFile - the slot file is still the one we wrote (same inode, size
+// and mtime); false when it is gone or someone replaced it
+func (s *ImageSlot) holdsOurFile() bool {
+	id, ok := statID(s.Path)
+	return ok && s.written.ino != 0 && id == s.written
+}
+
+// wrote - remember the file just written, for holdsOurFile
+func (s *ImageSlot) wrote() {
+	s.written, _ = statID(s.Path)
 }
 
 func newImageSlot(name string, cfg SlotConfig, geo SlotGeometry) *ImageSlot {
@@ -82,8 +118,21 @@ func (s *ImageSlot) render() (pix []byte, changed bool, err error) {
 	if s.pixels != nil && st.ModTime().Equal(s.pngMod) && st.Size() == s.pngSize {
 		return s.pixels, false, nil
 	}
-	pix, err = convertPNG(s.PNG, s.Width, s.Height, s.Fit)
+	// mtime or size changed: read the file (a PNG is small) and decode only
+	// when its bytes really differ (a plain touch, or a re-save of the same
+	// image, would otherwise cost a full decode + conversion every time)
+	data, readErr := os.ReadFile(s.PNG)
 	s.pngMod, s.pngSize = st.ModTime(), st.Size()
+	if readErr == nil && s.pixels != nil && bytes.Equal(data, s.pngData) {
+		return s.pixels, false, nil
+	}
+	if readErr != nil {
+		changed = s.pixels != nil
+		s.pixels = nil
+		return nil, changed, readErr
+	}
+	pix, err = convertPNGBytes(data, s.PNG, s.Width, s.Height, s.Fit)
+	s.pngData = data
 	if err != nil {
 		changed = s.pixels != nil
 		s.pixels = nil
@@ -99,12 +148,15 @@ func (s *ImageSlot) render() (pix []byte, changed bool, err error) {
 // aspect ratio, and centred on a transparent canvas; "none": centred, cropped
 // when larger. Integer arithmetic only (softfloat MIPS target).
 func convertPNG(path string, w, h int, fit string) ([]byte, error) {
-	f, err := os.Open(path)
+	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, err
 	}
-	defer f.Close()
-	src, _, err := image.Decode(f)
+	return convertPNGBytes(data, path, w, h, fit)
+}
+
+func convertPNGBytes(data []byte, path string, w, h int, fit string) ([]byte, error) {
+	src, _, err := image.Decode(bytes.NewReader(data))
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", path, err)
 	}

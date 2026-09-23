@@ -122,3 +122,40 @@ func TestImageSlotRenderTracksTheFile(t *testing.T) {
 		t.Errorf("after resize: %v len=%d", err, len(pix))
 	}
 }
+
+func TestImageSlotTouchedPNGIsNotReconverted(t *testing.T) {
+	p := writeTestPNG(t, 4, 4)
+	s := newImageSlot("imagefile", SlotConfig{PNG: p}, SlotGeometry{Path: "/tmp/x", Width: 4, Height: 4})
+	if _, changed, err := s.render(); err != nil || !changed {
+		t.Fatalf("first: %v %v", err, changed)
+	}
+	// same bytes, new mtime
+	data, _ := os.ReadFile(p)
+	os.WriteFile(p, data, 0o644)
+	future := s.pngMod.Add(2 * 1e9)
+	os.Chtimes(p, future, future)
+	if _, changed, _ := s.render(); changed {
+		t.Error("a touched but identical PNG must not count as a change")
+	}
+}
+
+func TestImageSlotHoldsOurFile(t *testing.T) {
+	dir := t.TempDir()
+	s := &ImageSlot{Path: filepath.Join(dir, "img")}
+	if s.holdsOurFile() {
+		t.Error("nothing written yet")
+	}
+	writeSlotBytes(s.Path, []byte("abcd"))
+	s.wrote()
+	if !s.holdsOurFile() {
+		t.Error("just written")
+	}
+	os.WriteFile(s.Path, []byte("abce"), 0o644) // same size, new inode/mtime
+	if s.holdsOurFile() {
+		t.Error("replaced by someone else must be noticed")
+	}
+	os.Remove(s.Path)
+	if s.holdsOurFile() {
+		t.Error("removed must be noticed")
+	}
+}

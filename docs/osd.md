@@ -143,6 +143,16 @@ B G R A の順、アルファはストレート) で、`width` × `height` × 4 
 - 設定は他のスロットと同じく `prudyntctl json '{"osd":{"imagefile":{...}}}'`、`prudynt-osd.json`、[Web UI](#web-ui-から編集する) の
   Image カードから。`prudynt-osd.json` から `imagefile` のブロックを消すと `osd-config` が無効に戻す
 
+720p 配信中の実測 (400×400 の透過 PNG をロゴに、テキスト 3 枚と同時表示):
+
+| 画像の大きさ | プール | 結果 | prudynt の CPU | 備考 |
+|---|---|---|---|---|
+| 200×200 (156KB) | 2048 | 表示 | 7.1% | 既定のプール 616KB でも入る大きさ |
+| 640×360 (900KB) | 2048 | 表示 | — | |
+| **1280×720 (3.6MB)** | **8192** | **表示** (全面) | 11.0% | 全面のリージョンは prudynt (OSD 合成) が約 4% 増える。Linux 側の空きメモリは 31MB → 14MB (osd-feed と prudynt が 3.6MB のバッファを持つ分) |
+
+書き込み側 (osd-feed) の CPU は [osd-feed.md](osd-feed.md#画像-ロゴ-を出す) の表。
+
 ```sh
 # 手で試す (ImageMagick で 200x200 の生 BGRA を作って置く)
 magick logo.png -resize 200x200 -background none -gravity center -extent 200x200 -depth 8 bgra:/tmp/osd-image.raw
