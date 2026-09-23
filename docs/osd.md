@@ -143,6 +143,8 @@ B G R A の順、アルファはストレート) で、`width` × `height` × 4 
 - 設定は他のスロットと同じく `prudyntctl json '{"osd":{"imagefile":{...}}}'`、`prudynt-osd.json`、[Web UI](#web-ui-から編集する) の
   Image カードから。`prudynt-osd.json` から `imagefile` のブロックを消すと `osd-config` が無効に戻す
 
+![ロゴ 200×200 (右上)](images/osd-image-logo.jpg)
+
 720p 配信中の実測 (400×400 の透過 PNG をロゴに、テキスト 3 枚と同時表示):
 
 | 画像の大きさ | プール | 結果 | prudynt の CPU | 備考 |
