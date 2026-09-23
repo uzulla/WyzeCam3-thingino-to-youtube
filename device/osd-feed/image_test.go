@@ -243,3 +243,21 @@ func TestConvertPNGRefusesExtremeShapesAnd16Bit(t *testing.T) {
 		t.Errorf("wide strip must land as one row in the middle: %v %v", px(out, 100, 50, 24), px(out, 100, 50, 0))
 	}
 }
+
+func TestImageSlotRestoredSameContentShowsAgain(t *testing.T) {
+	p := writeTestPNG(t, 4, 4)
+	s := newImageSlot("imagefile", SlotConfig{PNG: p}, SlotGeometry{Path: "/tmp/x", Width: 4, Height: 4})
+	if pix, _, err := s.render(); err != nil || pix == nil {
+		t.Fatal("first render")
+	}
+	data, _ := os.ReadFile(p)
+	os.Remove(p)
+	if pix, _, err := s.render(); err == nil || pix != nil {
+		t.Fatalf("removed: %v %v", err, pix != nil)
+	}
+	os.WriteFile(p, data, 0o644) // the very same bytes come back
+	pix, changed, err := s.render()
+	if err != nil || pix == nil || !changed {
+		t.Errorf("restored file must be converted and shown again: err=%v pix=%v changed=%v", err, pix != nil, changed)
+	}
+}

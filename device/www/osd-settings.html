@@ -80,7 +80,8 @@
             </p>
             <p class="small text-secondary mb-0">
               Even sizes only; the raw file must be exactly width × height × 4 bytes. Needs width × height × 4 bytes of OSD pool
-              on top of the text overlays (1280 × 720 = 3.6 MB: osd_pool_size 8192). The PNG is shrunk to fit, never enlarged.
+              on top of the text overlays (1280 × 720 = 3.6 MB: osd_pool_size 8192). How the PNG is fitted is osd-feed's
+              <code>fit</code>: <code>contain</code> (default) shrinks it to fit, never enlarges; <code>none</code> keeps its size and crops what does not fit.
             </p>
           </div>
 

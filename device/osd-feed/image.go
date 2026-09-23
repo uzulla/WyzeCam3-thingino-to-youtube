@@ -113,8 +113,11 @@ func (s *ImageSlot) follow(geo SlotGeometry, cfg SlotConfig) bool {
 func (s *ImageSlot) render() (pix []byte, changed bool, err error) {
 	st, statErr := os.Stat(s.PNG)
 	if statErr != nil {
+		// Forget everything, the cache key included: the same file coming back
+		// later (mv away and back, SD remounted) must be converted again, not
+		// answered from a cache that now says "nothing"
 		changed = s.pixels != nil
-		s.pixels = nil
+		s.pixels, s.pngData, s.lastErr = nil, nil, nil
 		s.pngMod = time.Time{}
 		return nil, changed, statErr
 	}
