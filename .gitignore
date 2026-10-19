@@ -25,3 +25,4 @@
 # --- ローカル環境 ---
 .claude/
 .DS_Store
+tmp/
