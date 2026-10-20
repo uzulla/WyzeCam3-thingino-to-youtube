@@ -309,17 +309,18 @@ while :; do
 			# broken (a typo while editing), change nothing. If a different file
 			# took over (SD pulled, and the built-in one is unusable), what the
 			# old file had turned on must not stay: off, as if no file was left.
+			# A file that still has "image" is not broken: its "osd" block was
+			# taken out, so off as well (as when one slot's block is deleted).
 			case "$applied" in
-			"$pid|$cfg|"*) ;;
-			*)
-				if [ -n "$managed" ] && send "$(off_json "$managed")"; then
-					log "Config changed to $cfg - turned off: $managed"
-					applied="$pid|none"
-					managed=""
-					save_state
-				fi
-				;;
+			"$pid|$cfg|"*) drop=${has_image:+"No osd settings in $cfg any more"} ;;
+			*) drop="Config changed to $cfg" ;;
 			esac
+			if [ -n "$drop" ] && [ -n "$managed" ] && send "$(off_json "$managed")"; then
+				log "$drop - turned off: $managed"
+				applied="$pid|none"
+				managed=""
+				save_state
+			fi
 			# A file with only "image" settings is fine
 			if [ -z "$has_image" ] && [ "$complained" != "parse:$cfg" ]; then
 				log "$cfg has no usable \"osd\" object - ignored"
