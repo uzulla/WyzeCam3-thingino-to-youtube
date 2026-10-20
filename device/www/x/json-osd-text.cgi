@@ -98,10 +98,13 @@ read_body() {
 	esac
 }
 
-# has_osd_object <file> - 0 when the file is JSON with an "osd" object (what
-# osd-config applies; it ignores {"osd":[]} or {"osd":null}, so we do too)
-has_osd_object() {
+# has_config_object <file> - 0 when the file is JSON with an "osd" or an
+# "image" object (what osd-config applies; it ignores {"osd":[]} or
+# {"osd":null}, so we do too). A file with only "image" is a valid config: the
+# page must get it back from status, or its Save would drop the image settings.
+has_config_object() {
 	case $(jct "$1" get osd 2>/dev/null) in "{"*) return 0 ;; esac
+	case $(jct "$1" get image 2>/dev/null) in "{"*) return 0 ;; esac
 	return 1
 }
 
@@ -146,11 +149,11 @@ status)
 	if [ -n "$src" ]; then
 		# jct prints {} for broken JSON without failing; "get osd" fails, and a
 		# file without an "osd" object is useless for osd-config anyway
-		if has_osd_object "$src"; then
+		if has_config_object "$src"; then
 			config=$(jct "$src" print 2>/dev/null)
 			config_source="\"$src\""
 		else
-			config_error="\"$src: not valid JSON, or no \\\"osd\\\" object\""
+			config_error="\"$src: not valid JSON, or no \\\"osd\\\" / \\\"image\\\" object\""
 		fi
 	fi
 	mountpoint -q "$SD" || config_error='"SD card not mounted"'
@@ -236,8 +239,8 @@ save)
 	regular_or_absent "$CONFIG" || fail "$CONFIG exists and is not a regular file - not touching it" "409 Conflict"
 	read_body
 	[ -s "$TMP.body" ] || fail "empty body"
-	# osd-config ignores a file without an "osd" object; do not save one
-	has_osd_object "$TMP.body" || fail "not valid JSON, or no \"osd\" object"
+	# osd-config ignores a file without an "osd" or "image" object; do not save one
+	has_config_object "$TMP.body" || fail "not valid JSON, or no \"osd\" / \"image\" object"
 	# Write on the SD card itself, so the final mv is atomic (the file is
 	# what osd-config polls every 5 s)
 	if ! { cp "$TMP.body" "$CONFIG.tmp.$$" && chmod 644 "$CONFIG.tmp.$$" && mv "$CONFIG.tmp.$$" "$CONFIG"; }; then

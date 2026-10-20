@@ -106,12 +106,18 @@ fails=0
 # not), so the caller knows the file is not useless without "osd".
 image_complained=""
 image_fails=0
+image_trying="" # the request image_fails counts the failures of
 apply_image() {
 	# one line, so that it reads well in the log
 	body=$(jct "$1" get image 2>/dev/null | tr -s ' \t\n' ' ')
 	case "$body" in "{"*) ;; *) return 1 ;; esac
 	want="$2|$1|$(printf '%s' "$body" | md5sum | cut -d' ' -f1)"
 	[ "$want" = "$image_applied" ] && return 0
+	# A new request (new prudynt, or the file changed) gets its own 30 s
+	if [ "$want" != "$image_trying" ]; then
+		image_trying=$want
+		image_fails=0
+	fi
 	case $(prudyntctl json "{\"image\":$body}" 2>/dev/null) in
 	"" | "{}"*) ;;
 	"{"*)
