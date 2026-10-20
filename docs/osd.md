@@ -210,10 +210,10 @@ cat /tmp/osd-image.raw | ssh root@<camera-ip> 'cat > /run/prudynt/osd-image.tmp 
 }
 ```
 
-- 中身は `prudyntctl json` に渡す JSON と同じ形。**送られるのは `osd` の部分だけ**で、それ以外のキー
-  (`action` や映像の設定など) は無視される。`osd.burnin` (日時の書式や大きさ) も書ける。
+- 中身は `prudyntctl json` に渡す JSON と同じ形。**送られるのは `osd` と `image` の部分だけ**で、それ以外のキー
+  (`action` や `stream0` など) は無視される。`osd.burnin` (日時の書式や大きさ) も書ける。
   例外は `general.osd_pool_size` (OSD プールの大きさ、KB) で、これだけは prudynt に送るのではなく
-  `/etc/prudynt.json` に書く (下記)
+  `/etc/prudynt.json` に書く (下記)。`image` は [下記](#映像の設定-上下左右の反転など-image)
 - 送り直すのは、prudynt が再起動した時 (WebUI で設定を変えた後など) と、ファイルの中身が変わった時
   (SD を挿した、書き換えた)。5 秒間隔で見ているので、カメラの再起動は要らない
 - ファイルが無くなると (SD を抜くと)、**そのファイルに書いてあったテキストの矩形だけ**を無効に戻す
@@ -241,6 +241,30 @@ cat /tmp/osd-image.raw | ssh root@<camera-ip> 'cat > /run/prudynt/osd-image.tmp 
     戻すたびに再起動と書き込みをする方が害が大きい)。既定に戻したい時はファイルに 0 を書く
 - ログ: `logread | grep osd-config`。止めて、次回の起動でも動かないようにする:
   `service stop osd-config; service disable osd-config`
+
+### 映像の設定 (上下・左右の反転など): `image`
+
+カメラを逆さに付けた時の反転なども、同じファイルの `image` に書けば起動のたびに反映される:
+
+```json
+{
+  "image": { "vflip": true, "hflip": true },
+  "osd": { ... }
+}
+```
+
+- 書けるのは `/etc/prudynt.json` の `image` にあるキー (`vflip` 上下反転、`hflip` 左右反転、`brightness` / `contrast` /
+  `saturation` / `sharpness` など)。Thingino の Web UI の Image のページ (`/streamer-image.html`) で
+  変えるのと同じで、**prudynt の再起動なしにその場で効く**。フラッシュには書かない (`save_config` を送らない)
+- `osd` と同じく、prudynt が起動した時 (カメラの起動直後を含む) とファイルの中身が変わった時に送る。
+  起動直後は prudynt が応答するまでの数秒間、`/etc/prudynt.json` の設定 (反転なし) のまま映る
+- `osd` が無く `image` だけのファイルでもよい
+- ファイルから消しても (SD を抜いても) **元には戻さない**。prudynt が再起動するまで (カメラの再起動を含む) その値のまま。
+  すぐ戻したい時は `false` を書く
+- 同じ設定を Web UI の Image のページで変えても、prudynt が再起動するとファイルの値に戻る
+  (Web UI の「Save configuration to file」で `/etc/prudynt.json` に保存しても、ファイルの方が後から送られる)
+- 夜間モードの切り替え (`daynightd`) が変える項目 (`running_mode` など) は、書いても上書きされる可能性がある (未確認)
+- ログ: `logread | grep osd-config` に `Applied image settings from ... : { "vflip": true }`
 
 ## 大きさの上限と OSD プール
 
