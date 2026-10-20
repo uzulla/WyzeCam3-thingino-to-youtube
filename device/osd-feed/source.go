@@ -30,9 +30,12 @@ type Source interface {
 // document the keys it produces in docs/osd-feed.md.
 var sourceTypes = map[string]func(SourceConfig) (Source, error){
 	"meminfo": func(SourceConfig) (Source, error) { return meminfoSource{}, nil },
-	"clock":   func(SourceConfig) (Source, error) { return clockSource{}, nil },
-	"tick":    newTickSource,
-	"http":    newHTTPSource,
+	"cpu": func(SourceConfig) (Source, error) {
+		return &cpuSource{stat: "/proc/stat", loadavg: "/proc/loadavg"}, nil
+	},
+	"clock": func(SourceConfig) (Source, error) { return clockSource{}, nil },
+	"tick":  newTickSource,
+	"http":  newHTTPSource,
 }
 
 // ---- cache: the latest values of every source, read by the render loop
@@ -173,6 +176,73 @@ func (meminfoSource) Poll(context.Context) (Values, error) {
 		"total_mb": total / 1024,
 		"used_pct": (total - free) * 100 / total,
 	}, nil
+}
+
+// ---- cpu: used_pct (busy share of all CPUs since the previous poll, from the
+// "cpu" line of /proc/stat; iowait counts as idle), load1 / load5 / load15
+// (/proc/loadavg, as the text it is there, e.g. "0.52"). The first poll has
+// no previous sample, so its used_pct is the average since boot.
+
+type cpuSource struct {
+	stat, loadavg       string // paths, so tests can use fixtures
+	prevTotal, prevIdle uint64
+}
+
+func (c *cpuSource) Poll(context.Context) (Values, error) {
+	b, err := os.ReadFile(c.stat)
+	if err != nil {
+		return nil, err
+	}
+	total, idle, err := parseProcStat(string(b))
+	if err != nil {
+		return nil, err
+	}
+	dt, di := total-c.prevTotal, idle-c.prevIdle
+	if total < c.prevTotal || idle < c.prevIdle { // counters went back: start over
+		dt, di = total, idle
+	}
+	c.prevTotal, c.prevIdle = total, idle
+	used := 0
+	if dt > 0 {
+		used = int((dt - di) * 100 / dt)
+	}
+	v := Values{"used_pct": used}
+	b, err = os.ReadFile(c.loadavg)
+	if err != nil {
+		return nil, err
+	}
+	f := strings.Fields(string(b))
+	if len(f) < 3 {
+		return nil, fmt.Errorf("unexpected %s: %q", c.loadavg, strings.TrimSpace(string(b)))
+	}
+	v["load1"], v["load5"], v["load15"] = f[0], f[1], f[2]
+	return v, nil
+}
+
+// parseProcStat - total and idle (idle + iowait) jiffies of the aggregate
+// "cpu" line
+func parseProcStat(s string) (total, idle uint64, err error) {
+	for _, line := range strings.Split(s, "\n") {
+		f := strings.Fields(line)
+		if len(f) < 5 || f[0] != "cpu" {
+			continue
+		}
+		for i, x := range f[1:] {
+			n, err := strconv.ParseUint(x, 10, 64)
+			if err != nil {
+				return 0, 0, fmt.Errorf("/proc/stat: %v", err)
+			}
+			// guest / guest_nice (fields 9, 10) are already in user / nice
+			if i < 8 {
+				total += n
+			}
+			if i == 3 || i == 4 {
+				idle += n
+			}
+		}
+		return total, idle, nil
+	}
+	return 0, 0, fmt.Errorf("no cpu line in /proc/stat")
 }
 
 // ---- clock: hms, date, unix (local time as the camera has it)

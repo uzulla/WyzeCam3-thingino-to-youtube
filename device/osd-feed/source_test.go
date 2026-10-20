@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -111,5 +112,40 @@ func TestRunSourceKeepsLastValuesOnFailure(t *testing.T) {
 	case <-done:
 	case <-time.After(time.Second):
 		t.Error("runSource must return when ctx is cancelled")
+	}
+}
+
+func TestCPUSource(t *testing.T) {
+	dir := t.TempDir()
+	stat, load := dir+"/stat", dir+"/loadavg"
+	write := func(p, s string) {
+		if err := os.WriteFile(p, []byte(s), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write(load, "1.65 1.70 1.41 1/117 15110\n")
+	// user nice system idle iowait irq softirq steal guest guest_nice
+	write(stat, "cpu  100 0 100 700 100 0 0 0 50 0\ncpu0 100 0 100 700 100 0 0 0 50 0\nintr 1\n")
+	src := &cpuSource{stat: stat, loadavg: load}
+	v, err := src.Poll(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	// since boot: busy 200 of 1000 (guest is not counted twice)
+	if v["used_pct"] != 20 || v["load1"] != "1.65" || v["load15"] != "1.41" {
+		t.Errorf("first poll: %v", v)
+	}
+	// +60 busy, +40 idle since the previous poll
+	write(stat, "cpu  150 0 110 730 110 0 0 0 50 0\n")
+	if v, _ = src.Poll(context.Background()); v["used_pct"] != 60 {
+		t.Errorf("second poll: %v", v)
+	}
+	// unchanged counters (no time passed) must not divide by zero
+	if v, _ = src.Poll(context.Background()); v["used_pct"] != 0 {
+		t.Errorf("no change: %v", v)
+	}
+	write(stat, "intr 1\n")
+	if _, err := src.Poll(context.Background()); err == nil {
+		t.Error("missing cpu line must be an error")
 	}
 }
