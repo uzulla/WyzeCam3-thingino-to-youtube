@@ -25,6 +25,12 @@ const service = "_thingino._tcp.local"
 
 var mdnsGroup = &net.UDPAddr{IP: net.IPv4(224, 0, 0, 251), Port: 5353}
 
+// searcher - the socket of one network interface
+type searcher struct {
+	ifname string
+	conn   *net.UDPConn
+}
+
 type packet struct {
 	from    net.IP
 	records []record
@@ -35,20 +41,20 @@ func main() {
 	verbose := flag.Bool("v", false, "show the interfaces used and every answer")
 	flag.Parse()
 
-	conns := listen(*verbose)
-	if len(conns) == 0 {
+	searchers := listen(*verbose)
+	if len(searchers) == 0 {
 		fmt.Fprintln(os.Stderr, "find-camera: no network interface to search on (not connected?)")
 		os.Exit(2)
 	}
 	packets := make(chan packet, 64)
 	deadline := time.Now().Add(*timeout)
 	var wg sync.WaitGroup
-	for _, c := range conns {
+	for _, s := range searchers {
 		wg.Add(1)
 		go func(c *net.UDPConn) {
 			defer wg.Done()
 			receive(c, deadline, packets, *verbose)
-		}(c)
+		}(s.conn)
 	}
 	go func() { wg.Wait(); close(packets) }()
 
@@ -60,8 +66,12 @@ func main() {
 				break
 			}
 			time.Sleep(after)
-			for _, c := range conns {
-				c.WriteToUDP(query, mdnsGroup)
+			for _, s := range searchers {
+				// Only with -v: a failed send ends as "no camera answered" like
+				// a lost one, and one after the deadline (socket closed) is normal
+				if _, err := s.conn.WriteToUDP(query, mdnsGroup); err != nil && *verbose {
+					fmt.Fprintf(os.Stderr, "cannot send the query on %s: %v\n", s.ifname, err)
+				}
 			}
 		}
 	}()
@@ -88,9 +98,9 @@ func main() {
 // listen - one socket joined to the mDNS group per interface that can do IPv4
 // multicast. The stdlib sets SO_REUSEADDR (and SO_REUSEPORT where it exists)
 // on these, so port 5353 can be shared with the OS's own mDNS responder.
-func listen(verbose bool) []*net.UDPConn {
+func listen(verbose bool) []searcher {
 	ifaces, _ := net.Interfaces()
-	var conns []*net.UDPConn
+	var out []searcher
 	for i := range ifaces {
 		ifi := &ifaces[i]
 		if ifi.Flags&net.FlagUp == 0 || ifi.Flags&net.FlagMulticast == 0 || ifi.Flags&net.FlagLoopback != 0 || !hasIPv4(ifi) {
@@ -106,9 +116,9 @@ func listen(verbose bool) []*net.UDPConn {
 		if verbose {
 			fmt.Fprintf(os.Stderr, "searching on %s\n", ifi.Name)
 		}
-		conns = append(conns, c)
+		out = append(out, searcher{ifname: ifi.Name, conn: c})
 	}
-	return conns
+	return out
 }
 
 func hasIPv4(ifi *net.Interface) bool {
