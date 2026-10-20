@@ -162,6 +162,8 @@ device/    カメラ側の常設運用一式 (ファイルの一覧は device/RE
              osd-feed/ / S94osd-feed / install-osd-feed.sh
                                                 任意: OSD テキストの自動更新と PNG の変換 (Go、SD カードから実行)
              common.sh                          対応ファームの判定 (違えば何も変更せず中止)
+tools/     PC で使う道具
+             find-camera/                       LAN 内の Thingino カメラと IP を mDNS で探す (Go、`go -C tools/find-camera run .`)
 docs/      使い方と設定の文書 (下の「ドキュメント」参照)
 NOTES.md   実装の詳細・設計判断・ハマりどころ・実測値の記録 (手順は書かない)
 dist/      ビルド成果物 (git 管理外)。配布は GitHub Releases (ffmpeg バイナリ単体) で行う
@@ -185,6 +187,7 @@ git 管理外です。必要な変更はすべて `patches/` に分離してあ�
 | [docs/wifi-from-sd.md](docs/wifi-from-sd.md) | Wi-Fi 設定を SD カードで運ぶ |
 | [docs/netwatch.md](docs/netwatch.md) | netwatch (ping 失敗での OS 再起動) の無効化 |
 | [docs/cellular.md](docs/cellular.md) | セルラー回線 (車載) での配信: 送信量 (RTMPS と平文 RTMP の実測)、切断からの復帰の実測、チューニングの選択肢 |
+| [docs/find-camera.md](docs/find-camera.md) | カメラの IP アドレスを調べる (`tools/find-camera`、OS のコマンド、スマホのアプリ) |
 | [docs/troubleshooting.md](docs/troubleshooting.md) | 症状別の対処 |
 | [docs/build.md](docs/build.md) | ffmpeg / prudynt のビルド手順 |
 | [device/README.md](device/README.md) | `device/` のファイル一覧 |
