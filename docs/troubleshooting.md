@@ -1,5 +1,7 @@
 # トラブルシュート
 
+カメラの IP アドレスが分からない (Web UI / SSH に入れない) 時は [find-camera.md](find-camera.md)。
+
 ## まず状態を見る (この順で)
 
 ```sh
