@@ -25,6 +25,15 @@
 # (it only reserves memory, it shows nothing); write 0 to go back to the default.
 # If prudynt does not come back up with the new size, the old one is restored.
 #
+#   {"image":{"vflip":true,"hflip":true}, "osd":{...}}
+#
+# The "image" section (flip, brightness, ...: the keys of "image" in
+# /etc/prudynt.json) is sent as it is too, the same way the Web UI's Image page
+# changes them without saving: re-sent after a prudynt restart, never written
+# to flash. It works without an "osd" section. Taking it out of the file (or
+# pulling the SD card) does not undo it: prudynt keeps the values until it is
+# restarted (or the camera reboots), and then starts from /etc/prudynt.json.
+#
 # Re-sent when prudynt was restarted (new pid) or the file changed / appeared /
 # moved (SD inserted). File gone (SD pulled), or an overlay block (text or image)
 # removed from it -> the overlays it had turned on are turned off again; slots it never
@@ -83,13 +92,45 @@ off_json() {
 STATE=/run/osd-config.state
 applied=""  # "pid|file|checksum" of the config applied to the running prudynt
 managed=""  # text slots turned on by it
+image_applied="" # "pid|file|checksum" of the "image" section sent to it
 [ -f "$STATE" ] && . "$STATE"
 save_state() {
-	printf 'applied="%s"\nmanaged="%s"\n' "$applied" "$managed" >"$STATE"
+	printf 'applied="%s"\nmanaged="%s"\nimage_applied="%s"\n' "$applied" "$managed" "$image_applied" >"$STATE"
 }
 
 complained="" # last problem reported, so each one is logged once
 fails=0
+
+# apply_image <cfg> <pid> - send the file's "image" section when the running
+# prudynt has not had this one yet. Returns 0 when the file has one (sent or
+# not), so the caller knows the file is not useless without "osd".
+image_complained=""
+image_fails=0
+apply_image() {
+	# one line, so that it reads well in the log
+	body=$(jct "$1" get image 2>/dev/null | tr -s ' \t\n' ' ')
+	case "$body" in "{"*) ;; *) return 1 ;; esac
+	want="$2|$1|$(printf '%s' "$body" | md5sum | cut -d' ' -f1)"
+	[ "$want" = "$image_applied" ] && return 0
+	case $(prudyntctl json "{\"image\":$body}" 2>/dev/null) in
+	"" | "{}"*) ;;
+	"{"*)
+		log "Applied image settings from $1 to prudynt (pid $2): $body"
+		image_applied=$want
+		save_state
+		image_complained=""
+		image_fails=0
+		return 0
+		;;
+	esac
+	# Same as the osd settings: normal while prudynt starts up
+	image_fails=$((image_fails + 1))
+	if [ $image_fails -ge 6 ] && [ "$image_complained" != "$want" ]; then
+		log "prudynt does not accept the image settings in $1 - still retrying"
+		image_complained=$want
+	fi
+	return 0
+}
 
 # Values above what a T31 with 720p streams could reserve (32768 does not start,
 # 16384 does; docs/osd.md) are refused rather than tried.
@@ -222,6 +263,9 @@ while :; do
 
 	if cfg=$(find_config); then
 		apply_pool "$cfg" && continue
+		# Before the osd part: it uses $body / $want too
+		has_image=""
+		apply_image "$cfg" "$pid" && has_image=1
 		body=$(jct "$cfg" get osd 2>/dev/null)
 		case "$body" in
 		"{"*)
@@ -270,7 +314,8 @@ while :; do
 				fi
 				;;
 			esac
-			if [ "$complained" != "parse:$cfg" ]; then
+			# A file with only "image" settings is fine
+			if [ -z "$has_image" ] && [ "$complained" != "parse:$cfg" ]; then
 				log "$cfg has no usable \"osd\" object - ignored"
 				complained="parse:$cfg"
 			fi
