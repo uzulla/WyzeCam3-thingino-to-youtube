@@ -187,7 +187,10 @@ git 管理外です。必要な変更はすべて `patches/` に分離してあ�
 | [docs/wifi-from-sd.md](docs/wifi-from-sd.md) | Wi-Fi 設定を SD カードで運ぶ |
 | [docs/netwatch.md](docs/netwatch.md) | netwatch (ping 失敗での OS 再起動) の無効化 |
 | [docs/cellular.md](docs/cellular.md) | セルラー回線 (車載) での配信: 送信量 (RTMPS と平文 RTMP の実測)、切断からの復帰の実測、チューニングの選択肢 |
-| [docs/find-camera.md](docs/find-camera.md) | カメラの IP アドレスを調べる (`tools/find-camera`、OS のコマンド、スマホのアプリ) |
+| [docs/find-camera.md](docs/find-camera.md) | カメラの IP アドレスを調べる (`tools/find-camera`、OS のコマンド、スマホのアプリ、Setup ボタン) |
+| [docs/setup-button.md](docs/setup-button.md) | 本体の Setup ボタン: 押す長さごとの動作 (IP の読み上げ、Wi-Fi のリセット、工場出荷状態に戻す)、割り当ての変え方 |
+| [docs/front-led.md](docs/front-led.md) | 正面の LED (赤・青) と赤外線 LED の操作: `led` / `blink` / sysfs、起動時の点灯 |
+| [docs/speaker.md](docs/speaker.md) | スピーカー: `tell` の読み上げの仕組み (thingino.com の音声合成)、`play` のオプション、音声ファイルを先に作ってオフラインで鳴らす方法 |
 | [docs/troubleshooting.md](docs/troubleshooting.md) | 症状別の対処 |
 | [docs/build.md](docs/build.md) | ffmpeg / prudynt のビルド手順 |
 | [device/README.md](device/README.md) | `device/` のファイル一覧 |

@@ -160,6 +160,26 @@ relay が自分で追従するので不要)。編集するのは **relay が使�
 `stop` は supervisor と ffmpeg が終わるまで待ってから戻る (45 秒待っても残っていれば kill し、さらに最大 5 秒確認する
 ので、詰まった時は約 50 秒。待たずに `start` すると新旧 2 つが同じキーへ publish する)。
 
+### 配信できているかの見分け方
+
+カメラ側から分かるのは「YouTube のサーバーが受け取り続けているか」まで。YouTube の画面に実際に出ているか
+(配信枠の状態、YouTube Studio の自動開始の設定など) はカメラからは分からない (YouTube Data API の
+`liveStreams` の `streamStatus` / `healthStatus` なら分かるが、Google アカウントの OAuth が要る。未実装)。
+
+| 状況 | `logread \| grep youtube-relay` での見え方 |
+|---|---|
+| **正常に配信している** | `Starting ffmpeg` の後、`ffmpeg exited` が出ないまま続く。relay は **60 秒以上動いた実行を正常**とみなす (終わっても 2 秒で再起動し、debug 診断はしない) |
+| **キーの間違い / YouTube が拒否** | YouTube は接続 (TLS、RTMP の handshake) を受け付けた後、publish を受けたところで切断する。ffmpeg は `Input/output error` (`rc=251`) で数秒で終わり、`ffmpeg exited (rc=251) after 数秒` を繰り返す |
+| **既定経路が無い** (Wi-Fi 未接続など) | ffmpeg を起動せず `Network down (no default route), waiting` を 1 回出して待つ |
+| **名前が引けない / 届かない / 拒否される** | ffmpeg が接続の段階で数秒以内に終わる。直前の `ffmpeg:` 行に `Failed to resolve hostname` / `Network is unreachable` / `Connection refused` / `Connection timed out` など (文言は ffmpeg の一般的なもので、このカメラでの確認はしていない) |
+
+- 60 秒未満で終わる実行が続くと、relay は次の 1 回だけ ffmpeg を `-loglevel debug` で起動する (`loglevel debug to diagnose the failure`)。
+  その出力に `Server version` と `Sending publish command` まで出ていれば YouTube までは届いていて、**キー (または配信枠) の問題**。
+  そこまで出ずに終わっていれば、**ネットワークか TLS の問題** (`rc=251` だけでは両者を区別できないため)
+- 無効なキーで YouTube の実エンドポイントに繋いだ時の流れ (`Handshaking...` → `Server version 4.0.0.1` → ... →
+  `Sending publish command` → サーバ切断) は [NOTES.md](../NOTES.md) に記録がある
+- Web UI の YouTube Live ページの Status にも ffmpeg の pid と配信の経過時間が出る。経過時間が 1 分を超えて伸びていれば配信できている
+
 ## Web UI
 
 `install.sh` が Thingino の Web UI に **Services → YouTube Live** (`http://<camera-ip>/youtube.html`) を足す。
