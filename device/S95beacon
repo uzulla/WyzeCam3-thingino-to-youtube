@@ -1,0 +1,99 @@
+#!/bin/sh
+# Start/stop beacon (docs/beacon.md): broadcasts this camera's IP and state to
+# the local network every few seconds, and takes commands (flip the picture).
+# The binary lives on the SD card:
+#   /mnt/mmcblk0p1/beacon        (built with device/beacon/build.sh)
+#   /mnt/mmcblk0p1/beacon.args   (optional, one line of options: -port 47474 -interval 5s
+#                                 -command-port 47475; -command-port 0 takes no commands)
+# Nothing starts without the binary, so a camera without it is unchanged.
+# Install to /etc/init.d/S95beacon (chmod +x). service enable/disable beacon.
+
+DAEMON="beacon"
+SD="/mnt/mmcblk0p1"
+DAEMON_PATH="$SD/beacon"
+ARGS_FILE="$SD/beacon.args"
+PIDFILE="/run/$DAEMON.pid"
+
+running() {
+	[ -f "$PIDFILE" ] || return 1
+	pid=$(cat "$PIDFILE" 2>/dev/null)
+	[ -n "$pid" ] || return 1
+	grep -q "$DAEMON_PATH" "/proc/$pid/cmdline" 2>/dev/null
+}
+
+start() {
+	echo -n "Starting $DAEMON: "
+	if [ -f /run/portal_mode ]; then
+		echo "SKIP (portal mode)"
+		exit 0
+	fi
+	if [ ! -x "$DAEMON_PATH" ]; then
+		echo "SKIP (no $DAEMON_PATH)"
+		exit 0
+	fi
+	if running; then
+		echo "SKIP (already running, pid $(cat $PIDFILE))"
+		exit 0
+	fi
+	rm -f "$PIDFILE"
+	args=""
+	# CRLF from an editor on Windows would end up in the last option
+	[ -f "$ARGS_FILE" ] && args=$(head -n 1 "$ARGS_FILE" | tr -d '\r')
+	# -N 10: lower priority, prudynt/ISP come first. -syslog: messages go to
+	# logread (logread | grep beacon). $args unquoted: one word per option.
+	# shellcheck disable=SC2086
+	if start-stop-daemon -S -b -m -N 10 -p "$PIDFILE" -x "$DAEMON_PATH" -- -syslog $args; then
+		echo "OK"
+	else
+		echo "FAIL"
+		exit 1
+	fi
+}
+
+# stop - TERM, then wait (up to 5 s) until the process is gone, so that
+# "restart" and the installer do not replace the binary under a running one
+stop() {
+	echo -n "Stopping $DAEMON: "
+	if ! running; then
+		echo "SKIP (not running)"
+		rm -f "$PIDFILE"
+		return 0
+	fi
+	pid=$(cat "$PIDFILE")
+	if ! start-stop-daemon -K -p "$PIDFILE" -s TERM 2>/dev/null; then
+		echo "FAIL (could not signal pid $pid)"
+		return 1
+	fi
+	i=0
+	while [ -d "/proc/$pid" ] && [ $i -lt 50 ]; do
+		usleep 100000
+		i=$((i + 1))
+	done
+	if [ -d "/proc/$pid" ]; then
+		echo "FAIL (pid $pid still running after 5 s)"
+		return 1
+	fi
+	echo "OK"
+	rm -f "$PIDFILE"
+}
+
+case "$1" in
+	start) start ;;
+	stop) stop ;;
+	restart)
+		stop || exit 1
+		start
+		;;
+	status)
+		if running; then
+			echo "$DAEMON is running (pid $(cat $PIDFILE))"
+		else
+			echo "$DAEMON is not running"
+			exit 1
+		fi
+		;;
+	*)
+		echo "Usage: $0 {start|stop|restart|status}"
+		exit 1
+		;;
+esac

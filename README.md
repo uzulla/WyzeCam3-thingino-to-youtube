@@ -25,6 +25,7 @@ minimal FFmpeg バイナリと、カメラだけで常設運用するための�
 | SD カードで設定を持ち運ぶ | 配信キー・OSD 設定を SD に保存。複数の Wi-Fi 設定を起動時に適用する機能も用意 | [配信設定](docs/relay.md)、[Wi-Fi 設定](docs/wifi-from-sd.md) |
 | テキスト・画像 OSD | 独立したテキスト 3 か所と透過画像 1 か所を映像に合成。Web UI で配置や大きさを設定 | [OSD](docs/osd.md) |
 | 表示内容の自動更新 | `osd-feed` がメモリ量・時刻・カウンタ・HTTP JSON をテンプレートに反映し、PNG を画像 OSD に変換 | [osd-feed](docs/osd-feed.md) |
+| 状態を LAN に知らせる・指令を受ける | `beacon` が IP・配信の状態・Wi-Fi の電波などを数秒ごとに UDP ブロードキャストし、PC の `beacon-listen` で表示。`beacon-send` で映像の反転などの指令も送れる | [beacon](docs/beacon.md) |
 | セルラー回線での運用 | RTMP チャンクサイズの調整で RTMPS の送信量を削減。切断・復帰の実測も記録 | [セルラー配信](docs/cellular.md) |
 
 OSD はカメラのストリーマ `prudynt` 側で合成するため、OSD を使っても ffmpeg は stream copy のままです。
@@ -161,9 +162,13 @@ device/    カメラ側の常設運用一式 (ファイルの一覧は device/RE
                                                 任意: Thingino の Web UI に足す OSD 設定ページ (テキスト・画像) と CGI
              osd-feed/ / S94osd-feed / install-osd-feed.sh
                                                 任意: OSD テキストの自動更新と PNG の変換 (Go、SD カードから実行)
+             beacon/ / S95beacon / install-beacon.sh
+                                                任意: IP と配信の状態を LAN に UDP ブロードキャストし続け、指令を受ける (Go、SD カードから実行)
              common.sh                          対応ファームの判定 (違えば何も変更せず中止)
 tools/     PC で使う道具
              find-camera/                       LAN 内の Thingino カメラと IP を mDNS で探す (Go、`go -C tools/find-camera run .`)
+             beacon-listen/                     カメラの beacon を受け取って表示する (Go、`go -C tools/beacon-listen run .`)
+             beacon-send/                       カメラの beacon に指令 (映像の反転など) を送る (Go、`go -C tools/beacon-send run . ping`)
 docs/      使い方と設定の文書 (下の「ドキュメント」参照)
 NOTES.md   実装の詳細・設計判断・ハマりどころ・実測値の記録 (手順は書かない)
 dist/      ビルド成果物 (git 管理外)。配布は GitHub Releases (ffmpeg バイナリ単体) で行う
@@ -188,6 +193,7 @@ git 管理外です。必要な変更はすべて `patches/` に分離してあ�
 | [docs/netwatch.md](docs/netwatch.md) | netwatch (ping 失敗での OS 再起動) の無効化 |
 | [docs/cellular.md](docs/cellular.md) | セルラー回線 (車載) での配信: 送信量 (RTMPS と平文 RTMP の実測)、切断からの復帰の実測、チューニングの選択肢 |
 | [docs/find-camera.md](docs/find-camera.md) | カメラの IP アドレスを調べる (`tools/find-camera`、OS のコマンド、スマホのアプリ、Setup ボタン) |
+| [docs/beacon.md](docs/beacon.md) | `beacon`: カメラの IP・配信の状態などを LAN に UDP ブロードキャストし続ける、`tools/beacon-listen` での受け取り、`tools/beacon-send` での指令 (映像の反転)、JSON の形式 |
 | [docs/setup-button.md](docs/setup-button.md) | 本体の Setup ボタン: 押す長さごとの動作 (IP の読み上げ、Wi-Fi のリセット、工場出荷状態に戻す)、割り当ての変え方 |
 | [docs/front-led.md](docs/front-led.md) | 正面の LED (赤・青) と赤外線 LED の操作: `led` / `blink` / sysfs、起動時の点灯 |
 | [docs/speaker.md](docs/speaker.md) | スピーカー: `tell` の読み上げの仕組み (thingino.com の音声合成)、`play` のオプション、音声ファイルを先に作ってオフラインで鳴らす方法 |
