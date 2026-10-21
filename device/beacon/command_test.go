@@ -7,6 +7,7 @@ import (
 	"net"
 	"strings"
 	"testing"
+	"time"
 )
 
 // fakePrudynt - answers like prudynt: a null asks for the current value, a
@@ -147,5 +148,39 @@ func TestNotForUs(t *testing.T) {
 	}
 	if m, _ := r.Result.(map[string]any); m["ip"] != "192.168.11.29" {
 		t.Errorf("ping result: %v", r.Result)
+	}
+}
+
+func TestFailedCommandRunsAgain(t *testing.T) {
+	c, f := newTestCommander()
+	cmd := `{"type":"thingino-command","v":1,"id":"retry","cmd":"image","args":{"vflip":"toggle"}}`
+	f.down = true
+	if r, _ := answer(t, c, cmd); r.OK {
+		t.Fatalf("prudynt down, but ok: %+v", r)
+	}
+	// prudynt is back: the resend runs (the failure changed nothing)
+	f.down = false
+	if r, _ := answer(t, c, cmd); !r.OK || f.image["vflip"] != false {
+		t.Fatalf("after recovery: %+v, %v", r, f.image)
+	}
+	// and once it succeeded, a further resend is answered without running it
+	if r, _ := answer(t, c, cmd); !r.OK || f.image["vflip"] != false {
+		t.Errorf("resend after success: %+v, %v", r, f.image)
+	}
+}
+
+func TestLimiter(t *testing.T) {
+	l := &limiter{perSecond: 3}
+	t0 := time.Unix(1000, 0)
+	for i := 0; i < 3; i++ {
+		if !l.allow(t0.Add(time.Duration(i) * 100 * time.Millisecond)) {
+			t.Fatalf("packet %d dropped", i)
+		}
+	}
+	if l.allow(t0.Add(500 * time.Millisecond)) {
+		t.Error("4th packet in the same second allowed")
+	}
+	if !l.allow(t0.Add(time.Second)) {
+		t.Error("next second still dropping")
 	}
 }

@@ -14,6 +14,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"net"
@@ -95,7 +96,13 @@ func main() {
 	for {
 		n, from, err := conn.ReadFromUDP(buf)
 		if err != nil {
-			break // the deadline
+			if ne := net.Error(nil); errors.As(err, &ne) && ne.Timeout() {
+				break // the deadline
+			}
+			if errors.Is(err, net.ErrClosed) {
+				break
+			}
+			continue // the deadline still ends the loop
 		}
 		var r Result
 		if json.Unmarshal(buf[:n], &r) != nil || r.Type != "thingino-command-result" || r.ID != cmd.ID {

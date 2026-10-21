@@ -54,10 +54,16 @@ func fakeProc(t *testing.T, procs map[string][3]string) string {
 	dir := t.TempDir()
 	for pid, p := range procs {
 		d := filepath.Join(dir, pid)
-		os.Mkdir(d, 0o755)
+		if err := os.Mkdir(d, 0o755); err != nil {
+			t.Fatal(err)
+		}
 		stat := pid + " (x) S " + p[0] + " 1 1 0 -1 0 0 0 0 0 0 0 0 0 20 0 1 0 " + p[1] + " 0 0\n"
-		os.WriteFile(filepath.Join(d, "stat"), []byte(stat), 0o644)
-		os.WriteFile(filepath.Join(d, "cmdline"), []byte(p[2]), 0o644)
+		if err := os.WriteFile(filepath.Join(d, "stat"), []byte(stat), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(d, "cmdline"), []byte(p[2]), 0o644); err != nil {
+			t.Fatal(err)
+		}
 	}
 	return dir
 }
@@ -66,7 +72,9 @@ func TestFindStream(t *testing.T) {
 	relayCmd := "/bin/sh\x00/usr/sbin/youtube-relay\x00"
 	ffCmd := "/mnt/mmcblk0p1/ffmpeg\x00-nostdin\x00-hide_banner\x00-loglevel\x00warning\x00"
 	pidfile := filepath.Join(t.TempDir(), "relay.pid")
-	os.WriteFile(pidfile, []byte("100\n"), 0o644)
+	if err := os.WriteFile(pidfile, []byte("100\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 
 	cases := []struct {
 		name   string
@@ -102,6 +110,11 @@ func TestFindStream(t *testing.T) {
 		case c.el >= 0 && (st.ElapsedS == nil || *st.ElapsedS != c.el):
 			t.Errorf("%s: elapsed %v, want %d", c.name, st.ElapsedS, c.el)
 		}
+	}
+	// no uptime: an ffmpeg that has run long, but the time is unknown
+	long := fakeProc(t, map[string][3]string{"100": {"1", "0", relayCmd}, "200": {"100", "40000", ffCmd}})
+	if st := findStream(long, pidfile, -1); st.State != "connecting" || st.ElapsedS != nil {
+		t.Errorf("no uptime: %q %v", st.State, st.ElapsedS)
 	}
 	if st := findStream(t.TempDir(), filepath.Join(t.TempDir(), "none.pid"), 1000); st.State != "stopped" {
 		t.Errorf("no pidfile: %q", st.State)

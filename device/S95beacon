@@ -25,15 +25,15 @@ start() {
 	echo -n "Starting $DAEMON: "
 	if [ -f /run/portal_mode ]; then
 		echo "SKIP (portal mode)"
-		exit 0
+		return 0
 	fi
 	if [ ! -x "$DAEMON_PATH" ]; then
 		echo "SKIP (no $DAEMON_PATH)"
-		exit 0
+		return 0
 	fi
 	if running; then
 		echo "SKIP (already running, pid $(cat $PIDFILE))"
-		exit 0
+		return 0
 	fi
 	rm -f "$PIDFILE"
 	args=""
@@ -46,7 +46,7 @@ start() {
 		echo "OK"
 	else
 		echo "FAIL"
-		exit 1
+		return 1
 	fi
 }
 
@@ -60,7 +60,9 @@ stop() {
 		return 0
 	fi
 	pid=$(cat "$PIDFILE")
-	if ! start-stop-daemon -K -p "$PIDFILE" -s TERM 2>/dev/null; then
+	# -K also fails when the process ended on its own just now: only a
+	# process that is still there is a failure
+	if ! start-stop-daemon -K -p "$PIDFILE" -s TERM 2>/dev/null && [ -d "/proc/$pid" ]; then
 		echo "FAIL (could not signal pid $pid)"
 		return 1
 	fi

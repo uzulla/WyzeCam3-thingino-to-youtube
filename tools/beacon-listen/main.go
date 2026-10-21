@@ -12,6 +12,7 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"net"
@@ -59,7 +60,7 @@ func main() {
 	for {
 		n, from, err := conn.ReadFromUDP(buf)
 		if err != nil {
-			if ne, ok := err.(net.Error); ok && ne.Timeout() {
+			if ne := net.Error(nil); errors.As(err, &ne) && ne.Timeout() {
 				break
 			}
 			fmt.Fprintf(os.Stderr, "beacon-listen: %v\n", err)

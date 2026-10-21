@@ -46,7 +46,7 @@ type Stream struct {
 	// connecting - its ffmpeg has run for less than healthyAfter
 	// streaming  - its ffmpeg has run for healthyAfter or longer
 	State    string `json:"state"`
-	ElapsedS *int64 `json:"elapsed_s"` // how long that ffmpeg has run; null without one
+	ElapsedS *int64 `json:"elapsed_s"` // how long that ffmpeg has run; null without one (or unknown)
 }
 
 // healthyAfter - the relay counts a run this long as healthy (youtube-relay:
@@ -183,10 +183,12 @@ func findStream(proc, pidfile string, uptime int64) Stream {
 		if !bytes.Contains(cmd, []byte("\x00-nostdin\x00-hide_banner\x00")) {
 			continue
 		}
-		el := uptime - int64(start/clockTicks)
-		if uptime < 0 || el < 0 {
-			el = 0
+		// Without the uptime the run time is unknown: no elapsed_s, and not
+		// "streaming", which would claim the 60 s were seen
+		if uptime < 0 {
+			return Stream{State: "connecting"}
 		}
+		el := max(uptime-int64(start/clockTicks), 0)
 		st := Stream{State: "connecting", ElapsedS: &el}
 		if el >= healthyAfter {
 			st.State = "streaming"

@@ -61,7 +61,10 @@ type commander struct {
 	status func(from net.IP) Message
 	// prudynt - sends a JSON request to prudynt, returns its answer
 	prudynt func(ctx context.Context, body string) (string, error)
-	recent  []recentResult // the last few results, to answer a resent command
+	// recent - the last few successful results, to answer a resent command.
+	// No lock: only serveCommands' single goroutine calls handle. Running
+	// commands concurrently would need one.
+	recent []recentResult
 }
 
 type recentResult struct {
@@ -83,7 +86,9 @@ func (c *commander) handle(pkt []byte, from *net.UDPAddr) []byte {
 	}
 	// UDP can lose the answer and the sender then sends the same command
 	// again: answer it with the same result instead of running it twice (a
-	// toggle would undo itself)
+	// toggle would undo itself). Only successes are kept: a failed command
+	// changed nothing (prudynt did not take it), so a resend after prudynt
+	// is back runs it.
 	key := from.IP.String() + " " + cmd.ID
 	if cmd.ID != "" {
 		for _, r := range c.recent {
@@ -107,8 +112,15 @@ func (c *commander) handle(pkt []byte, from *net.UDPAddr) []byte {
 			log.Printf("Command from %s: %s -> ok", from.IP, what)
 		}
 	}
-	answer, _ := json.Marshal(res)
-	if cmd.ID != "" {
+	answer, err := json.Marshal(res)
+	if err != nil {
+		// Not expected: the result holds only what prudynt's JSON decoded to
+		log.Printf("cannot encode the result of %s: %v", cmd.Cmd, err)
+		res.OK, res.Result, res.Error = false, nil, "cannot encode the result"
+		answer, _ = json.Marshal(res)
+		return answer
+	}
+	if res.OK && cmd.ID != "" {
 		c.recent = append(c.recent, recentResult{key, answer})
 		if len(c.recent) > recentMax {
 			c.recent = c.recent[1:]
@@ -204,15 +216,42 @@ func (c *commander) imageValue(ctx context.Context, key string) (bool, error) {
 func prudyntctl(ctx context.Context, body string) (string, error) {
 	out, err := exec.CommandContext(ctx, "prudyntctl", "json", body).Output()
 	if err != nil {
-		return "", fmt.Errorf("prudyntctl: %v (is prudynt running?)", err)
+		return "", fmt.Errorf("prudyntctl: %w (is prudynt running?)", err)
 	}
 	return string(out), nil
+}
+
+// limiter - at most perSecond packets in each second, for all senders
+// together. Nothing checks who sends, and a UDP sender address is easy to
+// fake, so a limit per sender would not hold against a flood; this one keeps
+// a flood from running prudyntctl and filling the syslog ring without end.
+type limiter struct {
+	perSecond int
+	second    int64 // the Unix second being counted
+	count     int
+	dropping  bool // logged that this second's excess is dropped
+}
+
+func (l *limiter) allow(now time.Time) bool {
+	if s := now.Unix(); s != l.second {
+		l.second, l.count, l.dropping = s, 0, false
+	}
+	l.count++
+	if l.count <= l.perSecond {
+		return true
+	}
+	if !l.dropping {
+		log.Printf("More than %d command packets in a second - dropping the rest of this second", l.perSecond)
+		l.dropping = true
+	}
+	return false
 }
 
 // serveCommands - answers the commands arriving on conn until it is closed.
 // One at a time: they are rare and small.
 func serveCommands(conn *net.UDPConn, c *commander) {
 	buf := make([]byte, cmdMaxSize+1)
+	lim := &limiter{perSecond: 10}
 	for {
 		n, from, err := conn.ReadFromUDP(buf)
 		if err != nil {
@@ -221,8 +260,8 @@ func serveCommands(conn *net.UDPConn, c *commander) {
 			}
 			continue
 		}
-		if n > cmdMaxSize {
-			continue // not one of ours
+		if n > cmdMaxSize || !lim.allow(time.Now()) {
+			continue // not one of ours, or too many
 		}
 		if answer := c.handle(buf[:n], from); answer != nil {
 			conn.WriteToUDP(answer, from)
