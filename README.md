@@ -24,7 +24,7 @@ minimal FFmpeg バイナリと、カメラだけで常設運用するための�
 | ブラウザから配信を管理 | ストリームキー・URL の設定、開始・停止・再起動、自動起動の切り替え、状態とログの表示 | [YouTube Live Web UI](docs/relay.md#web-ui) |
 | SD カードで設定を持ち運ぶ | 配信キー・OSD 設定を SD に保存。複数の Wi-Fi 設定を起動時に適用する機能も用意 | [配信設定](docs/relay.md)、[Wi-Fi 設定](docs/wifi-from-sd.md) |
 | テキスト・画像 OSD | 独立したテキスト 3 か所と透過画像 1 か所を映像に合成。Web UI で配置や大きさを設定 | [OSD](docs/osd.md) |
-| 表示内容の自動更新 | `osd-feed` がメモリ量・時刻・カウンタ・HTTP JSON をテンプレートに反映し、PNG を画像 OSD に変換 | [osd-feed](docs/osd-feed.md) |
+| 表示内容の自動更新 | `osd-feed` がメモリ量・時刻・カウンタ・HTTP / UDP の JSON をテンプレートに反映し、PNG を画像 OSD に変換。RaceBox の G ボールと速度も出せる | [osd-feed](docs/osd-feed.md) |
 | 状態を LAN に知らせる・指令を受ける | `beacon` が IP・配信の状態・Wi-Fi の電波などを数秒ごとに UDP ブロードキャストし、PC の `beacon-listen` で表示。`beacon-send` で映像の反転などの指令も送れる | [beacon](docs/beacon.md) |
 | セルラー回線での運用 | RTMP チャンクサイズの調整で RTMPS の送信量を削減。切断・復帰の実測も記録 | [セルラー配信](docs/cellular.md) |
 

@@ -33,6 +33,9 @@ type SourceConfig struct {
 	Headers    map[string]string `json:"headers"`    // http
 	Step       int               `json:"step"`       // tick: increment per poll (default 1)
 	Max        int               `json:"max"`        // tick: wrap after this value (default 100)
+	Listen     string            `json:"listen"`     // udp: address to receive on (":5005")
+	Match      map[string]string `json:"match"`      // udp: keep only objects whose members have these string values
+	StaleMs    int               `json:"stale_ms"`   // udp: not ok after this long without a datagram (default 1000)
 }
 
 // SlotConfig: what to draw in one of prudynt's text overlays. The slot name is
@@ -51,6 +54,41 @@ type SlotConfig struct {
 	Fit    string `json:"fit"`
 	Width  int    `json:"width"`
 	Height int    `json:"height"`
+	// imagefile only: where in the slot the PNG goes (default: the whole
+	// slot), so that it can share the slot with a G-ball
+	PNGBox *Box `json:"png_box"`
+	// imagefile only: a G-ball (gball.go) drawn from a source's values
+	GBall *GBallConfig `json:"gball"`
+}
+
+// Box is a rectangle inside the image slot, in pixels from its top left.
+type Box struct {
+	X      int `json:"x"`
+	Y      int `json:"y"`
+	Width  int `json:"width"`
+	Height int `json:"height"`
+}
+
+// GBallConfig: a G-ball (friction circle) in the image slot. The ball sits
+// where the G pushes things in the car ("a ball in a bowl"): up on braking,
+// down on acceleration, left in a right-hand turn. It is hidden while the
+// source is not ok (nothing received lately) or the values are missing.
+type GBallConfig struct {
+	Source string `json:"source"` // the source the values come from (required)
+	// Keys in that source: sideways G, positive to the right, and lengthwise
+	// G, positive forwards (the accelerometer's reading: + on acceleration).
+	// Defaults are esp32-racebox's (RaceBox: X front/back, Y right/left).
+	Lateral      string `json:"lateral"`      // default "g_y"
+	Longitudinal string `json:"longitudinal"` // default "g_x"
+	// The RaceBox documents its axes but not their signs: flip here when the
+	// ball goes the wrong way (tilt the RaceBox: the ball must roll downhill)
+	InvertLateral      bool    `json:"invert_lateral"`
+	InvertLongitudinal bool    `json:"invert_longitudinal"`
+	MaxG               float64 `json:"max_g"` // G at the outer ring (default 1.5); rings every 0.5 G
+	Trail              *int    `json:"trail"` // past positions drawn behind the ball, one per redraw (default 8, 0 = none)
+	X                  int     `json:"x"`     // top left in the slot (default 0, 0)
+	Y                  int     `json:"y"`
+	Size               int     `json:"size"` // side in pixels (default: what fits in the slot from x, y)
 }
 
 // interval - the redraw period. prudynt looks at the files every 100 ms, so
@@ -92,8 +130,25 @@ func loadConfig(path string) (*Config, error) {
 			return nil, fmt.Errorf("%s: unknown slot %q (textfile, textfile2, textfile3 or imagefile)", path, name)
 		}
 		if name == "imagefile" {
-			if sc.PNG == "" {
-				return nil, fmt.Errorf("%s: slot imagefile needs \"png\" (the file to show)", path)
+			if sc.PNG == "" && sc.GBall == nil {
+				return nil, fmt.Errorf("%s: slot imagefile needs \"png\" (the file to show) or \"gball\"", path)
+			}
+			if b := sc.PNGBox; b != nil && (sc.PNG == "" || b.X < 0 || b.Y < 0 || b.Width < 1 || b.Height < 1) {
+				return nil, fmt.Errorf("%s: slot imagefile: png_box needs png, x/y >= 0 and width/height >= 1", path)
+			}
+			if g := sc.GBall; g != nil {
+				if g.Source == "" {
+					return nil, fmt.Errorf("%s: slot imagefile: gball needs \"source\"", path)
+				}
+				if _, ok := c.Sources[g.Source]; !ok {
+					return nil, fmt.Errorf("%s: slot imagefile: gball source %q is not in sources", path, g.Source)
+				}
+				if g.MaxG < 0 || g.X < 0 || g.Y < 0 || g.Size < 0 || (g.Size != 0 && g.Size < minGBallSize) {
+					return nil, fmt.Errorf("%s: slot imagefile: gball max_g, x, y must not be negative, size at least %d", path, minGBallSize)
+				}
+				if g.Trail != nil && (*g.Trail < 0 || *g.Trail > maxGBallTrail) {
+					return nil, fmt.Errorf("%s: slot imagefile: gball trail must be 0..%d", path, maxGBallTrail)
+				}
 			}
 			if sc.Fit != "" && sc.Fit != "contain" && sc.Fit != "none" {
 				return nil, fmt.Errorf("%s: slot imagefile: fit must be \"contain\" or \"none\"", path)
@@ -106,13 +161,20 @@ func loadConfig(path string) (*Config, error) {
 			if sc.Height < 0 || sc.Height > maxImageHeight || sc.Height%2 != 0 || (sc.Height != 0 && sc.Height < 2) {
 				return nil, fmt.Errorf("%s: slot imagefile: height must be an even number 2..%d (or left out)", path, maxImageHeight)
 			}
-		} else if sc.PNG != "" || sc.Fit != "" || sc.Width != 0 || sc.Height != 0 {
-			return nil, fmt.Errorf("%s: slot %s: png/fit/width/height are for the imagefile slot", path, name)
+		} else if sc.PNG != "" || sc.Fit != "" || sc.Width != 0 || sc.Height != 0 || sc.PNGBox != nil || sc.GBall != nil {
+			return nil, fmt.Errorf("%s: slot %s: png/fit/width/height/png_box/gball are for the imagefile slot", path, name)
 		}
 	}
 	for name, s := range c.Sources {
 		if _, ok := sourceTypes[s.Type]; !ok {
 			return nil, fmt.Errorf("%s: source %q: unknown type %q", path, name, s.Type)
+		}
+		// udp only hands out what was received: polling that every second
+		// (the default for the others) would show a G-ball at 1 Hz. Once per
+		// redraw is enough; each poll parses a datagram (0.5 ms on the camera)
+		if s.Type == "udp" && s.IntervalMs <= 0 {
+			s.IntervalMs = 100
+			c.Sources[name] = s
 		}
 	}
 	return &c, nil

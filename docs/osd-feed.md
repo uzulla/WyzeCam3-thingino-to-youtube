@@ -11,8 +11,10 @@ osd-feed (Go、SD カードから実行)
     cpu      /proc/stat, /proc/loadavg                   │  250ms ごとに描く
     tick     0→100 をループするカウンタ                  ├─▶ スロットごとの text/template
     clock    時刻                                        │      → cols×rows に切る → ASCII 以外を ? に
-    http     URL を GET して JSON をそのまま値に          ┘      → 前回と違う時だけ tmp + mv で書く
+    http     URL を GET して JSON をそのまま値に          │      → 前回と違う時だけ tmp + mv で書く
+    udp      送られてくる JSON (RaceBox など) の最新値    ┘
   imagefile ─ SD の透過 PNG → 生 BGRA (width×height) ──────▶ 画像スロットのファイル (PNG が変わった時だけ)
+              + G ボール (udp の G から。玉が動いた時だけ) ─┘
 ```
 
 - **言語は Go**。カメラにはインタプリタが無く、Mac で `go build` したバイナリ (静的、libc 非依存) がそのまま動く。
@@ -68,7 +70,7 @@ device/install-osd-feed.sh root@<camera-ip>       # SD にバイナリと (無�
 | `interval_ms` | 描く間隔 (既定 250、下限 100)。prudynt 側がファイルを見るのは 100ms ごとなので、それより短くしても速くならない |
 | `clear_on_exit` | 終了時にスロットのファイルを消す (既定 true) |
 | `sources.<名前>` | データ源。`type` と `interval_ms` (取得間隔、既定 1000)、type ごとの項目 (下表)。名前はテンプレートから `.<名前>.<キー>` で参照する |
-| `slots.imagefile` | 画像スロット ([osd.md](osd.md#画像-ロゴなど-を重ねる-osdimagefile))。`png` (必須、SD カード上の透過 PNG)、`fit` (`contain` = 縮めて収める・拡大はしない・中央配置、`none` = そのまま中央に置き、はみ出た分は切る。既定 `contain`)。`width` / `height` / `path` は普通は書かない (prudynt から読む) |
+| `slots.imagefile` | 画像スロット ([osd.md](osd.md#画像-ロゴなど-を重ねる-osdimagefile))。`png` (SD カード上の透過 PNG)、`fit` (`contain` = 縮めて収める・拡大はしない・中央配置、`none` = そのまま中央に置き、はみ出た分は切る。既定 `contain`)、`png_box` (PNG を置く場所 `{"x","y","width","height"}`。既定はスロット全体)、`gball` ([G ボール](#racebox-の-g-ボールと速度))。`png` と `gball` の少なくとも一方が要る。`width` / `height` / `path` は普通は書かない (prudynt から読む) |
 | `slots.<スロット>` | `textfile` / `textfile2` / `textfile3`。`template` は Go の text/template。`path` / `cols` / `rows` は普通は書かない: 起動時と以後 30 秒ごとに prudynt から読んで追従する (Web UI で大きさを変えれば 30 秒以内に切る幅も変わる。prudynt が答えない時は docs/osd.md の既定値)。**ここに書いた値は prudynt の値より常に優先される**ので、Web UI で変えたのに反映されない時はここに古い値が残っていないか見る |
 
 ### source の種類
@@ -79,6 +81,7 @@ device/install-osd-feed.sh root@<camera-ip>       # SD にバイナリと (無�
 | `cpu` | `used_pct` (前回の取得からの CPU 使用率。`/proc/stat` の `cpu` 行、iowait は空きに数える。起動直後の 1 回目は起動からの平均) `load1` `load5` `load15` (`/proc/loadavg` の文字列そのまま、例 `0.52`) | — |
 | `tick` | `n` (0→max をループ) `pct` (n の百分率) `max` | `step` (1 回の増分、既定 1)、`max` (既定 100)。`interval_ms` 100 で 10 秒で 1 周 |
 | `clock` | `hms` `date` `unix` (カメラのローカル時刻。`/etc/TZ` の POSIX 形式を読む。DST の規則は無視) | — |
+| `udp` | 受け取った JSON オブジェクトのメンバーがキー (入れ子は `http` と同じく `_` でつなぐ。`{"g":{"x":0.1}}` → `.rb.g_x`)。**数値は文字のまま持つ** (`json.Number`。表示する分だけ使う時に変換する)。配列は無視。最後に届いた 1 件を取得のたびに読むので、1 秒に 25 件届いても解析は `interval_ms` ごとの 1 件だけ。`stale_ms` の間 `match` に合うものが届かなければ取得失敗 (`ok` が false、値は残る) | `listen` (必須、例 `":5005"`。起動時に bind し、使えなければ起動しない)、`match` (`{"type":"racebox"}` のように、トップレベルの文字列メンバーがこの値のものだけ使う)、`stale_ms` (既定 1000)。`interval_ms` の既定は 100 (他の source の 1000 では玉が 1 秒ごとにしか動かない) |
 | `http` | GET した JSON オブジェクトのメンバーがキー。**入れ子のオブジェクトは `_` でつないで平らにする** (`{"gps":{"lat":35.6}}` → `.car.gps_lat`。取得前や欠けている時に空文字で済ませるため)。メンバーの値が配列ならそのまま (`{{index .car.list 0}}`)。平坦化後に同じキーになるメンバーがあれば取得エラー。本文が JSON オブジェクトでなければ (配列・数値・文字列・`null`・JSON 以外) `body` (文字列)。`status` は常に HTTP ステータス (同名の JSON メンバーは見えない) | `url` (必須)、`timeout_ms` (既定 3000)、`headers` (`{"Authorization": "..."}`) |
 
 どの source にも **`ok`** (直前の取得が成功した) と **`age_s`** (最後に成功してからの秒数。一度も無ければ -1) が付く。
@@ -96,6 +99,7 @@ text/template 標準の `printf` `if` `range` などに加えて:
 | `lpad 桁 値` | `{{lpad 5 .mem.free_mb}}` | 右寄せ `   67` |
 | `rpad 桁 値` | `{{rpad 8 .clock.hms}}` | 左寄せ |
 | `trunc 桁 値` | `{{trunc 10 .car.name}}` | 先頭 10 文字 |
+| `mul 値 値` | `{{printf "%3.0f" (mul .rb.speed_mps 3.6)}}` | 掛け算 (小数)。m/s → km/h など。`printf` で桁を決める |
 
 - 行数・桁数を超えた分は切る (prudynt も切るが、こちらで切っておくと何が映るか手元で分かる)。タブは空白、ASCII 以外は `?`
 - source がまだ値を持っていないキーは空文字になる (`lpad` などの関数に渡しても同じ。`bar` は 0)。**設定に無い source をテンプレートが参照していると起動時にエラーで止まる** (綴り間違いをその場で見つけるため)
@@ -126,6 +130,60 @@ text/template 標準の `printf` `if` `range` などに加えて:
 
   待機中は PNG とスロットのファイルを stat するだけなので大きさに依らず軽い。毎秒デコードするような使い方 (グラフ等)
   は 200×200 程度の大きさにするか、PNG を経由せず直接 BGRA を描く (将来の拡張) 方が向く
+
+### RaceBox の G ボールと速度
+
+[esp32-racebox](https://github.com/uzulla/esp32-racebox) (RaceBox Mini → ESP32 → Wi-Fi の UDP ブロードキャスト、
+1 件 1 JSON、最大 25 件/秒) の G を画像スロットに **G ボール**として描き、速度をテキストで出す。カメラと ESP32 が同じ
+LAN (同じブロードキャストドメイン) にあること。
+
+```json
+{
+  "interval_ms": 100,
+  "sources": {
+    "racebox": { "type": "udp", "listen": ":5005", "match": { "type": "racebox" }, "stale_ms": 500 }
+  },
+  "slots": {
+    "imagefile": {
+      "png": "/mnt/mmcblk0p1/logo.png",
+      "png_box": { "x": 0, "y": 168, "width": 200, "height": 74 },
+      "gball": { "source": "racebox", "x": 20, "y": 0, "size": 160, "invert_lateral": true }
+    },
+    "textfile3": {
+      "template": "{{if .racebox.ok}}{{printf \"%3.0f\" (mul .racebox.speed_mps 3.6)}}{{else}}---{{end}} km/h"
+    }
+  }
+}
+```
+
+`prudynt-osd.json` (SD) 側は、画像スロットを G ボールとロゴが縦に入る大きさに、`textfile3` をその上に置く:
+
+```json
+"imagefile": { "enabled": true, "width": 200, "height": 242, "pos_x": -8, "pos_y": -8 },
+"textfile3": { "enabled": true, "cols": 8, "rows": 1, "scale": 3, "pos_x": -8, "pos_y": -256 }
+```
+
+![RaceBox の G ボールと速度](images/osd-gball.jpg)
+
+- **G ボール** (`gball`): 0.5G ごとの輪 (1G は太め) と十字、半透明の円を下絵として 1 回だけ描き、玉 (赤) と軌跡
+  (橙、直近の描画 `trail` 回分) を重ねる。玉は「お椀の中の玉」の向き: ブレーキで上、加速で下、右旋回で左。外周を超える G は
+  外周に貼り付く
+  | キー | 既定値 | 意味 |
+  |---|---|---|
+  | `source` | (必須) | 値を取る source |
+  | `lateral` / `longitudinal` | `g_y` / `g_x` | 横 G (右が +) と前後 G (加速が +) のキー。既定は esp32-racebox (RaceBox は X が前後、Y が左右) |
+  | `invert_lateral` / `invert_longitudinal` | false | 向きを反転。RaceBox の文書は軸の正の向きを書いていない。**RaceBox を傾けて、玉が低い側へ転がるように合わせる** (手元の RaceBox Mini は映像で左右が逆だったので `invert_lateral: true` にしている) |
+  | `max_g` | 1.5 | 外周の G |
+  | `trail` | 8 | 軌跡の点の数 (0 で無し) |
+  | `x` / `y` / `size` | 0 / 0 / 収まる最大 | スロット内の位置と一辺 (px) |
+- **データが来ない間** (`stale_ms` の間 `match` に合う JSON が届かない、値が数値でない) は玉と軌跡を消し、輪だけ残す。
+  戻った時に古い軌跡を引きずらない
+- **速度はテキスト** (`textfile3`)。esp32-racebox の `speed_mps` は GPS の速度なので、止まっていても 1〜2 km/h 出ることがある
+- 負荷 (720p 配信中、RaceBox から 25 件/秒、上の設定): osd-feed **2.65%**、prudynt 7.8% (G ボール無しの 7.25% から +0.5)。
+  G ボール無しで同じ 100ms 描画なら osd-feed 1.1%。下げるために効いたこと:
+  - 画像は玉と軌跡の周りだけ描き直す。スロット全体 (200×242、189KB) を毎回複製すると、それだけで osd-feed が 8% を超えた
+  - JSON は自前の読み取り (`flatjson.go`)。Go の `encoding/json` はこのカメラで RaceBox 1 件 (約 600 バイト) に 3.4ms
+    かかり (自前は 0.5ms)、1 秒 25 件をすべて読むと数 % になる。さらに読むのは取得のたびの最新 1 件だけ
 
 ### 外部データを足す
 
