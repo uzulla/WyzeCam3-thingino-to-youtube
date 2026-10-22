@@ -22,8 +22,14 @@ type ImageSlot struct {
 	Path   string
 	Width  int
 	Height int
-	PNG    string
+	PNG    string // "" when the slot only has a G-ball
 	Fit    string // "contain" (default) or "none"
+	box    *Box   // where the PNG goes; nil = the whole slot
+
+	gcfg    *GBallConfig
+	widgets []widget // made for the current size on first use (nil: to be made)
+	base    []byte   // PNG + the widgets' static parts (nil = to be redone)
+	frame   []byte   // base + the widgets as last drawn; what render returns
 
 	pngMod  time.Time
 	pngSize int64
@@ -68,7 +74,8 @@ func (s *ImageSlot) wrote() {
 }
 
 func newImageSlot(name string, cfg SlotConfig, geo SlotGeometry) *ImageSlot {
-	s := &ImageSlot{Name: name, Path: geo.Path, Width: geo.Width, Height: geo.Height, PNG: cfg.PNG, Fit: cfg.Fit}
+	s := &ImageSlot{Name: name, Path: geo.Path, Width: geo.Width, Height: geo.Height, PNG: cfg.PNG, Fit: cfg.Fit,
+		box: cfg.PNGBox, gcfg: cfg.GBall}
 	if s.Fit == "" {
 		s.Fit = "contain"
 	}
@@ -101,16 +108,105 @@ func (s *ImageSlot) follow(geo SlotGeometry, cfg SlotConfig) bool {
 		// Convert again for the new size (a cached failure may pass now too)
 		n.pngMod, n.pngData, n.pixels, n.lastErr = time.Time{}, nil, nil, nil
 		n.written = fileID{}
+		n.widgets, n.base, n.frame = nil, nil, nil
 	}
 	*s = n
 	return changed
 }
 
-// render - the BGRA bytes for the slot's file, converted anew only when the
-// PNG changed (mtime or size) since the last call. The second result says
-// whether they differ from the last call's. A PNG that cannot be read yields
-// nil (the caller hides the overlay) and an error once per distinct problem.
-func (s *ImageSlot) render() (pix []byte, changed bool, err error) {
+// render - the BGRA bytes for the slot's file and whether they differ from
+// the last call's. A PNG alone is passed through as renderPNG makes it (nil
+// when it cannot be read: the caller hides the overlay). With widgets (the
+// G-ball) or a PNG placed in part of the slot the picture is composed:
+// the PNG and the widgets' static parts once, their moving parts from data on
+// every call; a PNG that cannot be read is then only left out, the widgets
+// still show. The composed bytes are the slot's own buffer: valid until the
+// next call.
+func (s *ImageSlot) render(data map[string]any) (pix []byte, changed bool, err error) {
+	if s.gcfg == nil && s.box == nil {
+		return s.renderPNG()
+	}
+	var png []byte
+	pngChanged := false
+	if s.PNG != "" {
+		png, pngChanged, err = s.renderPNG()
+	}
+	if s.Width < 2 || s.Height < 2 {
+		return nil, s.frame != nil, err
+	}
+	if s.widgets == nil {
+		s.widgets = s.makeWidgets()
+		s.base = nil
+	}
+	rebuilt := s.base == nil || pngChanged
+	if rebuilt {
+		s.base = make([]byte, s.Width*s.Height*4)
+		if png != nil {
+			bx, by, bw, bh := s.pngBox()
+			for y := 0; y < bh && by+y < s.Height; y++ {
+				w := min(bw, s.Width-bx)
+				if w <= 0 {
+					break
+				}
+				copy(s.base[((by+y)*s.Width+bx)*4:], png[y*bw*4:(y*bw+w)*4])
+			}
+		}
+		for _, w := range s.widgets {
+			w.drawStatic(s.base, s.Width, s.Height)
+		}
+		s.frame = append(s.frame[:0], s.base...)
+	}
+	// Only what moved is repainted, by each widget in its own area: copying
+	// the whole slot (up to 1280x720) 10 times a second is what the camera
+	// cannot afford.
+	for _, w := range s.widgets {
+		if w.update(data) || rebuilt {
+			w.repaint(s.frame, s.base, s.Width, s.Height)
+			changed = true
+		}
+	}
+	return s.frame, changed || rebuilt, err
+}
+
+// widget: something drawn from the sources' values into the image slot.
+// drawStatic puts its unchanging part into the base picture; update takes
+// the snapshot and says whether what it shows would change; repaint then
+// puts the base back over what it drew last time and draws the new state.
+type widget interface {
+	drawStatic(canvas []byte, cw, ch int)
+	update(data map[string]any) bool
+	repaint(frame, base []byte, cw, ch int)
+}
+
+// makeWidgets - for the slot's current size; one too small to draw in is
+// left out (and comes back when the slot grows)
+func (s *ImageSlot) makeWidgets() []widget {
+	ws := []widget{}
+	if g := s.gcfg; g != nil {
+		size := g.Size
+		if size == 0 {
+			size = min(s.Width-g.X, s.Height-g.Y)
+		}
+		if size >= minGBallSize {
+			ws = append(ws, newGBall(*g, size))
+		}
+	}
+	return ws
+}
+
+// pngBox - where the PNG goes in the slot (the whole slot by default)
+func (s *ImageSlot) pngBox() (x, y, w, h int) {
+	if s.box == nil {
+		return 0, 0, s.Width, s.Height
+	}
+	return s.box.X, s.box.Y, s.box.Width, s.box.Height
+}
+
+// renderPNG - the PNG as BGRA in its box, converted anew only when the PNG
+// changed (mtime or size) since the last call. The second result says
+// whether the bytes differ from the last call's. A PNG that cannot be read
+// yields nil and an error once per distinct problem.
+func (s *ImageSlot) renderPNG() (pix []byte, changed bool, err error) {
 	st, statErr := os.Stat(s.PNG)
 	if statErr != nil {
 		// Forget everything, the cache key included: the same file coming back
@@ -140,7 +236,8 @@ func (s *ImageSlot) render() (pix []byte, changed bool, err error) {
 		return s.pixels, false, s.lastErr
 	}
 	s.pngData = data
-	pix, err = convertPNGBytes(data, s.PNG, s.Width, s.Height, s.Fit)
+	_, _, bw, bh := s.pngBox()
+	pix, err = convertPNGBytes(data, s.PNG, bw, bh, s.Fit)
 	s.lastErr = err
 	if err != nil {
 		changed = s.pixels != nil

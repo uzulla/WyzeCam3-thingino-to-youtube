@@ -36,6 +36,13 @@ var sourceTypes = map[string]func(SourceConfig) (Source, error){
 	"clock": func(SourceConfig) (Source, error) { return clockSource{}, nil },
 	"tick":  newTickSource,
 	"http":  newHTTPSource,
+	"udp":   newUDPSource,
+}
+
+// starter is a source that has to be set going before it is polled (udp:
+// bind the port, then receive in the background until ctx ends).
+type starter interface {
+	Start(ctx context.Context) error
 }
 
 // ---- cache: the latest values of every source, read by the render loop

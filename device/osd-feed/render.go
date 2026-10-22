@@ -1,7 +1,10 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
+	"math"
+	"strconv"
 	"strings"
 	"text/template"
 )
@@ -13,6 +16,7 @@ import (
 //	{{lpad 8 .mem.free_mb}}     right-aligned in 8 columns
 //	{{rpad 8 .clock.hms}}       left-aligned in 8 columns
 //	{{trunc 10 .car.name}}      at most 10 characters
+//	{{mul .rb.speed_mps 3.6}}   a product (m/s to km/h); print with printf "%.0f"
 //	{{if .car.ok}}...{{else}}?{{end}}   the source's last poll worked
 var funcs = template.FuncMap{
 	"bar": func(width int, pct any) string {
@@ -29,6 +33,11 @@ var funcs = template.FuncMap{
 		inner := width - 2
 		fill := inner * p / 100
 		return "[" + strings.Repeat("#", fill) + strings.Repeat("-", inner-fill) + "]"
+	},
+	"mul": func(a, b any) float64 {
+		x, _ := toFloat(a)
+		y, _ := toFloat(b)
+		return x * y
 	},
 	"lpad": func(n int, v any) string { return fmt.Sprintf("%*s", n, str(v)) },
 	"rpad": func(n int, v any) string { return fmt.Sprintf("%-*s", n, str(v)) },
@@ -62,12 +71,30 @@ func toInt(v any) int {
 		return int(x)
 	case float64:
 		return int(x)
+	case json.Number:
+		f, _ := toFloat(x)
+		return int(f)
 	case string:
 		var n int
 		fmt.Sscanf(x, "%d", &n)
 		return n
 	}
 	return 0
+}
+
+// toFloat - a template argument or source value as a number: JSON numbers
+// are float64, our own sources' are int; anything else (missing, text) is not
+func toFloat(v any) (float64, bool) {
+	switch x := v.(type) {
+	case float64:
+		return x, !math.IsNaN(x) && !math.IsInf(x, 0)
+	case int:
+		return float64(x), true
+	case json.Number: // udp source: the number's text, converted on use
+		f, err := strconv.ParseFloat(string(x), 64)
+		return f, err == nil && !math.IsNaN(f) && !math.IsInf(f, 0)
+	}
+	return 0, false
 }
 
 // Slot is one text overlay: where prudynt reads it and how big it is.

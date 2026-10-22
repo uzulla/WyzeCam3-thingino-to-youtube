@@ -94,6 +94,15 @@ func main() {
 		sources[name] = src
 		cache.register(name)
 	}
+	// Sources that receive rather than fetch (udp) bind now: a port in use
+	// stops us here, with its name, instead of a source that never gets data
+	for _, name := range sourceNames(cfg) {
+		if st, ok := sources[name].(starter); ok {
+			if err := st.Start(ctx); err != nil {
+				log.Fatalf("source %s: %v", name, err)
+			}
+		}
+	}
 	// Dry run before anything is started: a template that names a source the
 	// config does not have (a typo) fails here, once, instead of every tick
 	for _, s := range slots {
@@ -111,6 +120,19 @@ func main() {
 				defer wg.Done()
 				pctx, cancel := context.WithTimeout(ctx, pollTimeout(cfg.Sources[name]))
 				v, err := src.Poll(pctx)
+				// A receiving source has nothing until the sender's next
+				// datagram: wait for one, up to the poll timeout
+				if _, recv := src.(starter); recv {
+					for err != nil {
+						select {
+						case <-pctx.Done():
+						case <-time.After(50 * time.Millisecond):
+							v, err = src.Poll(pctx)
+							continue
+						}
+						break
+					}
+				}
 				cancel()
 				cache.put(name, v, err)
 				if err != nil {
@@ -128,11 +150,18 @@ func main() {
 			fmt.Printf("--- %s (%s, %dx%d)\n%s", s.Name, s.Path, s.Cols, s.Rows, text)
 		}
 		if img != nil {
-			pix, _, err := img.render()
+			pix, _, err := img.render(data)
 			if err != nil {
 				log.Fatalf("slot imagefile: %v", err)
 			}
-			fmt.Printf("--- imagefile (%s, %dx%d px): %s -> %d bytes BGRA (fit %s)\n", img.Path, img.Width, img.Height, img.PNG, len(pix), img.Fit)
+			what := img.PNG + " (fit " + img.Fit + ")"
+			if img.PNG == "" {
+				what = "no PNG"
+			}
+			if img.gcfg != nil {
+				what += " + G-ball from " + img.gcfg.Source
+			}
+			fmt.Printf("--- imagefile (%s, %dx%d px): %s -> %d bytes BGRA\n", img.Path, img.Width, img.Height, what, len(pix))
 		}
 		return
 	}
@@ -231,7 +260,7 @@ loop:
 				writes++
 			}
 			if img != nil {
-				pix, changed, err := img.render()
+				pix, changed, err := img.render(data)
 				if err != nil {
 					report(img.Name, err.Error())
 				}

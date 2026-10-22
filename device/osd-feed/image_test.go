@@ -102,26 +102,26 @@ func TestConvertPNGErrors(t *testing.T) {
 func TestImageSlotRenderTracksTheFile(t *testing.T) {
 	p := writeTestPNG(t, 4, 4)
 	s := newImageSlot("imagefile", SlotConfig{PNG: p}, SlotGeometry{Path: "/tmp/x", Width: 4, Height: 4})
-	pix, changed, err := s.render()
+	pix, changed, err := s.render(nil)
 	if err != nil || !changed || len(pix) != 64 {
 		t.Fatalf("first render: %v changed=%v len=%d", err, changed, len(pix))
 	}
-	if _, changed, _ = s.render(); changed {
+	if _, changed, _ = s.render(nil); changed {
 		t.Error("unchanged file must not report a change")
 	}
 	os.Remove(p)
-	pix, changed, err = s.render()
+	pix, changed, err = s.render(nil)
 	if err == nil || pix != nil || !changed {
 		t.Errorf("removed file: err=%v pix=%v changed=%v", err, pix != nil, changed)
 	}
 	// geometry change forces a new conversion
 	writeTestPNG2 := writeTestPNG(t, 4, 4)
 	s.PNG = writeTestPNG2
-	s.render()
+	s.render(nil)
 	if !s.follow(SlotGeometry{Path: "/tmp/x", Width: 8, Height: 8}, SlotConfig{PNG: writeTestPNG2}) {
 		t.Fatal("new size must count as a change")
 	}
-	pix, _, err = s.render()
+	pix, _, err = s.render(nil)
 	if err != nil || len(pix) != 8*8*4 {
 		t.Errorf("after resize: %v len=%d", err, len(pix))
 	}
@@ -130,7 +130,7 @@ func TestImageSlotRenderTracksTheFile(t *testing.T) {
 func TestImageSlotTouchedPNGIsNotReconverted(t *testing.T) {
 	p := writeTestPNG(t, 4, 4)
 	s := newImageSlot("imagefile", SlotConfig{PNG: p}, SlotGeometry{Path: "/tmp/x", Width: 4, Height: 4})
-	if _, changed, err := s.render(); err != nil || !changed {
+	if _, changed, err := s.render(nil); err != nil || !changed {
 		t.Fatalf("first: %v %v", err, changed)
 	}
 	// same bytes, new mtime
@@ -138,7 +138,7 @@ func TestImageSlotTouchedPNGIsNotReconverted(t *testing.T) {
 	os.WriteFile(p, data, 0o644)
 	future := s.pngMod.Add(2 * 1e9)
 	os.Chtimes(p, future, future)
-	if _, changed, _ := s.render(); changed {
+	if _, changed, _ := s.render(nil); changed {
 		t.Error("a touched but identical PNG must not count as a change")
 	}
 }
@@ -183,13 +183,13 @@ func TestImageSlotBrokenPNGIsNotDecodedEveryCall(t *testing.T) {
 	p := filepath.Join(t.TempDir(), "bad.png")
 	os.WriteFile(p, []byte("not a png at all"), 0o644)
 	s := newImageSlot("imagefile", SlotConfig{PNG: p}, SlotGeometry{Path: "/tmp/x", Width: 4, Height: 4})
-	_, _, err1 := s.render()
+	_, _, err1 := s.render(nil)
 	if err1 == nil {
 		t.Fatal("garbage must fail")
 	}
 	// second call: same file -> same error, without touching pngData (no re-decode)
 	before := s.pngData
-	_, changed, err2 := s.render()
+	_, changed, err2 := s.render(nil)
 	if err2 == nil || changed || !bytes.Equal(before, s.pngData) {
 		t.Errorf("cached failure expected, got err=%v changed=%v", err2, changed)
 	}
@@ -199,7 +199,7 @@ func TestImageSlotBrokenPNGIsNotDecodedEveryCall(t *testing.T) {
 	os.WriteFile(p, data, 0o644)
 	future := s.pngMod.Add(2 * 1e9)
 	os.Chtimes(p, future, future)
-	if pix, changed, err := s.render(); err != nil || !changed || len(pix) != 64 {
+	if pix, changed, err := s.render(nil); err != nil || !changed || len(pix) != 64 {
 		t.Errorf("after fixing: %v %v %d", err, changed, len(pix))
 	}
 }
@@ -247,16 +247,16 @@ func TestConvertPNGRefusesExtremeShapesAnd16Bit(t *testing.T) {
 func TestImageSlotRestoredSameContentShowsAgain(t *testing.T) {
 	p := writeTestPNG(t, 4, 4)
 	s := newImageSlot("imagefile", SlotConfig{PNG: p}, SlotGeometry{Path: "/tmp/x", Width: 4, Height: 4})
-	if pix, _, err := s.render(); err != nil || pix == nil {
+	if pix, _, err := s.render(nil); err != nil || pix == nil {
 		t.Fatal("first render")
 	}
 	data, _ := os.ReadFile(p)
 	os.Remove(p)
-	if pix, _, err := s.render(); err == nil || pix != nil {
+	if pix, _, err := s.render(nil); err == nil || pix != nil {
 		t.Fatalf("removed: %v %v", err, pix != nil)
 	}
 	os.WriteFile(p, data, 0o644) // the very same bytes come back
-	pix, changed, err := s.render()
+	pix, changed, err := s.render(nil)
 	if err != nil || pix == nil || !changed {
 		t.Errorf("restored file must be converted and shown again: err=%v pix=%v changed=%v", err, pix != nil, changed)
 	}
