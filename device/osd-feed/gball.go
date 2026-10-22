@@ -12,6 +12,7 @@ import "math"
 const (
 	minGBallSize  = 32
 	maxGBallTrail = 32
+	maxGBallMaxG  = 10
 )
 
 // sprite: a small straight-alpha BGRA picture, centred on where it is put

@@ -120,6 +120,19 @@ func main() {
 				defer wg.Done()
 				pctx, cancel := context.WithTimeout(ctx, pollTimeout(cfg.Sources[name]))
 				v, err := src.Poll(pctx)
+				// A receiving source has nothing until the sender's next
+				// datagram: wait for one, up to the poll timeout
+				if _, recv := src.(starter); recv {
+					for err != nil {
+						select {
+						case <-pctx.Done():
+						case <-time.After(50 * time.Millisecond):
+							v, err = src.Poll(pctx)
+							continue
+						}
+						break
+					}
+				}
 				cancel()
 				cache.put(name, v, err)
 				if err != nil {

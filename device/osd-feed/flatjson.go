@@ -210,8 +210,11 @@ func (p *jsonScan) str() (string, error) {
 	return "", p.fail("unterminated string")
 }
 
-// skipArray - past the array at the current position, nested ones included
+// skipArray - past the array at the current position, nested ones included.
+// Its syntax is checked with json.Valid (no values are built, so it is
+// cheap), so that a broken array fails the datagram as encoding/json would.
 func (p *jsonScan) skipArray() error {
+	start := p.i
 	depth := 0
 	for p.i < len(p.b) {
 		switch p.b[p.i] {
@@ -226,6 +229,9 @@ func (p *jsonScan) skipArray() error {
 			depth--
 			if depth == 0 {
 				p.i++
+				if !json.Valid(p.b[start:p.i]) {
+					return p.fail("bad array")
+				}
 				return nil
 			}
 		}

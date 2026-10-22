@@ -143,8 +143,10 @@ func loadConfig(path string) (*Config, error) {
 				if _, ok := c.Sources[g.Source]; !ok {
 					return nil, fmt.Errorf("%s: slot imagefile: gball source %q is not in sources", path, g.Source)
 				}
-				if g.MaxG < 0 || g.X < 0 || g.Y < 0 || g.Size < 0 || (g.Size != 0 && g.Size < minGBallSize) {
-					return nil, fmt.Errorf("%s: slot imagefile: gball max_g, x, y must not be negative, size at least %d", path, minGBallSize)
+				// The upper limits keep a typo from building the rings forever
+				// (a ring every 0.5 G) or allocating gigabytes at the first draw
+				if g.MaxG < 0 || g.MaxG > maxGBallMaxG || g.X < 0 || g.Y < 0 || g.Size < 0 || g.Size > maxImageHeight || (g.Size != 0 && g.Size < minGBallSize) {
+					return nil, fmt.Errorf("%s: slot imagefile: gball max_g must be 0..%d, x and y >= 0, size %d..%d (or left out)", path, maxGBallMaxG, minGBallSize, maxImageHeight)
 				}
 				if g.Trail != nil && (*g.Trail < 0 || *g.Trail > maxGBallTrail) {
 					return nil, fmt.Errorf("%s: slot imagefile: gball trail must be 0..%d", path, maxGBallTrail)

@@ -42,7 +42,7 @@ device/install-osd-feed.sh root@<camera-ip>       # SD にバイナリと (無�
   SD の `osd-feed.json`、`device/S94osd-feed` → `/etc/init.d/S94osd-feed` (chmod +x)
 - 起動・停止: `service start osd-feed` / `service stop osd-feed` / `service disable osd-feed`。ログは `logread | grep osd-feed`
 - 設定を変えたら `service restart osd-feed`。先に `/mnt/mmcblk0p1/osd-feed -once` を実行すると、各スロットの描画結果を
-  標準出力に 1 回出して終わるので、テンプレートの確認に使える
+  標準出力に 1 回出して終わるので、テンプレートの確認に使える。`udp` の source は最初の 1 件が届くまで `timeout_ms` (既定 3 秒) 待つ
 - 消す: `service stop osd-feed; rm /etc/init.d/S94osd-feed /mnt/mmcblk0p1/osd-feed /mnt/mmcblk0p1/osd-feed.json`。
   終了時に書いていたファイル (`/run/prudynt/osd-text*`) は消す (`clear_on_exit`)
 
@@ -81,7 +81,7 @@ device/install-osd-feed.sh root@<camera-ip>       # SD にバイナリと (無�
 | `cpu` | `used_pct` (前回の取得からの CPU 使用率。`/proc/stat` の `cpu` 行、iowait は空きに数える。起動直後の 1 回目は起動からの平均) `load1` `load5` `load15` (`/proc/loadavg` の文字列そのまま、例 `0.52`) | — |
 | `tick` | `n` (0→max をループ) `pct` (n の百分率) `max` | `step` (1 回の増分、既定 1)、`max` (既定 100)。`interval_ms` 100 で 10 秒で 1 周 |
 | `clock` | `hms` `date` `unix` (カメラのローカル時刻。`/etc/TZ` の POSIX 形式を読む。DST の規則は無視) | — |
-| `udp` | 受け取った JSON オブジェクトのメンバーがキー (入れ子は `http` と同じく `_` でつなぐ。`{"g":{"x":0.1}}` → `.rb.g_x`)。**数値は文字のまま持つ** (`json.Number`。表示する分だけ使う時に変換する)。配列は無視。最後に届いた 1 件を取得のたびに読むので、1 秒に 25 件届いても解析は `interval_ms` ごとの 1 件だけ。`stale_ms` の間 `match` に合うものが届かなければ取得失敗 (`ok` が false、値は残る) | `listen` (必須、例 `":5005"`。起動時に bind し、使えなければ起動しない)、`match` (`{"type":"racebox"}` のように、トップレベルの文字列メンバーがこの値のものだけ使う)、`stale_ms` (既定 1000)。`interval_ms` の既定は 100 (他の source の 1000 では玉が 1 秒ごとにしか動かない) |
+| `udp` | 受け取った JSON オブジェクトのメンバーがキー (入れ子は `http` と同じく `_` でつなぐ。`{"g":{"x":0.1}}` → `.rb.g_x`)。**数値は文字のまま持つ** (`json.Number`。表示する分だけ使う時に変換する)。配列は値を使わない (形が壊れていれば、その 1 件は捨てる)。最後に届いた 1 件を取得のたびに読むので、1 秒に 25 件届いても解析は `interval_ms` ごとの 1 件だけ。`stale_ms` の間 `match` に合うものが届かなければ取得失敗 (`ok` が false、値は残る) | `listen` (必須、例 `":5005"`。起動時に bind し、使えなければ起動しない)、`match` (`{"type":"racebox"}` のように、トップレベルの文字列メンバーがこの値のものだけ使う)、`stale_ms` (既定 1000)。`interval_ms` の既定は 100 (他の source の 1000 では玉が 1 秒ごとにしか動かない) |
 | `http` | GET した JSON オブジェクトのメンバーがキー。**入れ子のオブジェクトは `_` でつないで平らにする** (`{"gps":{"lat":35.6}}` → `.car.gps_lat`。取得前や欠けている時に空文字で済ませるため)。メンバーの値が配列ならそのまま (`{{index .car.list 0}}`)。平坦化後に同じキーになるメンバーがあれば取得エラー。本文が JSON オブジェクトでなければ (配列・数値・文字列・`null`・JSON 以外) `body` (文字列)。`status` は常に HTTP ステータス (同名の JSON メンバーは見えない) | `url` (必須)、`timeout_ms` (既定 3000)、`headers` (`{"Authorization": "..."}`) |
 
 どの source にも **`ok`** (直前の取得が成功した) と **`age_s`** (最後に成功してからの秒数。一度も無ければ -1) が付く。
@@ -173,9 +173,9 @@ LAN (同じブロードキャストドメイン) にあること。
   | `source` | (必須) | 値を取る source |
   | `lateral` / `longitudinal` | `g_y` / `g_x` | 横 G (右が +) と前後 G (加速が +) のキー。既定は esp32-racebox (RaceBox は X が前後、Y が左右) |
   | `invert_lateral` / `invert_longitudinal` | false | 向きを反転。RaceBox の文書は軸の正の向きを書いていない。**RaceBox を傾けて、玉が低い側へ転がるように合わせる** (手元の RaceBox Mini は映像で左右が逆だったので `invert_lateral: true` にしている) |
-  | `max_g` | 1.5 | 外周の G |
+  | `max_g` | 1.5 | 外周の G (10 まで) |
   | `trail` | 8 | 軌跡の点の数 (0 で無し) |
-  | `x` / `y` / `size` | 0 / 0 / 収まる最大 | スロット内の位置と一辺 (px) |
+  | `x` / `y` / `size` | 0 / 0 / 収まる最大 | スロット内の位置と一辺 (px、`size` は 32〜720) |
 - **データが来ない間** (`stale_ms` の間 `match` に合う JSON が届かない、値が数値でない) は玉と軌跡を消し、輪だけ残す。
   戻った時に古い軌跡を引きずらない
 - **速度はテキスト** (`textfile3`)。esp32-racebox の `speed_mps` は GPS の速度なので、止まっていても 1〜2 km/h 出ることがある

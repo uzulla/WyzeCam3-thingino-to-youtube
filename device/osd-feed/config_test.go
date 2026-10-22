@@ -32,6 +32,8 @@ func TestLoadConfigRejects(t *testing.T) {
 		"gball no source": `{"slots":{"imagefile":{"gball":{}}}}`,
 		"gball unknown":   `{"slots":{"imagefile":{"gball":{"source":"rb"}}}}`,
 		"gball tiny":      `{"sources":{"rb":{"type":"udp","listen":":5005"}},"slots":{"imagefile":{"gball":{"source":"rb","size":8}}}}`,
+		"gball max_g":     `{"sources":{"rb":{"type":"udp","listen":":5005"}},"slots":{"imagefile":{"gball":{"source":"rb","max_g":100000}}}}`,
+		"gball huge":      `{"sources":{"rb":{"type":"udp","listen":":5005"}},"slots":{"imagefile":{"gball":{"source":"rb","size":100000}}}}`,
 		"gball trail":     `{"sources":{"rb":{"type":"udp","listen":":5005"}},"slots":{"imagefile":{"gball":{"source":"rb","trail":99}}}}`,
 		"png_box no png":  `{"sources":{"rb":{"type":"udp","listen":":5005"}},"slots":{"imagefile":{"png_box":{"width":2,"height":2},"gball":{"source":"rb"}}}}`,
 		"png_box empty":   `{"slots":{"imagefile":{"png":"/x.png","png_box":{"x":0,"y":0}}}}`,
