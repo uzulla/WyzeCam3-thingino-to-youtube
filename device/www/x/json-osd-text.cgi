@@ -247,8 +247,10 @@ save)
 	# osd-config ignores a file without an "osd" or "image" object; do not save one
 	has_config_object "$TMP.body" || fail "not valid JSON, or no \"osd\" / \"image\" object"
 	# Write on the SD card itself, so the final mv is atomic (the file is
-	# what osd-config polls every 5 s)
-	if ! { cp "$TMP.body" "$CONFIG.tmp.$$" && chmod 644 "$CONFIG.tmp.$$" && mv "$CONFIG.tmp.$$" "$CONFIG"; }; then
+	# what osd-config polls every 5 s). sync before the mv and after it: the
+	# exFAT card is not flushed on its own for a while, and a reset in that
+	# time left an empty prudynt-osd.json (no OSD at all after the reboot)
+	if ! { cp "$TMP.body" "$CONFIG.tmp.$$" && chmod 644 "$CONFIG.tmp.$$" && sync && mv "$CONFIG.tmp.$$" "$CONFIG" && sync; }; then
 		rm -f "$CONFIG.tmp.$$"
 		fail "cannot write $CONFIG" "500 Internal Server Error"
 	fi
