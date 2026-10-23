@@ -67,8 +67,14 @@ func TestUDPSourceReceivesMatchingObjects(t *testing.T) {
 	}
 	// stale after stale_ms without a match
 	time.Sleep(350 * time.Millisecond)
-	if _, err := u.Poll(ctx); err == nil || !strings.Contains(err.Error(), "for") {
-		t.Errorf("must be stale: %v", err)
+	_, err1 := u.Poll(ctx)
+	if err1 == nil || !strings.Contains(err1.Error(), "for over") {
+		t.Errorf("must be stale: %v", err1)
+	}
+	// the same text on every poll while stale: runSource logs only changes
+	time.Sleep(150 * time.Millisecond)
+	if _, err2 := u.Poll(ctx); err2 == nil || err1 == nil || err2.Error() != err1.Error() {
+		t.Errorf("stale errors must not change from poll to poll: %v, then %v", err1, err2)
 	}
 }
 
