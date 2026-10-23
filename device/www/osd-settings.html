@@ -529,8 +529,39 @@
     });
   }
 
+  // What changed on the camera since this page was loaded: prudynt's overlay
+  // settings (restarted, another tab, osd-config applying the SD file) and,
+  // for Save, the SD file itself. The form starts from those; sending a form
+  // loaded from an older state puts that state back - after a reboot with an
+  // empty prudynt-osd.json, Apply from a page loaded at that moment switched
+  // every overlay off again although the SD file had been fixed meanwhile.
+  var LIVE_KEYS = ['textfile', 'textfile2', 'textfile3', 'imagefile', 'imagefile2', 'burnin'];
+  function liveOf(live) {
+    var o = {};
+    LIVE_KEYS.forEach(function(k) { o[k] = live ? live[k] : undefined; });
+    return o;
+  }
+  async function changedSinceLoad(withConfig) {
+    var s = await api(CGI + '?action=status');
+    var was = liveOf(state.live), now = liveOf(s.live), out = [];
+    LIVE_KEYS.forEach(function(k) {
+      if (JSON.stringify(was[k]) !== JSON.stringify(now[k])) out.push('osd.' + k + ' in prudynt');
+    });
+    if (withConfig && JSON.stringify(state.config) !== JSON.stringify(s.config)) out.push(s.config_path + ' on the SD card');
+    return out;
+  }
+  // true: go ahead. A failed status check does not block (the old behaviour).
+  async function confirmFresh(what, withConfig) {
+    var changed;
+    try { changed = await changedSinceLoad(withConfig); } catch (e) { return true; }
+    if (!changed.length) return true;
+    return await confirm('Since this page was loaded, these changed on the camera: ' + changed.join(', ') + '.\n\n' +
+      what + ' sends this form as it is and puts the older values back. Cancel and reload the page (Cmd/Ctrl+Shift+R) to start from what the camera has now, or OK to ' + what.toLowerCase() + ' anyway.');
+  }
+
   async function applyNow() {
     if (firstInvalid()) return;
+    if (!await confirmFresh('Apply', false)) return;
     var btn = $('apply');
     btn.disabled = true;
     try {
@@ -541,6 +572,8 @@
       var d = await r.json();
       // prudynt answers with the sections it understood; {} means none of them
       if (!d || !d.textfile) throw new Error('prudynt did not take the settings');
+      // prudynt's answer is its new state: the next Apply compares with that
+      state.live = Object.assign({}, state.live || {}, d);
       var pool = readNum('pool_size', 0, POOL_MAX);
       notify('success', 'Applied to the running prudynt' + (pool !== undefined && pool !== state.pool_size ? ' (osd_pool_size only changes through Save)' : ''));
       SLOTS.forEach(function(s) { updateHint(s.key); });
@@ -599,6 +632,7 @@
 
   async function save() {
     if (firstInvalid()) return;
+    if (!await confirmFresh('Save', true)) return;
     var btn = $('save');
     var pool = readNum('pool_size', 0, POOL_MAX);
     if (pool !== state.pool_size) {

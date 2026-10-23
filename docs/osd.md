@@ -89,6 +89,9 @@ Thingino の Web UI の Streamer メニュー → **OSD Settings** (`http://<cam
   桁数・行数を超える行や ASCII 以外の文字はテキスト欄の下に警告が出る (prudynt 側では切り捨て/空白になる)。
   同じファイルを別のプログラム (プログレスバー等) が更新している時は取り合いになるので、動作確認用と割り切る
 - **Apply now** は実行中の prudynt にだけ送る (`prudyntctl json` と同じ。prudynt の再起動で消える)
+- Apply now と Save は、送る前にカメラの今の値をもう一度読み、**ページを開いた後に prudynt の OSD 設定 (Save では SD の
+  `prudynt-osd.json` も) が変わっていれば確認を出す**。古いフォームをそのまま送ると、古い値に戻してしまうため
+  (再起動直後に開いたページで Apply して、全部の OSD が無効に戻ったことがある)。その時はページを読み直す
 - **Save to SD card** は SD 直下の `prudynt-osd.json` を書き換える (次の節)。`osd-config` が 5 秒以内に反映するので
   prudynt の再起動は要らない。ファイルに既にあるキーのうち、ページにない項目 (`path`、`substream_disabled` など) は
   残る (SD にまだファイルが無い時は、`osd-config` と同じ順で `/etc/prudynt-osd.json` を読んでそれに重ねる)。`general.osd_pool_size` を変えた時だけ、`osd-config` が `/etc/prudynt.json` に書いて prudynt を再起動する
