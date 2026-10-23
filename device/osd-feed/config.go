@@ -46,7 +46,7 @@ type SlotConfig struct {
 	Path     string `json:"path"`
 	Cols     int    `json:"cols"`
 	Rows     int    `json:"rows"`
-	// imagefile only (image.go): the PNG to show, and how to fit it into the
+	// image slots only (image.go): the PNG to show, and how to fit it into the
 	// slot's width x height ("contain" = shrink to fit keeping the aspect
 	// ratio, "none" = as is, cropped). width/height pin the geometry like
 	// cols/rows do for text.
@@ -54,10 +54,10 @@ type SlotConfig struct {
 	Fit    string `json:"fit"`
 	Width  int    `json:"width"`
 	Height int    `json:"height"`
-	// imagefile only: where in the slot the PNG goes (default: the whole
+	// image slots only: where in the slot the PNG goes (default: the whole
 	// slot), so that it can share the slot with a G-ball
 	PNGBox *Box `json:"png_box"`
-	// imagefile only: a G-ball (gball.go) drawn from a source's values
+	// image slots only: a G-ball (gball.go) drawn from a source's values
 	GBall *GBallConfig `json:"gball"`
 }
 
@@ -127,44 +127,44 @@ func loadConfig(path string) (*Config, error) {
 	}
 	for name, sc := range c.Slots {
 		if !validSlot(name) {
-			return nil, fmt.Errorf("%s: unknown slot %q (textfile, textfile2, textfile3 or imagefile)", path, name)
+			return nil, fmt.Errorf("%s: unknown slot %q (textfile, textfile2, textfile3, imagefile or imagefile2)", path, name)
 		}
-		if name == "imagefile" {
+		if isImageSlot(name) {
 			if sc.PNG == "" && sc.GBall == nil {
-				return nil, fmt.Errorf("%s: slot imagefile needs \"png\" (the file to show) or \"gball\"", path)
+				return nil, fmt.Errorf("%s: slot %s needs \"png\" (the file to show) or \"gball\"", path, name)
 			}
 			if b := sc.PNGBox; b != nil && (sc.PNG == "" || b.X < 0 || b.Y < 0 || b.Width < 1 || b.Height < 1) {
-				return nil, fmt.Errorf("%s: slot imagefile: png_box needs png, x/y >= 0 and width/height >= 1", path)
+				return nil, fmt.Errorf("%s: slot %s: png_box needs png, x/y >= 0 and width/height >= 1", path, name)
 			}
 			if g := sc.GBall; g != nil {
 				if g.Source == "" {
-					return nil, fmt.Errorf("%s: slot imagefile: gball needs \"source\"", path)
+					return nil, fmt.Errorf("%s: slot %s: gball needs \"source\"", path, name)
 				}
 				if _, ok := c.Sources[g.Source]; !ok {
-					return nil, fmt.Errorf("%s: slot imagefile: gball source %q is not in sources", path, g.Source)
+					return nil, fmt.Errorf("%s: slot %s: gball source %q is not in sources", path, name, g.Source)
 				}
 				// The upper limits keep a typo from building the rings forever
 				// (a ring every 0.5 G) or allocating gigabytes at the first draw
 				if g.MaxG < 0 || g.MaxG > maxGBallMaxG || g.X < 0 || g.Y < 0 || g.Size < 0 || g.Size > maxImageHeight || (g.Size != 0 && g.Size < minGBallSize) {
-					return nil, fmt.Errorf("%s: slot imagefile: gball max_g must be 0..%d, x and y >= 0, size %d..%d (or left out)", path, maxGBallMaxG, minGBallSize, maxImageHeight)
+					return nil, fmt.Errorf("%s: slot %s: gball max_g must be 0..%d, x and y >= 0, size %d..%d (or left out)", path, name, maxGBallMaxG, minGBallSize, maxImageHeight)
 				}
 				if g.Trail != nil && (*g.Trail < 0 || *g.Trail > maxGBallTrail) {
-					return nil, fmt.Errorf("%s: slot imagefile: gball trail must be 0..%d", path, maxGBallTrail)
+					return nil, fmt.Errorf("%s: slot %s: gball trail must be 0..%d", path, name, maxGBallTrail)
 				}
 			}
 			if sc.Fit != "" && sc.Fit != "contain" && sc.Fit != "none" {
-				return nil, fmt.Errorf("%s: slot imagefile: fit must be \"contain\" or \"none\"", path)
+				return nil, fmt.Errorf("%s: slot %s: fit must be \"contain\" or \"none\"", path, name)
 			}
 			// prudynt's own rules for osd.imagefile.width/height: a value it
 			// would refuse makes a file it can never show
 			if sc.Width < 0 || sc.Width > maxImageWidth || sc.Width%2 != 0 || (sc.Width != 0 && sc.Width < 2) {
-				return nil, fmt.Errorf("%s: slot imagefile: width must be an even number 2..%d (or left out)", path, maxImageWidth)
+				return nil, fmt.Errorf("%s: slot %s: width must be an even number 2..%d (or left out)", path, name, maxImageWidth)
 			}
 			if sc.Height < 0 || sc.Height > maxImageHeight || sc.Height%2 != 0 || (sc.Height != 0 && sc.Height < 2) {
-				return nil, fmt.Errorf("%s: slot imagefile: height must be an even number 2..%d (or left out)", path, maxImageHeight)
+				return nil, fmt.Errorf("%s: slot %s: height must be an even number 2..%d (or left out)", path, name, maxImageHeight)
 			}
 		} else if sc.PNG != "" || sc.Fit != "" || sc.Width != 0 || sc.Height != 0 || sc.PNGBox != nil || sc.GBall != nil {
-			return nil, fmt.Errorf("%s: slot %s: png/fit/width/height/png_box/gball are for the imagefile slot", path, name)
+			return nil, fmt.Errorf("%s: slot %s: png/fit/width/height/png_box/gball are for the imagefile slots", path, name)
 		}
 	}
 	for name, s := range c.Sources {
@@ -183,5 +183,9 @@ func loadConfig(path string) (*Config, error) {
 }
 
 func validSlot(name string) bool {
-	return name == "textfile" || name == "textfile2" || name == "textfile3" || name == "imagefile"
+	return name == "textfile" || name == "textfile2" || name == "textfile3" || isImageSlot(name)
 }
+
+// isImageSlot - prudynt's two image overlays (e.g. a logo and a G-ball,
+// each placed on its own)
+func isImageSlot(name string) bool { return name == "imagefile" || name == "imagefile2" }

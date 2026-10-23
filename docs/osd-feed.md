@@ -70,7 +70,7 @@ device/install-osd-feed.sh root@<camera-ip>       # SD にバイナリと (無�
 | `interval_ms` | 描く間隔 (既定 250、下限 100)。prudynt 側がファイルを見るのは 100ms ごとなので、それより短くしても速くならない |
 | `clear_on_exit` | 終了時にスロットのファイルを消す (既定 true) |
 | `sources.<名前>` | データ源。`type` と `interval_ms` (取得間隔、既定 1000)、type ごとの項目 (下表)。名前はテンプレートから `.<名前>.<キー>` で参照する |
-| `slots.imagefile` | 画像スロット ([osd.md](osd.md#画像-ロゴなど-を重ねる-osdimagefile))。`png` (SD カード上の透過 PNG)、`fit` (`contain` = 縮めて収める・拡大はしない・中央配置、`none` = そのまま中央に置き、はみ出た分は切る。既定 `contain`)、`png_box` (PNG を置く場所 `{"x","y","width","height"}`。既定はスロット全体)、`gball` ([G ボール](#racebox-の-g-ボールと速度))。`png` と `gball` の少なくとも一方が要る。`width` / `height` / `path` は普通は書かない (prudynt から読む) |
+| `slots.imagefile` / `slots.imagefile2` | 画像スロット ([osd.md](osd.md#画像-ロゴなど-を重ねる-osdimagefile))。2 枚は別々に置ける (ロゴと G ボールなど)。`png` (SD カード上の透過 PNG)、`fit` (`contain` = 縮めて収める・拡大はしない・中央配置、`none` = そのまま中央に置き、はみ出た分は切る。既定 `contain`)、`png_box` (PNG を置く場所 `{"x","y","width","height"}`。既定はスロット全体)、`gball` ([G ボール](#racebox-の-g-ボールと速度))。`png` と `gball` の少なくとも一方が要る。`width` / `height` / `path` は普通は書かない (prudynt から読む) |
 | `slots.<スロット>` | `textfile` / `textfile2` / `textfile3`。`template` は Go の text/template。`path` / `cols` / `rows` は普通は書かない: 起動時と以後 30 秒ごとに prudynt から読んで追従する (Web UI で大きさを変えれば 30 秒以内に切る幅も変わる。prudynt が答えない時は docs/osd.md の既定値)。**ここに書いた値は prudynt の値より常に優先される**ので、Web UI で変えたのに反映されない時はここに古い値が残っていないか見る |
 
 ### source の種類
@@ -134,7 +134,8 @@ text/template 標準の `printf` `if` `range` などに加えて:
 ### RaceBox の G ボールと速度
 
 [esp32-racebox](https://github.com/uzulla/esp32-racebox) (RaceBox Mini → ESP32 → Wi-Fi の UDP ブロードキャスト、
-1 件 1 JSON、最大 25 件/秒) の G を画像スロットに **G ボール**として描き、速度をテキストで出す。カメラと ESP32 が同じ
+1 件 1 JSON、最大 25 件/秒) の G を 2 枚目の画像スロット (`imagefile2`) に **G ボール**として描き、速度をテキストで出す。ロゴ (`imagefile`) とは別の
+スロットなので、位置は Web UI の OSD Settings の **G-ball** カードで別々に動かせる。カメラと ESP32 が同じ
 LAN (同じブロードキャストドメイン) にあること。
 
 ```json
@@ -144,11 +145,8 @@ LAN (同じブロードキャストドメイン) にあること。
     "racebox": { "type": "udp", "listen": ":5005", "match": { "type": "racebox" }, "stale_ms": 500 }
   },
   "slots": {
-    "imagefile": {
-      "png": "/mnt/mmcblk0p1/logo.png",
-      "png_box": { "x": 0, "y": 168, "width": 200, "height": 74 },
-      "gball": { "source": "racebox", "x": 20, "y": 0, "size": 160, "invert_lateral": true }
-    },
+    "imagefile": { "png": "/mnt/mmcblk0p1/logo.png" },
+    "imagefile2": { "gball": { "source": "racebox", "invert_lateral": true } },
     "textfile3": {
       "template": "{{if .racebox.ok}}{{printf \"%3.0f\" (mul .racebox.speed_mps 3.6)}}{{else}}---{{end}} km/h"
     }
@@ -156,12 +154,16 @@ LAN (同じブロードキャストドメイン) にあること。
 }
 ```
 
-`prudynt-osd.json` (SD) 側は、画像スロットを G ボールとロゴが縦に入る大きさに、`textfile3` をその上に置く:
+`prudynt-osd.json` (SD) 側は、ロゴを右下に、G ボールをその上に、`textfile3` (速度) をさらに上に置く:
 
 ```json
-"imagefile": { "enabled": true, "width": 200, "height": 242, "pos_x": -8, "pos_y": -8 },
+"imagefile": { "enabled": true, "width": 200, "height": 74, "pos_x": -8, "pos_y": -8 },
+"imagefile2": { "enabled": true, "width": 160, "height": 160, "pos_x": -28, "pos_y": -90 },
 "textfile3": { "enabled": true, "cols": 8, "rows": 1, "scale": 3, "pos_x": -8, "pos_y": -256 }
 ```
+
+1 枚の画像スロットにロゴと G ボールを両方描くこともできる (`png_box` で PNG の場所を決め、`gball` の `x` / `y` / `size`
+で G ボールの場所を決める) が、その場合は 2 つが一緒にしか動かない。
 
 ![RaceBox の G ボールと速度](images/osd-gball.jpg)
 

@@ -20,10 +20,11 @@ type SlotGeometry struct {
 
 // The documented defaults (docs/osd.md), used when prudynt cannot be asked
 var defaultGeometry = map[string]SlotGeometry{
-	"textfile":  {Path: "/run/prudynt/osd-text", Cols: 40, Rows: 4},
-	"textfile2": {Path: "/run/prudynt/osd-text2", Cols: 24, Rows: 2},
-	"textfile3": {Path: "/run/prudynt/osd-text3", Cols: 24, Rows: 2},
-	"imagefile": {Path: "/run/prudynt/osd-image", Width: 200, Height: 200},
+	"textfile":   {Path: "/run/prudynt/osd-text", Cols: 40, Rows: 4},
+	"textfile2":  {Path: "/run/prudynt/osd-text2", Cols: 24, Rows: 2},
+	"textfile3":  {Path: "/run/prudynt/osd-text3", Cols: 24, Rows: 2},
+	"imagefile":  {Path: "/run/prudynt/osd-image", Width: 200, Height: 200},
+	"imagefile2": {Path: "/run/prudynt/osd-image2", Width: 160, Height: 160},
 }
 
 // askPrudynt - the geometry of the named slots from the running prudynt via

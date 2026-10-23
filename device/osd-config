@@ -61,18 +61,40 @@ find_config() {
 # send <osd-object-json> - returns 0 when prudynt took it. prudynt answers an osd
 # request with the current values of the sections it was given ({"textfile":{...}});
 # no socket yet, or nothing it understood, gives an empty answer or {}.
+# The answer is kept in $answer (known_slots reads it).
 send() {
-	case $(prudyntctl json "{\"osd\":$1}" 2>/dev/null) in
+	answer=$(prudyntctl json "{\"osd\":$1}" 2>/dev/null)
+	case "$answer" in
 	"" | "{}"*) return 1 ;;
 	"{"*) return 0 ;;
 	esac
 	return 1
 }
 
-# Slots (textfile, textfile2, textfile3, imagefile) that the config file mentions:
+# send_off <slots> - turn them off. prudynt answering {} is fine here: it does
+# not know those slots (a prudynt without imagefile2, say), so they are not on.
+# Counting that as a failure kept the slot in "managed" for good, and every
+# later config change waited for it.
+send_off() {
+	send "$(off_json "$1")" && return 0
+	case "$answer" in "{}"*) return 0 ;; esac
+	return 1
+}
+
+# known_slots <slots> - those of them that prudynt's last answer has, i.e. the
+# slots it understood: only those are recorded as ours to turn off later
+known_slots() {
+	k=""
+	for slot in $1; do
+		case "$answer" in *"\"$slot\":{"*) k="$k$slot " ;; esac
+	done
+	printf '%s' "$k"
+}
+
+# Slots (textfile, textfile2, textfile3, imagefile, imagefile2) that the config file mentions:
 # only those are ours to turn off again when the file goes away.
 slots_in() {
-	for slot in textfile textfile2 textfile3 imagefile; do
+	for slot in textfile textfile2 textfile3 imagefile imagefile2; do
 		case $(jct "$1" get "osd.$slot" 2>/dev/null) in "{"*) printf '%s ' "$slot" ;; esac
 	done
 }
@@ -286,10 +308,10 @@ while :; do
 			done
 			if [ "$want" = "$applied" ]; then
 				complained=""
-			elif { [ -z "$stale" ] || send "$(off_json "$stale")"; } && send "$body"; then
+			elif { [ -z "$stale" ] || send_off "$stale"; } && send "$body"; then
 				log "Applied $cfg to prudynt (pid $pid)${stale:+, turned off: $stale}"
 				applied=$want
-				managed=$new_slots
+				managed=$(known_slots "$new_slots")
 				save_state
 				complained=""
 				fails=0
@@ -315,7 +337,7 @@ while :; do
 			"$pid|$cfg|"*) drop=${has_image:+"No osd settings in $cfg any more"} ;;
 			*) drop="Config changed to $cfg" ;;
 			esac
-			if [ -n "$drop" ] && [ -n "$managed" ] && send "$(off_json "$managed")"; then
+			if [ -n "$drop" ] && [ -n "$managed" ] && send_off "$managed"; then
 				log "$drop - turned off: $managed"
 				applied="$pid|none"
 				managed=""
@@ -328,7 +350,7 @@ while :; do
 			fi
 			;;
 		esac
-	elif [ -n "$managed" ] && send "$(off_json "$managed")"; then
+	elif [ -n "$managed" ] && send_off "$managed"; then
 		log "Config file is gone - turned off: $managed"
 		applied="$pid|none"
 		managed=""

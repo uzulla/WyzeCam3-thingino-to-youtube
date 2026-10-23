@@ -125,8 +125,11 @@ func (u *udpSource) Poll(context.Context) (Values, error) {
 	if u.at.IsZero() {
 		return nil, fmt.Errorf("nothing received on %s yet", u.listen)
 	}
-	if age := time.Since(u.at); age > u.stale {
-		return nil, fmt.Errorf("nothing received on %s for %v", u.listen, age.Truncate(100*time.Millisecond))
+	// The message stays the same while the sender is away: runSource logs a
+	// poll error only when its text changes, and an age in it (once in each
+	// 100 ms poll) filled the system log while the ESP32 was switched off
+	if time.Since(u.at) > u.stale {
+		return nil, fmt.Errorf("nothing received on %s for over %v", u.listen, u.stale)
 	}
 	out := make(Values, len(u.latest))
 	for k, v := range u.latest {

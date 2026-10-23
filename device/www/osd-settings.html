@@ -85,6 +85,28 @@
             </p>
           </div>
 
+          <div class="card bg-dark-subtle mb-3 p-2" id="image2_card">
+            <div class="d-flex align-items-center mb-2">
+              <h6 class="mb-0 me-3">G-ball <span class="text-secondary fw-normal small">osd.imagefile2 · a second picture, placed on its own (osd-feed draws the G-ball into it)</span></h6>
+              <span class="form-switch mb-0">
+                <input type="checkbox" id="imagefile2_enabled" role="switch" class="form-check-input">
+                <label for="imagefile2_enabled" class="form-check-label small">Enabled</label>
+              </span>
+            </div>
+            <div class="d-flex flex-wrap align-items-end gap-2 mb-2">
+              <div><label class="form-label small mb-0" for="imagefile2_pos_x">X</label><input type="number" id="imagefile2_pos_x" class="form-control form-control-sm num" min="-8192" max="8192"></div>
+              <div><label class="form-label small mb-0" for="imagefile2_pos_y">Y</label><input type="number" id="imagefile2_pos_y" class="form-control form-control-sm num" min="-8192" max="8192"></div>
+              <div><label class="form-label small mb-0" for="imagefile2_width">Width</label><input type="number" id="imagefile2_width" class="form-control form-control-sm num" min="2" max="1280" step="2"></div>
+              <div><label class="form-label small mb-0" for="imagefile2_height">Height</label><input type="number" id="imagefile2_height" class="form-control form-control-sm num" min="2" max="720" step="2"></div>
+              <div class="small text-secondary align-self-center" id="imagefile2_state"></div>
+            </div>
+            <p class="small text-secondary mb-0">
+              <strong>Shows <span id="imagefile2_png">…</span></strong> <span id="imagefile2_png_note"></span>; osd-feed writes
+              <code id="imagefile2_path">/run/prudynt/osd-image2</code>. Same rules as Image (even sizes, pool), and the
+              G-ball is drawn at the slot's height (a square), so give it a square size such as 160 × 160.
+            </p>
+          </div>
+
           <div class="card bg-dark-subtle mb-3 p-2">
             <div class="d-flex align-items-center mb-2">
               <h6 class="mb-0 me-3">Date/time (osd.burnin)</h6>
@@ -372,32 +394,45 @@
   }
 
   var IMAGE_NUMS = ['pos_x', 'pos_y', 'width', 'height'];
-  var imageBytes = null; // size of the slot's file at the last status, for updateImageState
+  var IMAGES = ['imagefile', 'imagefile2'];
+  var imageBytes = {}; // size of each image slot's file at the last status, for updateImageState
 
-  function fillImage(v) {
-    $('imagefile_enabled').checked = v.enabled === true;
-    IMAGE_NUMS.forEach(function(f) { if (v[f] !== undefined) $('imagefile_' + f).value = v[f]; });
-    if (v.path) $('imagefile_path').textContent = v.path;
+  function fillImage(k, v) {
+    $(k + '_enabled').checked = v.enabled === true;
+    IMAGE_NUMS.forEach(function(f) { if (v[f] !== undefined) $(k + '_' + f).value = v[f]; });
+    if (v.path) $(k + '_path').textContent = v.path;
   }
 
-  // Where osd-feed takes the picture from (slots.imagefile.png in its config)
+  // What osd-feed draws into each image slot (slots.imagefile(2) in its config)
   function showImageSource(s) {
     var png = s.image_png, note = '';
-    if (!png) {
+    if (png) {
+      note = '(from ' + s.osd_feed_config + ')' + (s.image_gball ? ' + a G-ball from source "' + s.image_gball + '"' : '');
+    } else if (s.image_gball) {
+      // A G-ball only: there is no PNG to put anywhere
+      png = '(no PNG)';
+      note = '- this slot shows a G-ball from source "' + s.image_gball + '" (from ' + s.osd_feed_config + ')';
+    } else {
       png = '/mnt/mmcblk0p1/logo.png';
       note = s.osd_feed_config ? '(not configured: add "imagefile": {"png": "' + png + '"} to slots in ' + s.osd_feed_config + ')'
         : '(osd-feed is not installed: see docs/osd-feed.md)';
-    } else {
-      note = '(from ' + s.osd_feed_config + ')';
     }
     $('imagefile_png').textContent = png;
     $('imagefile_png_note').textContent = note;
+
+    var what = [];
+    if (s.image2_gball) what.push('a G-ball from source "' + s.image2_gball + '"');
+    if (s.image2_png) what.push(s.image2_png);
+    $('imagefile2_png').textContent = what.length ? what.join(' + ') : 'nothing yet';
+    $('imagefile2_png_note').textContent = what.length ? '(from ' + s.osd_feed_config + ')'
+      : s.osd_feed_config ? '(add "imagefile2": {"gball": {"source": "racebox"}} to slots in ' + s.osd_feed_config + ', see docs/osd-feed.md)'
+      : '(osd-feed is not installed: see docs/osd-feed.md)';
   }
 
-  function readImage() {
-    var o = {enabled: $('imagefile_enabled').checked};
+  function readImage(k) {
+    var o = {enabled: $(k + '_enabled').checked};
     IMAGE_NUMS.forEach(function(f) {
-      var inp = $('imagefile_' + f);
+      var inp = $(k + '_' + f);
       var n = readNum(inp.id, parseInt(inp.min, 10), parseInt(inp.max, 10));
       if (n !== undefined) o[f] = n;
     });
@@ -405,10 +440,11 @@
   }
 
   // What the image file holds vs. what the slot needs
-  function updateImageState(bytes) {
-    var w = readNum('imagefile_width', 2, 1280), h = readNum('imagefile_height', 2, 720);
+  function updateImageState(k) {
+    var bytes = imageBytes[k];
+    var w = readNum(k + '_width', 2, 1280), h = readNum(k + '_height', 2, 720);
     var need = (w && h) ? w * h * 4 : 0;
-    var st = $('imagefile_state');
+    var st = $(k + '_state');
     if (bytes == null) { st.textContent = 'no file (hidden)'; st.className = 'small text-secondary align-self-center'; return; }
     var ok = need && bytes === need;
     st.textContent = 'file: ' + bytes + ' bytes' + (need ? (ok ? ' = ' + w + '×' + h + '×4' : ', but ' + w + '×' + h + '×4 = ' + need + ' expected: not shown') : '');
@@ -418,7 +454,7 @@
   function readOsd() {
     var osd = {};
     SLOTS.forEach(function(s) { osd[s.key] = readSlot(s.key); });
-    osd.imagefile = readImage();
+    IMAGES.forEach(function(k) { osd[k] = readImage(k); });
     osd.burnin = readBurnin();
     return osd;
   }
@@ -453,7 +489,7 @@
     if (s.live) {
       SLOTS.forEach(function(sl) { if (s.live[sl.key]) fillSlot(sl.key, s.live[sl.key]); });
       if (s.live.burnin) fillBurnin(s.live.burnin);
-      if (s.live.imagefile) fillImage(s.live.imagefile);
+      IMAGES.forEach(function(k) { if (s.live[k]) fillImage(k, s.live[k]); });
     } else {
       notify('warning', 'prudynt did not answer the osd.textfile query (not running, or built without the OSD patch)');
     }
@@ -468,8 +504,10 @@
       el(sl.key, 'text').value = t == null ? '' : t;
       updateHint(sl.key, t != null);
     });
-    imageBytes = s.texts ? s.texts.imagefile : null;
-    updateImageState(imageBytes);
+    IMAGES.forEach(function(k) {
+      imageBytes[k] = s.texts ? s.texts[k] : null;
+      updateImageState(k);
+    });
     showImageSource(s);
     $('config_path').textContent = s.config_path;
     var merged = (s.config && s.config_source && s.config_source !== s.config_path) ? 'the form is merged into ' + s.config_source + ' (what osd-config uses now)' : '';
@@ -494,8 +532,39 @@
     });
   }
 
+  // What changed on the camera since this page was loaded: prudynt's overlay
+  // settings (restarted, another tab, osd-config applying the SD file) and,
+  // for Save, the SD file itself. The form starts from those; sending a form
+  // loaded from an older state puts that state back - after a reboot with an
+  // empty prudynt-osd.json, Apply from a page loaded at that moment switched
+  // every overlay off again although the SD file had been fixed meanwhile.
+  var LIVE_KEYS = ['textfile', 'textfile2', 'textfile3', 'imagefile', 'imagefile2', 'burnin'];
+  function liveOf(live) {
+    var o = {};
+    LIVE_KEYS.forEach(function(k) { o[k] = live ? live[k] : undefined; });
+    return o;
+  }
+  async function changedSinceLoad(withConfig) {
+    var s = await api(CGI + '?action=status');
+    var was = liveOf(state.live), now = liveOf(s.live), out = [];
+    LIVE_KEYS.forEach(function(k) {
+      if (JSON.stringify(was[k]) !== JSON.stringify(now[k])) out.push('osd.' + k + ' in prudynt');
+    });
+    if (withConfig && JSON.stringify(state.config) !== JSON.stringify(s.config)) out.push(s.config_path + ' on the SD card');
+    return out;
+  }
+  // true: go ahead. A failed status check does not block (the old behaviour).
+  async function confirmFresh(what, withConfig) {
+    var changed;
+    try { changed = await changedSinceLoad(withConfig); } catch (e) { return true; }
+    if (!changed.length) return true;
+    return await confirm('Since this page was loaded, these changed on the camera: ' + changed.join(', ') + '.\n\n' +
+      what + ' sends this form as it is and puts the older values back. Cancel and reload the page (Cmd/Ctrl+Shift+R) to start from what the camera has now, or OK to ' + what.toLowerCase() + ' anyway.');
+  }
+
   async function applyNow() {
     if (firstInvalid()) return;
+    if (!await confirmFresh('Apply', false)) return;
     var btn = $('apply');
     btn.disabled = true;
     try {
@@ -506,6 +575,8 @@
       var d = await r.json();
       // prudynt answers with the sections it understood; {} means none of them
       if (!d || !d.textfile) throw new Error('prudynt did not take the settings');
+      // prudynt's answer is its new state: the next Apply compares with that
+      state.live = Object.assign({}, state.live || {}, d);
       var pool = readNum('pool_size', 0, POOL_MAX);
       notify('success', 'Applied to the running prudynt' + (pool !== undefined && pool !== state.pool_size ? ' (osd_pool_size only changes through Save)' : ''));
       SLOTS.forEach(function(s) { updateHint(s.key); });
@@ -564,6 +635,7 @@
 
   async function save() {
     if (firstInvalid()) return;
+    if (!await confirmFresh('Save', true)) return;
     var btn = $('save');
     var pool = readNum('pool_size', 0, POOL_MAX);
     if (pool !== state.pool_size) {
@@ -595,7 +667,9 @@
     el(s.key, 'enabled').addEventListener('change', function() { updateHint(s.key); });
   });
   COLORS.forEach(function(c) { wireColor('burnin_' + c.field); });
-  ['width', 'height'].forEach(function(f) { $('imagefile_' + f).addEventListener('input', function() { updateImageState(imageBytes); }); });
+  IMAGES.forEach(function(k) {
+    ['width', 'height'].forEach(function(f) { $(k + '_' + f).addEventListener('input', function() { updateImageState(k); }); });
+  });
 
   document.addEventListener('click', async function(ev) {
     var b = ev.target.closest('button[data-show],button[data-clear]');
