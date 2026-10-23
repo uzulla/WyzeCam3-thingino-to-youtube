@@ -406,14 +406,17 @@
   // What osd-feed draws into each image slot (slots.imagefile(2) in its config)
   function showImageSource(s) {
     var png = s.image_png, note = '';
-    if (!png) {
+    if (png) {
+      note = '(from ' + s.osd_feed_config + ')' + (s.image_gball ? ' + a G-ball from source "' + s.image_gball + '"' : '');
+    } else if (s.image_gball) {
+      // A G-ball only: there is no PNG to put anywhere
+      png = '(no PNG)';
+      note = '- this slot shows a G-ball from source "' + s.image_gball + '" (from ' + s.osd_feed_config + ')';
+    } else {
       png = '/mnt/mmcblk0p1/logo.png';
       note = s.osd_feed_config ? '(not configured: add "imagefile": {"png": "' + png + '"} to slots in ' + s.osd_feed_config + ')'
         : '(osd-feed is not installed: see docs/osd-feed.md)';
-    } else {
-      note = '(from ' + s.osd_feed_config + ')';
     }
-    if (s.image_gball) note += ' + a G-ball from source "' + s.image_gball + '"';
     $('imagefile_png').textContent = png;
     $('imagefile_png_note').textContent = note;
 

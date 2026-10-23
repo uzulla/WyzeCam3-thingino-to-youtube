@@ -1,5 +1,5 @@
 diff --git a/src/config/Config.cpp b/src/config/Config.cpp
-index cefac45..db028e0 100644
+index cefac45..7cd0906 100644
 --- a/src/config/Config.cpp
 +++ b/src/config/Config.cpp
 @@ -332,6 +332,21 @@ std::vector<ConfigItem<bool>> CFG::getBoolItems() {
@@ -59,7 +59,7 @@ index cefac45..db028e0 100644
  #if defined(WEBSOCKET_ENABLED)
        {"websocket.name", websocket.name, "wss prudynt", validateCharNotEmpty},
        {"websocket.token", websocket.token, "auto",
-@@ -520,6 +563,55 @@ std::vector<ConfigItem<int>> CFG::getIntItems() {
+@@ -520,6 +563,56 @@ std::vector<ConfigItem<int>> CFG::getIntItems() {
         [](const int &v) { return v >= 0 && v <= 65536; }},
        {"osd.burnin.scale", osd.burnin.scale, 0,
         [](const int &v) { return v >= 0 && v <= kBurninMaxScale; }},
@@ -110,13 +110,14 @@ index cefac45..db028e0 100644
 +       [](const int &v) { return v >= 2 && v <= kImagefileMaxHeight && v % 2 == 0; }},
 +      {"osd.imagefile2.pos_x", osd.imagefile2.pos_x, -8,
 +       [](const int &v) { return v >= -8192 && v <= 8192; }},
-+      {"osd.imagefile2.pos_y", osd.imagefile2.pos_y, -8,
++      // Above textfile3 (bottom-right): the picture would hide its text
++      {"osd.imagefile2.pos_y", osd.imagefile2.pos_y, -64,
 +       [](const int &v) { return v >= -8192 && v <= 8192; }},
  
        {"image.ae_compensation", image.ae_compensation, 128, validateInt255},
        /* Expert overrides preserved for backward compatibility */
 diff --git a/src/config/Config.hpp b/src/config/Config.hpp
-index fb30ab0..e57b01d 100644
+index fb30ab0..f85e005 100644
 --- a/src/config/Config.hpp
 +++ b/src/config/Config.hpp
 @@ -206,6 +206,39 @@ struct _privacy {
@@ -159,7 +160,7 @@ index fb30ab0..e57b01d 100644
  
  struct _osd {
    _stream_stats stats;
-@@ -222,6 +255,16 @@ struct _osd {
+@@ -222,6 +255,17 @@ struct _osd {
      const char *fill_color;
      const char *outline_color;
    } burnin;
@@ -170,13 +171,14 @@ index fb30ab0..e57b01d 100644
 +  _osd_textfile textfile2;
 +  _osd_textfile textfile3;
 +  // Image overlays, independent of each other (e.g. a logo and a G-ball
-+  // that are placed separately). Defaults: top-right, bottom-right.
++  // that are placed separately). Defaults: top-right, bottom-right above
++  // textfile3.
 +  _osd_imagefile imagefile;
 +  _osd_imagefile imagefile2;
  };
  struct _recorder {
    bool enabled;
-@@ -338,6 +381,9 @@ public:
+@@ -338,6 +382,9 @@ public:
    bool config_loaded = false;
    bool config_corrupted = false;
    bool dirty_ = false; // set when set<T>() actually changes a value
@@ -186,7 +188,7 @@ index fb30ab0..e57b01d 100644
    mutable std::string serialized_cache_; // cached json_to_string(jsonConfig)
    JsonValue *jsonConfig = nullptr;
    std::string filePath{};
-@@ -449,6 +495,9 @@ public:
+@@ -449,6 +496,9 @@ public:
            }
  
            if constexpr (std::is_same_v<T, const char *>) {

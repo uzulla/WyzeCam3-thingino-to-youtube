@@ -64,7 +64,7 @@ echo 'REC' > /run/prudynt/osd-text2.tmp && mv /run/prudynt/osd-text2.tmp /run/pr
 | `osd.textfile2` | 右上 (-8, 8) | `/run/prudynt/osd-text2` | 24×2 |
 | `osd.textfile3` | 右下 (-8, -8) | `/run/prudynt/osd-text3` | 24×2 |
 | `osd.imagefile` (画像、[下記](#画像-ロゴなど-を重ねる-osdimagefile)) | 右上 (-8, 8) | `/run/prudynt/osd-image` | 200×200 px |
-| `osd.imagefile2` (2 枚目の画像) | 右下 (-8, -8) | `/run/prudynt/osd-image2` | 160×160 px |
+| `osd.imagefile2` (2 枚目の画像) | 右下、`textfile3` の上 (-8, -64) | `/run/prudynt/osd-image2` | 160×160 px |
 
 位置はどれも自由に変えられる (3 つの違いは既定値だけ)。矩形同士が重なった場合は番号の大きい方が手前。
 
@@ -129,7 +129,7 @@ curl -s --data-binary @prudynt-osd.json "http://<camera-ip>/x/json-osd-text.cgi?
 
 テキストの 3 枚とは別に、**ラスタ画像を 2 枚** (`osd.imagefile` と `osd.imagefile2`) 重ねられる。2 枚は別々に置ける
 (ロゴと [G ボール](osd-feed.md#racebox-の-g-ボールと速度) など)。下の表は `imagefile` のもので、`imagefile2` も同じキーを持つ
-(既定値だけ違う: `/run/prudynt/osd-image2`、160 × 160、右下)。prudynt が読むのは**ヘッダなしの生 BGRA** (1 画素 4 バイト、
+(既定値だけ違う: `/run/prudynt/osd-image2`、160 × 160、右下の `textfile3` の上 (-8, -64))。prudynt が読むのは**ヘッダなしの生 BGRA** (1 画素 4 バイト、
 B G R A の順、アルファはストレート) で、`width` × `height` × 4 バイトちょうどのファイル。PNG などのデコードは prudynt
 ではなく書き込み側がやる — [osd-feed](osd-feed.md) の `imagefile` スロットが SD カード上の透過 PNG を読んでこの形式に
 変換して置く (下記)。更新の契約はテキストと同じ: tmpfs に書いて `mv`、0.1 秒以内に反映、無い/空なら非表示。
@@ -145,6 +145,8 @@ B G R A の順、アルファはストレート) で、`width` × `height` × 4 
 - OSD プールの予算はテキスト 3 枚の**後**に、`imagefile`、`imagefile2` の順で割り当てる。入らなければ**縮めずに表示しない** (切れた絵は意味が無い) で、
   `logread | grep imagefile` に理由が出る。必要なプールは画像の `width × height × 4` + テキスト分 (`osd_pool_size` と
   同じ KiB 換算): 200 × 200 なら 156KB (既定のプールに入る)、640 × 360 で 900KB、**1280 × 720 で 3600KB (`osd_pool_size` 8192)**
+- 足りない時に消えるのは後ろの `imagefile2` から。G ボールを確実に出したいなら、ロゴを小さくするか `osd_pool_size` を上げる
+  (1 枚にまとめる場合は、G ボールとロゴが一緒に消える)
 - 映像 (720p なら 1280 × 720) より大きい画像は表示しない
 - prudynt は `osd.sei.enabled` と `osd.burnin.enabled` が**両方 false** だと OSD の処理自体を起動しない (テキストの節と同じ)。
   その構成で画像だけ出すなら `/etc/prudynt.json` に `osd.imagefile.enabled: true` を書いて起動する必要がある
