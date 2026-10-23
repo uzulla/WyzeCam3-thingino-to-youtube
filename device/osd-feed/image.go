@@ -12,7 +12,8 @@ import (
 	"time"
 )
 
-// ImageSlot is prudynt's osd.imagefile overlay: a raw BGRA file of exactly
+// ImageSlot is one of prudynt's image overlays (osd.imagefile, osd.imagefile2):
+// a raw BGRA file of exactly
 // Width x Height pixels (straight alpha, no header; docs/osd.md). The PNG
 // named in the config is decoded here, fitted into that size and converted;
 // the file is rewritten when the PNG changes on disk or the slot's geometry
@@ -25,6 +26,8 @@ type ImageSlot struct {
 	PNG    string // "" when the slot only has a G-ball
 	Fit    string // "contain" (default) or "none"
 	box    *Box   // where the PNG goes; nil = the whole slot
+
+	pending bool // the slot file does not match the picture yet (main's loop)
 
 	gcfg    *GBallConfig
 	widgets []widget // made for the current size on first use (nil: to be made)
@@ -75,7 +78,7 @@ func (s *ImageSlot) wrote() {
 
 func newImageSlot(name string, cfg SlotConfig, geo SlotGeometry) *ImageSlot {
 	s := &ImageSlot{Name: name, Path: geo.Path, Width: geo.Width, Height: geo.Height, PNG: cfg.PNG, Fit: cfg.Fit,
-		box: cfg.PNGBox, gcfg: cfg.GBall}
+		box: cfg.PNGBox, gcfg: cfg.GBall, pending: true}
 	if s.Fit == "" {
 		s.Fit = "contain"
 	}

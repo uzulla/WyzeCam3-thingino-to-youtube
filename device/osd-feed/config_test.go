@@ -3,6 +3,7 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -93,5 +94,23 @@ func TestLoadConfigAcceptsGBall(t *testing.T) {
 	}
 	if g == nil || g.Size != 160 || *g.Trail != 0 || !g.InvertLateral || c.Sources["racebox"].Match["type"] != "racebox" {
 		t.Errorf("got %+v", c.Slots["imagefile"])
+	}
+}
+
+// The logo and the G-ball in prudynt's two image slots, each placed on its own
+func TestLoadConfigAcceptsTwoImageSlots(t *testing.T) {
+	c, err := loadConfig(writeCfg(t, `{"sources":{"racebox":{"type":"udp","listen":":5005"}},
+	  "slots":{"imagefile":{"png":"/x.png"},"imagefile2":{"gball":{"source":"racebox"}}}}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.Slots["imagefile"].PNG != "/x.png" || c.Slots["imagefile2"].GBall == nil {
+		t.Errorf("got %+v", c.Slots)
+	}
+	if _, err := loadConfig(writeCfg(t, `{"slots":{"imagefile3":{"png":"/x.png"}}}`)); err == nil {
+		t.Error("imagefile3 must be rejected: prudynt has two image slots")
+	}
+	if _, err := loadConfig(writeCfg(t, `{"slots":{"imagefile2":{}}}`)); err == nil || !strings.Contains(err.Error(), "slot imagefile2 needs") {
+		t.Errorf("an empty imagefile2 must be rejected by its name, got %v", err)
 	}
 }

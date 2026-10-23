@@ -1,8 +1,8 @@
 diff --git a/src/config/Config.cpp b/src/config/Config.cpp
-index cefac45..40aa1c1 100644
+index cefac45..db028e0 100644
 --- a/src/config/Config.cpp
 +++ b/src/config/Config.cpp
-@@ -332,6 +332,18 @@ std::vector<ConfigItem<bool>> CFG::getBoolItems() {
+@@ -332,6 +332,21 @@ std::vector<ConfigItem<bool>> CFG::getBoolItems() {
        {"osd.burnin.enabled", osd.burnin.enabled, true, validateBool},
        {"osd.burnin.substream_disabled", osd.burnin.substream_disabled, false,
         validateBool},
@@ -18,10 +18,13 @@ index cefac45..40aa1c1 100644
 +      {"osd.imagefile.enabled", osd.imagefile.enabled, false, validateBool},
 +      {"osd.imagefile.substream_disabled", osd.imagefile.substream_disabled, true,
 +       validateBool},
++      {"osd.imagefile2.enabled", osd.imagefile2.enabled, false, validateBool},
++      {"osd.imagefile2.substream_disabled", osd.imagefile2.substream_disabled, true,
++       validateBool},
        {"stream1.audio_enabled", stream1.audio_enabled, true, validateBool},
        {"stream1.enabled", stream1.enabled, true, validateBool},
        {"stream1.allow_shared", stream1.allow_shared, true, validateBool},
-@@ -469,6 +481,32 @@ std::vector<ConfigItem<const char *>> CFG::getCharItems() {
+@@ -469,6 +484,34 @@ std::vector<ConfigItem<const char *>> CFG::getCharItems() {
         validateCharNotEmpty},
        {"osd.burnin.background_color", osd.burnin.background_color, "#00000080",
         validateCharNotEmpty},
@@ -51,10 +54,12 @@ index cefac45..40aa1c1 100644
 +       isValidHexColor},
 +      {"osd.imagefile.path", osd.imagefile.path, "/run/prudynt/osd-image",
 +       validateCharNotEmpty},
++      {"osd.imagefile2.path", osd.imagefile2.path, "/run/prudynt/osd-image2",
++       validateCharNotEmpty},
  #if defined(WEBSOCKET_ENABLED)
        {"websocket.name", websocket.name, "wss prudynt", validateCharNotEmpty},
        {"websocket.token", websocket.token, "auto",
-@@ -520,6 +558,47 @@ std::vector<ConfigItem<int>> CFG::getIntItems() {
+@@ -520,6 +563,55 @@ std::vector<ConfigItem<int>> CFG::getIntItems() {
         [](const int &v) { return v >= 0 && v <= 65536; }},
        {"osd.burnin.scale", osd.burnin.scale, 0,
         [](const int &v) { return v >= 0 && v <= kBurninMaxScale; }},
@@ -99,14 +104,22 @@ index cefac45..40aa1c1 100644
 +       [](const int &v) { return v >= -8192 && v <= 8192; }},
 +      {"osd.imagefile.pos_y", osd.imagefile.pos_y, 8,
 +       [](const int &v) { return v >= -8192 && v <= 8192; }},
++      {"osd.imagefile2.width", osd.imagefile2.width, 160,
++       [](const int &v) { return v >= 2 && v <= kImagefileMaxWidth && v % 2 == 0; }},
++      {"osd.imagefile2.height", osd.imagefile2.height, 160,
++       [](const int &v) { return v >= 2 && v <= kImagefileMaxHeight && v % 2 == 0; }},
++      {"osd.imagefile2.pos_x", osd.imagefile2.pos_x, -8,
++       [](const int &v) { return v >= -8192 && v <= 8192; }},
++      {"osd.imagefile2.pos_y", osd.imagefile2.pos_y, -8,
++       [](const int &v) { return v >= -8192 && v <= 8192; }},
  
        {"image.ae_compensation", image.ae_compensation, 128, validateInt255},
        /* Expert overrides preserved for backward compatibility */
 diff --git a/src/config/Config.hpp b/src/config/Config.hpp
-index fb30ab0..10b3cbf 100644
+index fb30ab0..e57b01d 100644
 --- a/src/config/Config.hpp
 +++ b/src/config/Config.hpp
-@@ -206,6 +206,38 @@ struct _privacy {
+@@ -206,6 +206,39 @@ struct _privacy {
  };
  
  constexpr int kBurninMaxScale = 10;
@@ -128,8 +141,8 @@ index fb30ab0..10b3cbf 100644
 +};
 +constexpr int kTextfileSlots = 3;
 +
-+// Image overlay: one burn-in region showing a raw BGRA bitmap read from a
-+// (tmpfs) file, width x height pixels, replaced like the text files. See
++// Image overlays: burn-in regions that each show a raw BGRA bitmap read from
++// a (tmpfs) file, width x height pixels, replaced like the text files. See
 +// OSDImagefile.cpp. The decoder (PNG -> BGRA) lives in the writer, not here.
 +constexpr int kImagefileMaxWidth = 1280;
 +constexpr int kImagefileMaxHeight = 720;
@@ -142,10 +155,11 @@ index fb30ab0..10b3cbf 100644
 +  int pos_x;
 +  int pos_y;
 +};
++constexpr int kImagefileSlots = 2;
  
  struct _osd {
    _stream_stats stats;
-@@ -222,6 +254,13 @@ struct _osd {
+@@ -222,6 +255,16 @@ struct _osd {
      const char *fill_color;
      const char *outline_color;
    } burnin;
@@ -155,11 +169,14 @@ index fb30ab0..10b3cbf 100644
 +  _osd_textfile textfile;
 +  _osd_textfile textfile2;
 +  _osd_textfile textfile3;
++  // Image overlays, independent of each other (e.g. a logo and a G-ball
++  // that are placed separately). Defaults: top-right, bottom-right.
 +  _osd_imagefile imagefile;
++  _osd_imagefile imagefile2;
  };
  struct _recorder {
    bool enabled;
-@@ -338,6 +377,9 @@ public:
+@@ -338,6 +381,9 @@ public:
    bool config_loaded = false;
    bool config_corrupted = false;
    bool dirty_ = false; // set when set<T>() actually changes a value
@@ -169,7 +186,7 @@ index fb30ab0..10b3cbf 100644
    mutable std::string serialized_cache_; // cached json_to_string(jsonConfig)
    JsonValue *jsonConfig = nullptr;
    std::string filePath{};
-@@ -449,6 +491,9 @@ public:
+@@ -449,6 +495,9 @@ public:
            }
  
            if constexpr (std::is_same_v<T, const char *>) {
@@ -180,10 +197,10 @@ index fb30ab0..10b3cbf 100644
              item.value = value ? strdup(value) : nullptr;
            } else {
 diff --git a/src/config/JsonAPI.cpp b/src/config/JsonAPI.cpp
-index fb883cc..eee3078 100644
+index fb883cc..3d12ede 100644
 --- a/src/config/JsonAPI.cpp
 +++ b/src/config/JsonAPI.cpp
-@@ -507,6 +507,82 @@ void handle_osd(JsonValue *obj, int idx, std::string &sect, bool &s2,
+@@ -507,6 +507,84 @@ void handle_osd(JsonValue *obj, int idx, std::string &sect, bool &s2,
      sect += "}";
      wrote = true;
    }
@@ -228,10 +245,12 @@ index fb883cc..eee3078 100644
 +    wrote = true;
 +  }
 +
-+  // imagefile (image overlay, see OSDImagefile.cpp)
-+  if (JsonValue *node = obj_get(obj, "imagefile");
-+      node && (node->type == JSON_OBJECT || node->type == JSON_NULL)) {
-+    const std::string base = std::string(root) + ".imagefile.";
++  // imagefile, imagefile2 (image overlays, see OSDImagefile.cpp)
++  for (const char *slot : {"imagefile", "imagefile2"}) {
++    JsonValue *node = obj_get(obj, slot);
++    if (!node || (node->type != JSON_OBJECT && node->type != JSON_NULL))
++      continue;
++    const std::string base = std::string(root) + "." + slot + ".";
 +    static const char *const boolKeys[] = {"enabled", "substream_disabled"};
 +    static const char *const intKeys[] = {"width", "height", "pos_x", "pos_y"};
 +    static const char *const strKeys[] = {"path"};
@@ -246,7 +265,7 @@ index fb883cc..eee3078 100644
 +        if (JsonValue *v = obj_get(node, k); v && v->type == JSON_STRING)
 +          cfg->set<const char *>(base + k, v->value.string);
 +    }
-+    add_key(sect, s2, "imagefile", "{");
++    add_key(sect, s2, slot, "{");
 +    bool sp = false;
 +    for (const char *k : boolKeys) {
 +      add_key(sect, sp, k);
@@ -267,10 +286,10 @@ index fb883cc..eee3078 100644
  
  void handle_audio(JsonValue *obj, std::string &out, bool &sep) {
 diff --git a/src/video/IMPEncoder.cpp b/src/video/IMPEncoder.cpp
-index 4e49062..2d86fcb 100644
+index 4e49062..58efd37 100644
 --- a/src/video/IMPEncoder.cpp
 +++ b/src/video/IMPEncoder.cpp
-@@ -498,7 +498,12 @@ int IMPEncoder::init() {
+@@ -498,7 +498,13 @@ int IMPEncoder::init() {
        return ret;
      }
  
@@ -280,12 +299,13 @@ index 4e49062..2d86fcb 100644
 +    // there is no OSD object to enable them on at run time.
 +    if (cfg->osd.sei.enabled || cfg->osd.burnin.enabled ||
 +        cfg->osd.textfile.enabled || cfg->osd.textfile2.enabled ||
-+        cfg->osd.textfile3.enabled || cfg->osd.imagefile.enabled) {
++        cfg->osd.textfile3.enabled || cfg->osd.imagefile.enabled ||
++        cfg->osd.imagefile2.enabled) {
        LOG_INFO("stream " << name
                 << ": binding FS->OSD->ENC, OSD via hardware + SEI");
        osd = OSD::createNew(cfg->osd, encGrp, encChn, name);
 diff --git a/src/video/OSD.cpp b/src/video/OSD.cpp
-index 500c5fb..c7ee1fc 100644
+index 500c5fb..3ee6046 100644
 --- a/src/video/OSD.cpp
 +++ b/src/video/OSD.cpp
 @@ -920,6 +920,8 @@ int OSD::exit() {
@@ -293,7 +313,7 @@ index 500c5fb..c7ee1fc 100644
      ts_region_created_ = false;
    }
 +  destroyTextfileOverlays();
-+  destroyImagefileSlot();
++  destroyImagefileSlots();
  #ifdef USE_OSD_FONT_LIBSCHRIFT
    shutdownTimestampFont();
  #endif
@@ -324,7 +344,7 @@ index 500c5fb..c7ee1fc 100644
  }
  
 diff --git a/src/video/OSD.hpp b/src/video/OSD.hpp
-index e0ba5b2..a855287 100644
+index e0ba5b2..d35de20 100644
 --- a/src/video/OSD.hpp
 +++ b/src/video/OSD.hpp
 @@ -14,8 +14,14 @@
@@ -342,7 +362,7 @@ index e0ba5b2..a855287 100644
  #if defined(OSD_BURN_TIMESTAMP) && defined(USE_OSD_FONT_LIBSCHRIFT)
  #include "schrift.h"
  #include <unordered_map>
-@@ -156,6 +162,85 @@ private:
+@@ -156,6 +162,90 @@ private:
    bool osd_group_started_{false};
    std::string last_ts_text_;
  
@@ -388,9 +408,9 @@ index e0ba5b2..a855287 100644
 +  std::array<TextfileSlot, kTextfileSlots> tf_slots_;
 +  size_t tf_ts_bytes_{0}; // timestamp region size the slots were last laid out for
 +
-+  // Image overlay (OSDImagefile.cpp): one region showing a raw BGRA file of
-+  // a fixed size, laid out after the text slots from what they left of the
-+  // pool budget.
++  // Image overlays (OSDImagefile.cpp): regions that each show a raw BGRA
++  // file of a fixed size, laid out after the text slots, in slot order, from
++  // what they left of the pool budget.
 +  struct ImagefileSlot {
 +    IMPRgnHandle rgn{INVHANDLE};
 +    IMPOSDRgnAttr attr{};
@@ -415,28 +435,33 @@ index e0ba5b2..a855287 100644
 +    struct timespec file_mtime{};
 +  };
 +  // release_only: just give the region up when it no longer fits or is
-+  // disabled (called before the text slots grow), do not create or update
-+  void updateImagefileOverlay(size_t budget, bool once_per_second, bool release_only);
-+  void hideImagefileSlot();
-+  void destroyImagefileSlot();
++  // disabled (called before the text slots grow), do not create or update.
++  // Returns the pool bytes the slot takes (0: disabled or does not fit).
++  size_t updateImagefileOverlay(int index, size_t budget, bool once_per_second,
++                                bool release_only);
++  // Both image slots in order, each from what the ones before it left
++  void updateImagefileOverlays(size_t budget, bool once_per_second, bool release_only);
++  void hideImagefileSlot(int index);
++  void destroyImagefileSlot(int index);
++  void destroyImagefileSlots();
 +  // Reload the pixels if the file changed; true when the picture changed.
 +  // `present` says whether a complete, correctly sized file is there.
-+  bool reloadImagefile(const std::string &path, size_t bytes, bool force,
++  bool reloadImagefile(int index, const std::string &path, size_t bytes, bool force,
 +                       bool &present);
-+  ImagefileSlot img_slot_;
++  std::array<ImagefileSlot, kImagefileSlots> img_slots_;
 +
  #ifdef USE_OSD_FONT_LIBSCHRIFT
    // Antialiased glyph bitmap, rasterized once per character and cached
    // until ts_scale_ changes (osd.burnin.scale takes effect live).
 diff --git a/src/video/OSDImagefile.cpp b/src/video/OSDImagefile.cpp
 new file mode 100644
-index 0000000..976fbd0
+index 0000000..bb953b4
 --- /dev/null
 +++ b/src/video/OSDImagefile.cpp
-@@ -0,0 +1,300 @@
-+// -- image overlay --------------------------------------------------------
-+// One burned-in OSD region (osd.imagefile) showing a raw BGRA bitmap read
-+// from a file (the slot's path, meant to live on tmpfs): exactly
+@@ -0,0 +1,324 @@
++// -- image overlays -------------------------------------------------------
++// Burned-in OSD regions (osd.imagefile, osd.imagefile2), each showing a raw
++// BGRA bitmap read from a file (the slot's path, meant to live on tmpfs): exactly
 +// width x height x 4 bytes, no header, B G R A per pixel, straight (not
 +// premultiplied) alpha. Whoever writes the file does the decoding (PNG ->
 +// BGRA; see device/osd-feed) - there is no image library in here.
@@ -445,9 +470,10 @@ index 0000000..976fbd0
 +// rename(2), and this code notices on the next OSD thread tick (100 ms). A
 +// missing or empty file hides the region; a file of the wrong size is
 +// reported once and not shown (it is a writer bug, and half a picture would
-+// only hide it). The region is laid out after the text slots, from what they
-+// left of the OSD pool, and is never shrunk: a picture either fits or is not
-+// shown. It is given up BEFORE the text slots grow (release_only pass) so
++// only hide it). The regions are laid out after the text slots, in slot
++// order, from what is left of the OSD pool, and are never shrunk: a picture
++// either fits or is not shown. They are given up BEFORE the text slots grow
++// (release_only pass) so
 +// that their IMP_OSD_SetRgnAttr() finds the room the planner promised them -
 +// libimp does not report a region that does not fit, it just never shows.
 +
@@ -473,18 +499,23 @@ index 0000000..976fbd0
 +  return p & ~1;
 +}
 +
++const char *imageSlotName(int i) {
++  static const char *const names[kImagefileSlots] = {"imagefile", "imagefile2"};
++  return names[i];
++}
++
 +} // namespace
 +
-+void OSD::hideImagefileSlot() {
-+  ImagefileSlot &s = img_slot_;
++void OSD::hideImagefileSlot(int index) {
++  ImagefileSlot &s = img_slots_[index];
 +  if (s.region_created && s.shown) {
 +    IMP_OSD_ShowRgn(s.rgn, osdGrp, 0);
 +    s.shown = false;
 +  }
 +}
 +
-+void OSD::destroyImagefileSlot() {
-+  ImagefileSlot &s = img_slot_;
++void OSD::destroyImagefileSlot(int index) {
++  ImagefileSlot &s = img_slots_[index];
 +  if (s.region_created) {
 +    IMP_OSD_ShowRgn(s.rgn, osdGrp, 0);
 +    IMP_OSD_UnRegisterRgn(s.rgn, osdGrp);
@@ -493,9 +524,14 @@ index 0000000..976fbd0
 +  s = ImagefileSlot{};
 +}
 +
-+bool OSD::reloadImagefile(const std::string &path, size_t bytes, bool force,
++void OSD::destroyImagefileSlots() {
++  for (int i = 0; i < kImagefileSlots; ++i)
++    destroyImagefileSlot(i);
++}
++
++bool OSD::reloadImagefile(int index, const std::string &path, size_t bytes, bool force,
 +                          bool &present) {
-+  ImagefileSlot &s = img_slot_;
++  ImagefileSlot &s = img_slots_[index];
 +  struct stat st;
 +  if (stat(path.c_str(), &st) != 0 || !S_ISREG(st.st_mode)) {
 +    present = false;
@@ -541,9 +577,9 @@ index 0000000..976fbd0
 +  if ((size_t)st.st_size != bytes) {
 +    close(fd);
 +    if (!s.size_warned)
-+      LOG_WARN("OSD: imagefile " << path << " is " << st.st_size
-+               << " bytes, expected " << bytes << " (osd.imagefile.width x height x 4 BGRA)"
-+               " - not shown");
++      LOG_WARN("OSD: " << imageSlotName(index) << " " << path << " is " << st.st_size
++               << " bytes, expected " << bytes << " (osd." << imageSlotName(index)
++               << ".width x height x 4 BGRA) - not shown");
 +    s.size_warned = true;
 +    present = false;
 +    bool changed = !s.buf.empty();
@@ -580,13 +616,25 @@ index 0000000..976fbd0
 +  return true;
 +}
 +
-+void OSD::updateImagefileOverlay(size_t budget, bool once_per_second, bool release_only) {
-+  ImagefileSlot &s = img_slot_;
-+  const _osd_imagefile &c = cfg->osd.imagefile;
++void OSD::updateImagefileOverlays(size_t budget, bool once_per_second, bool release_only) {
++  // In slot order: an enabled slot keeps its share even while its file is
++  // missing, so that a later slot does not take that room and then vanish
++  // when the earlier picture comes back
++  for (int i = 0; i < kImagefileSlots; ++i) {
++    const size_t used = updateImagefileOverlay(i, budget, once_per_second, release_only);
++    budget = used < budget ? budget - used : 0;
++  }
++}
++
++size_t OSD::updateImagefileOverlay(int index, size_t budget, bool once_per_second,
++                                   bool release_only) {
++  ImagefileSlot &s = img_slots_[index];
++  const _osd_imagefile &c = index == 0 ? cfg->osd.imagefile : cfg->osd.imagefile2;
++  const char *name = imageSlotName(index);
 +  const bool enabled = c.enabled && !(is_substream_ && c.substream_disabled);
 +  if (!enabled) {
-+    destroyImagefileSlot();
-+    return;
++    destroyImagefileSlot(index);
++    return 0;
 +  }
 +  if (once_per_second || !s.conf_valid) {
 +    std::lock_guard<std::mutex> lk(cfg->stringMutex);
@@ -601,27 +649,27 @@ index 0000000..976fbd0
 +
 +  if (width > stream_width || height > stream_height) {
 +    if (!s.too_big) {
-+      LOG_WARN("OSD: imagefile overlay " << width << "x" << height
++      LOG_WARN("OSD: " << name << " overlay " << width << "x" << height
 +               << " is larger than the " << stream_width << "x" << stream_height
 +               << " frame - not shown");
-+      destroyImagefileSlot(); // once: destroy resets the slot (and conf_valid)
++      destroyImagefileSlot(index); // once: destroy resets the slot (and conf_valid)
 +      s.too_big = true;
 +    }
-+    return;
++    return 0;
 +  }
 +  s.too_big = false;
 +  if (bytes > budget) {
 +    // Not shrunk: a cut-off picture is useless. Released so the text slots
 +    // keep their room; recreated once it fits (bigger pool, smaller text).
 +    if (!s.over_budget) {
-+      LOG_WARN("OSD: imagefile overlay " << width << "x" << height << " ("
++      LOG_WARN("OSD: " << name << " overlay " << width << "x" << height << " ("
 +               << (bytes / 1024) << " KB) not shown: only " << (budget / 1024)
-+               << " KB of the OSD pool left after the text overlays "
-+                  "(see general.osd_pool_size)");
-+      destroyImagefileSlot(); // once, see above
++               << " KB of the OSD pool left after the text overlays and the image "
++                  "slots before it (see general.osd_pool_size)");
++      destroyImagefileSlot(index); // once, see above
 +      s.over_budget = true;
 +    }
-+    return;
++    return 0;
 +  }
 +  s.over_budget = false;
 +  if (release_only) {
@@ -629,8 +677,8 @@ index 0000000..976fbd0
 +    // never grow while the old picture still holds its memory; the second
 +    // call creates it again at the new size.
 +    if (s.region_created && (width != s.width || height != s.height))
-+      destroyImagefileSlot();
-+    return;
++      destroyImagefileSlot(index);
++    return bytes;
 +  }
 +
 +  const int x = resolveImagePos(c.pos_x, width, stream_width);
@@ -641,31 +689,31 @@ index 0000000..976fbd0
 +  if (geometry_changed || moved)
 +    s.failed = false; // a new geometry or position is worth another attempt
 +  bool present = false;
-+  if (reloadImagefile(path, bytes, path_changed || geometry_changed, present))
++  if (reloadImagefile(index, path, bytes, path_changed || geometry_changed, present))
 +    s.pending = true; // new pixels, not handed to libimp yet
 +  s.path = path;
 +
 +  if (!present || s.failed) {
-+    hideImagefileSlot();
-+    return;
++    hideImagefileSlot(index);
++    return bytes;
 +  }
 +
 +  if (!s.region_created) {
 +    s.rgn = IMP_OSD_CreateRgn(nullptr);
 +    if (s.rgn == INVHANDLE) {
 +      if (!s.create_error_logged)
-+        LOG_ERROR("OSD: IMP_OSD_CreateRgn failed for imagefile overlay");
++        LOG_ERROR("OSD: IMP_OSD_CreateRgn failed for " << name << " overlay");
 +      s.create_error_logged = true;
-+      return;
++      return bytes;
 +    }
 +    if (IMP_OSD_RegisterRgn(s.rgn, osdGrp, nullptr) != 0) {
 +      // Retried next tick with a fresh handle
 +      if (!s.create_error_logged)
-+        LOG_ERROR("OSD: IMP_OSD_RegisterRgn failed for imagefile overlay");
++        LOG_ERROR("OSD: IMP_OSD_RegisterRgn failed for " << name << " overlay");
 +      s.create_error_logged = true;
 +      IMP_OSD_DestroyRgn(s.rgn);
 +      s.rgn = INVHANDLE;
-+      return;
++      return bytes;
 +    }
 +    s.create_error_logged = false;
 +    s.region_created = true;
@@ -683,27 +731,27 @@ index 0000000..976fbd0
 +    s.attr.data.picData.pData = s.buf.data();
 +    int ret = IMP_OSD_SetRgnAttr(s.rgn, &s.attr);
 +    if (ret != 0) {
-+      LOG_ERROR("OSD: IMP_OSD_SetRgnAttr failed (" << ret << ") for imagefile overlay "
-+                << width << "x" << height << " (" << (bytes / 1024)
-+                << " KB); reduce osd.imagefile.width/height or raise general.osd_pool_size");
++      LOG_ERROR("OSD: IMP_OSD_SetRgnAttr failed (" << ret << ") for " << name << " overlay "
++                << width << "x" << height << " (" << (bytes / 1024) << " KB); reduce osd."
++                << name << ".width/height or raise general.osd_pool_size");
 +      s.failed = true;
 +      s.attr_set = false;
-+      hideImagefileSlot();
-+      return;
++      hideImagefileSlot(index);
++      return bytes;
 +    }
 +    if (!s.attr_set) {
 +      IMPOSDGrpRgnAttr grp;
 +      memset(&grp, 0, sizeof(grp));
 +      grp.show = 1;
-+      grp.layer = 3 + kTextfileSlots; // above the text overlays
++      grp.layer = 3 + kTextfileSlots + index; // above the text overlays
 +      grp.gAlphaEn = 1;               // per-pixel alpha from the file
 +      grp.fgAlhpa = 255;
 +      grp.bgAlhpa = 0;
 +      if (IMP_OSD_SetGrpRgnAttr(s.rgn, osdGrp, &grp) != 0) {
 +        // The region exists but is not in the group's display list: try
 +        // the whole attribute step again next tick
-+        LOG_ERROR("OSD: IMP_OSD_SetGrpRgnAttr failed for imagefile overlay");
-+        return;
++        LOG_ERROR("OSD: IMP_OSD_SetGrpRgnAttr failed for " << name << " overlay");
++        return bytes;
 +      }
 +      if (!osd_group_started_) {
 +        IMP_OSD_Start(osdGrp);
@@ -717,20 +765,21 @@ index 0000000..976fbd0
 +    s.height = height;
 +    s.x = x;
 +    s.y = y;
-+    LOG_INFO("OSD: imagefile overlay " << width << "x" << height << " at " << x << ","
++    LOG_INFO("OSD: " << name << " overlay " << width << "x" << height << " at " << x << ","
 +             << y << " (" << (bytes / 1024) << " KB) from " << path);
 +  } else if (s.pending) {
 +    s.attr.data.picData.pData = s.buf.data();
 +    if (IMP_OSD_UpdateRgnAttrData(s.rgn, &s.attr.data) == 0)
 +      s.pending = false; // else: still pending, tried again next tick
 +    else
-+      LOG_ERROR("OSD: IMP_OSD_UpdateRgnAttrData failed for imagefile overlay, retrying");
++      LOG_ERROR("OSD: IMP_OSD_UpdateRgnAttrData failed for " << name << " overlay, retrying");
 +  }
 +
 +  if (!s.shown) {
 +    if (IMP_OSD_ShowRgn(s.rgn, osdGrp, 1) == 0)
 +      s.shown = true;
 +  }
++  return bytes;
 +}
 +
 +#endif // OSD_BURN_TIMESTAMP
@@ -964,10 +1013,10 @@ index 0000000..ea05235
 +} // namespace osdtext
 diff --git a/src/video/OSDTextfile.cpp b/src/video/OSDTextfile.cpp
 new file mode 100644
-index 0000000..789fee0
+index 0000000..45e19cd
 --- /dev/null
 +++ b/src/video/OSDTextfile.cpp
-@@ -0,0 +1,424 @@
+@@ -0,0 +1,427 @@
 +// -- text-file overlay --------------------------------------------------
 +// Extra burned-in OSD regions ("slots": osd.textfile, osd.textfile2,
 +// osd.textfile3) that each show the contents of a text file (the slot's
@@ -1030,7 +1079,8 @@ index 0000000..789fee0
 +      (cfg->osd.textfile.enabled && !cfg->osd.textfile.substream_disabled) ||
 +      (cfg->osd.textfile2.enabled && !cfg->osd.textfile2.substream_disabled) ||
 +      (cfg->osd.textfile3.enabled && !cfg->osd.textfile3.substream_disabled) ||
-+      (cfg->osd.imagefile.enabled && !cfg->osd.imagefile.substream_disabled);
++      (cfg->osd.imagefile.enabled && !cfg->osd.imagefile.substream_disabled) ||
++      (cfg->osd.imagefile2.enabled && !cfg->osd.imagefile2.substream_disabled);
 +  if (on_substream && cfg->stream1.enabled)
 +    bytes /= 2;
 +  return bytes;
@@ -1217,10 +1267,10 @@ index 0000000..789fee0
 +    p.y = resolvePos(c.pos_y, p.layout.height, stream_height);
 +  }
 +
-+  // The image overlay is planned last (it gets what the text slots leave)
-+  // but must give its pool memory up first, before any text slot grows into
++  // The image overlays are planned last (they get what the text slots leave)
++  // but must give their pool memory up first, before any text slot grows into
 +  // that room. Created / updated after pass 2 (second call below).
-+  updateImagefileOverlay(remaining, once_per_second, true);
++  updateImagefileOverlays(remaining, once_per_second, true);
 +
 +  // Pass 2: apply. Slots that release pool memory (disabled, or shrinking)
 +  // go first, so that the ones that grow find the room they were promised.
@@ -1235,16 +1285,18 @@ index 0000000..789fee0
 +    }
 +  }
 +
-+  // The image overlay comes last: it gets what the text slots left, and is
++  // The image overlays come last: they get what the text slots left, and are
 +  // not shrunk to fit (a cut-off picture is of no use) - see OSDImagefile.cpp.
-+  updateImagefileOverlay(remaining, once_per_second, false);
++  updateImagefileOverlays(remaining, once_per_second, false);
 +
 +  // The timestamp region changed size (osd.burnin.scale, or it was just
 +  // created): upstream set its new size before the slots above gave way, and
 +  // a region that did not fit at that moment stays invisible without any
 +  // error. Now that there is room, set its attributes once more.
 +  if (ts_bytes != tf_ts_bytes_) {
-+    bool any = img_slot_.attr_set;
++    bool any = false;
++    for (const auto &s : img_slots_)
++      any = any || s.attr_set;
 +    for (const auto &s : tf_slots_)
 +      any = any || s.attr_set;
 +    if (any && ts_region_created_ && !ts_buf_.empty()) {

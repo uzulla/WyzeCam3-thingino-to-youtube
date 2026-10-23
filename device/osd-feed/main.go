@@ -65,10 +65,10 @@ func main() {
 		log.Printf("prudynt did not answer the osd.textfile query - using the documented defaults for path/cols/rows")
 	}
 	slots := make([]*Slot, 0, len(names))
-	var img *ImageSlot // at most one: prudynt has a single imagefile slot
+	var imgs []*ImageSlot // prudynt's imagefile and imagefile2
 	for _, n := range names {
-		if n == "imagefile" {
-			img = newImageSlot(n, cfg.Slots[n], geo[n])
+		if isImageSlot(n) {
+			imgs = append(imgs, newImageSlot(n, cfg.Slots[n], geo[n]))
 		} else {
 			s, err := newSlot(n, cfg.Slots[n], geo[n])
 			if err != nil {
@@ -149,10 +149,10 @@ func main() {
 			}
 			fmt.Printf("--- %s (%s, %dx%d)\n%s", s.Name, s.Path, s.Cols, s.Rows, text)
 		}
-		if img != nil {
+		for _, img := range imgs {
 			pix, _, err := img.render(data)
 			if err != nil {
-				log.Fatalf("slot imagefile: %v", err)
+				log.Fatalf("slot %s: %v", img.Name, err)
 			}
 			what := img.PNG + " (fit " + img.Fit + ")"
 			if img.PNG == "" {
@@ -161,7 +161,7 @@ func main() {
 			if img.gcfg != nil {
 				what += " + G-ball from " + img.gcfg.Source
 			}
-			fmt.Printf("--- imagefile (%s, %dx%d px): %s -> %d bytes BGRA\n", img.Path, img.Width, img.Height, what, len(pix))
+			fmt.Printf("--- %s (%s, %dx%d px): %s -> %d bytes BGRA\n", img.Name, img.Path, img.Width, img.Height, what, len(pix))
 		}
 		return
 	}
@@ -172,13 +172,9 @@ func main() {
 	if cfg.IntervalMs > 0 && cfg.IntervalMs < 100 {
 		log.Printf("interval_ms %d is below prudynt's 100 ms poll: using 100", cfg.IntervalMs)
 	}
-	nslots := len(slots)
-	if img != nil {
-		nslots++
-	}
+	nslots := len(slots) + len(imgs)
 	log.Printf("osd-feed: %d slots, %d sources, redraw every %v", nslots, len(cfg.Sources), cfg.interval())
 	last := map[string]string{}    // what each slot's file holds (or "error")
-	imgPending := true             // the image file does not match the picture yet
 	lastErr := map[string]string{} // last problem reported per slot, once
 	writes := 0
 	t := time.NewTicker(cfg.interval())
@@ -231,9 +227,11 @@ loop:
 					delete(last, s.Name) // redraw with the new size
 				}
 			}
-			if img != nil && img.follow(g[img.Name], cfg.Slots[img.Name]) {
-				log.Printf("slot imagefile: now %s", g[img.Name])
-				imgPending = true
+			for _, img := range imgs {
+				if img.follow(g[img.Name], cfg.Slots[img.Name]) {
+					log.Printf("slot %s: now %s", img.Name, g[img.Name])
+					img.pending = true
+				}
 			}
 		case now := <-t.C:
 			data := cache.snapshot(now)
@@ -259,13 +257,13 @@ loop:
 				last[s.Name] = text
 				writes++
 			}
-			if img != nil {
+			for _, img := range imgs {
 				pix, changed, err := img.render(data)
 				if err != nil {
 					report(img.Name, err.Error())
 				}
 				if changed {
-					imgPending = true // new pixels (or none): the file must follow
+					img.pending = true // new pixels (or none): the file must follow
 				}
 				// No picture -> no file: also one left over from an earlier run,
 				// and again next tick if the remove failed
@@ -274,12 +272,12 @@ loop:
 						if rmErr := os.Remove(img.Path); rmErr != nil {
 							report(img.Name, rmErr.Error())
 						} else {
-							imgPending = false
+							img.pending = false
 						}
 					} else {
-						imgPending = false
+						img.pending = false
 					}
-				} else if imgPending || !img.holdsOurFile() {
+				} else if img.pending || !img.holdsOurFile() {
 					// Pending until a write succeeds: a failed write of a picture
 					// with the same size as the old one must not be forgotten
 					if err := writeSlotBytes(img.Path, pix); err != nil {
@@ -287,7 +285,7 @@ loop:
 					} else {
 						recovered(img.Name)
 						img.wrote()
-						imgPending = false
+						img.pending = false
 						writes++
 					}
 				} else if err == nil {
@@ -300,7 +298,7 @@ loop:
 		for _, s := range slots {
 			os.Remove(s.Path)
 		}
-		if img != nil {
+		for _, img := range imgs {
 			os.Remove(img.Path)
 		}
 	}
