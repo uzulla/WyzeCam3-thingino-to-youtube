@@ -7,6 +7,7 @@ import (
 	"image/color"
 	"image/draw"
 	_ "image/png" // the format the config points at; others registered here would work too
+	"log"
 	"os"
 	"syscall"
 	"time"
@@ -194,7 +195,7 @@ type redrawer interface {
 }
 
 // makeWidgets - for the slot's current size; one too small to draw in is
-// left out (and comes back when the slot grows)
+// left out (and comes back when the slot grows), said once in the log
 func (s *ImageSlot) makeWidgets() []widget {
 	ws := []widget{}
 	if g := s.gcfg; g != nil {
@@ -204,6 +205,9 @@ func (s *ImageSlot) makeWidgets() []widget {
 		}
 		if size >= minGBallSize {
 			ws = append(ws, newGBall(*g, size))
+		} else {
+			log.Printf("slot %s: no room for the G-ball (%dx%d slot, x %d, y %d, size %d; at least %d px): not drawn",
+				s.Name, s.Width, s.Height, g.X, g.Y, size, minGBallSize)
 		}
 	}
 	if t := s.tcfg; t != nil {
@@ -217,6 +221,9 @@ func (s *ImageSlot) makeWidgets() []widget {
 		w, h = min(w, s.Width-t.X), min(h, s.Height-t.Y)
 		if w >= minTrackSize && h >= minTrackSize {
 			ws = append(ws, newTrack(*t, t.X, t.Y, w, h))
+		} else {
+			log.Printf("slot %s: no room for the track map (%dx%d slot, x %d, y %d; at least %dx%d px): not drawn",
+				s.Name, s.Width, s.Height, t.X, t.Y, minTrackSize, minTrackSize)
 		}
 	}
 	return ws
