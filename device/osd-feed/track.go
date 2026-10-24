@@ -120,6 +120,12 @@ func (t *track) update(data map[string]any) bool {
 	return t.mark != t.drawnAt || t.full || len(t.dirty) > 0
 }
 
+// redrawAll - the frame was rebuilt from a new base (the slot's PNG changed)
+func (t *track) redrawAll() {
+	t.full = true
+	t.drawnAt = [2]int{-1, -1}
+}
+
 func (t *track) reset() {
 	for i := range t.count {
 		t.count[i] = 0

@@ -5,7 +5,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
+	"os"
 	"testing"
+	"time"
 )
 
 // lap - a position on an oval circuit (about 1000 m x 400 m) near Fuji
@@ -183,5 +185,37 @@ func TestTrackZoomsInWhenOldPointsGo(t *testing.T) {
 	pix, _, _ := s.render(gps(true, small(0)))
 	if !bytes.Equal(pix, fresh(s)) {
 		t.Fatal("the incremental picture differs from a full redraw")
+	}
+}
+
+// A slot with a PNG and a track map: a new PNG rebuilds the base, and the
+// map drawn so far must come back with it (it is not only redrawn where it
+// changed)
+func TestTrackSurvivesANewPNG(t *testing.T) {
+	const W, H = 160, 200
+	p := writeTestPNG(t, 8, 8)
+	zero := 0.0
+	s := &ImageSlot{Name: "imagefile3", Width: W, Height: H, PNG: p, Fit: "contain",
+		box: &Box{X: 0, Y: 0, Width: W, Height: 40}, tcfg: &TrackConfig{Source: "rb", MinMoveM: &zero, Y: 40}}
+	for i := 0; i < 200; i++ {
+		s.render(gps(true, lap(float64(i)/200)))
+	}
+	before := trackPixels(s.frame)
+	// another picture at the same path (a different size: other bytes)
+	q := writeTestPNG(t, 6, 6)
+	b, _ := os.ReadFile(q)
+	if err := os.WriteFile(p, b, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	os.Chtimes(p, time.Now().Add(time.Second), time.Now().Add(time.Second))
+	pix, changed, _ := s.render(gps(true, lap(0)))
+	if !changed {
+		t.Fatal("a new PNG must count as a change")
+	}
+	if !bytes.Equal(pix, fresh(s)) {
+		t.Fatal("the picture after a new PNG differs from a full redraw")
+	}
+	if after := trackPixels(pix); after < before*9/10 {
+		t.Errorf("track pixels %d after the new PNG, %d before", after, before)
 	}
 }

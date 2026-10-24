@@ -164,6 +164,11 @@ func (s *ImageSlot) render(data map[string]any) (pix []byte, changed bool, err e
 	// the whole slot (up to 1280x720) 10 times a second is what the camera
 	// cannot afford.
 	for _, w := range s.widgets {
+		// A new base wiped what the widget drew: a widget that only repaints
+		// what changed (the track map) has to draw everything again
+		if r, ok := w.(redrawer); ok && rebuilt {
+			r.redrawAll()
+		}
 		if w.update(data) || rebuilt {
 			w.repaint(s.frame, s.base, s.Width, s.Height)
 			changed = true
@@ -180,6 +185,12 @@ type widget interface {
 	drawStatic(canvas []byte, cw, ch int)
 	update(data map[string]any) bool
 	repaint(frame, base []byte, cw, ch int)
+}
+
+// redrawer: a widget whose repaint only touches what changed since the last
+// one; redrawAll makes the next repaint draw all of it
+type redrawer interface {
+	redrawAll()
 }
 
 // makeWidgets - for the slot's current size; one too small to draw in is
