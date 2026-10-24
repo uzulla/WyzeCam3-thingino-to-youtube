@@ -354,13 +354,17 @@
 
   // Every number field an integer within its min/max, every colour #rrggbbaa.
   // Returns the first offending input (focused, marked) or null. Apply and Save
-  // refuse to run with a bad field rather than silently leaving it out.
+  // refuse to run with a bad field rather than silently leaving it out. An
+  // image card's number left empty is fine: it stays empty when prudynt does
+  // not have that slot (a build without imagefile2/3), and is not sent.
   function firstInvalid() {
     var bad = null;
-    document.querySelectorAll('#slots input, #image_card input, #burnin_scale, #burnin_colors input[type=text], #pool_size').forEach(function(inp) {
+    document.querySelectorAll('#slots input, #image_card input, #image2_card input, #image3_card input, #burnin_scale, #burnin_colors input[type=text], #pool_size').forEach(function(inp) {
       if (bad) return;
       var ok = true;
-      if (inp.type === 'number') {
+      if (inp.type === 'number' && inp.value === '' && !inp.validity.badInput && inp.closest('[id^=image][id$=_card]')) {
+        ok = true;
+      } else if (inp.type === 'number') {
         var n = readNum(inp.id, parseInt(inp.min, 10), parseInt(inp.max, 10));
         ok = n !== undefined && !(inp.step === '2' && n % 2 !== 0); // image sizes: even only
       } else if (inp.type === 'text' && /_color$/.test(inp.id)) {
