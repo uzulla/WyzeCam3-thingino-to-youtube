@@ -1,8 +1,8 @@
 diff --git a/src/config/Config.cpp b/src/config/Config.cpp
-index cefac45..7cd0906 100644
+index cefac45..cd2db93 100644
 --- a/src/config/Config.cpp
 +++ b/src/config/Config.cpp
-@@ -332,6 +332,21 @@ std::vector<ConfigItem<bool>> CFG::getBoolItems() {
+@@ -332,6 +332,24 @@ std::vector<ConfigItem<bool>> CFG::getBoolItems() {
        {"osd.burnin.enabled", osd.burnin.enabled, true, validateBool},
        {"osd.burnin.substream_disabled", osd.burnin.substream_disabled, false,
         validateBool},
@@ -21,10 +21,13 @@ index cefac45..7cd0906 100644
 +      {"osd.imagefile2.enabled", osd.imagefile2.enabled, false, validateBool},
 +      {"osd.imagefile2.substream_disabled", osd.imagefile2.substream_disabled, true,
 +       validateBool},
++      {"osd.imagefile3.enabled", osd.imagefile3.enabled, false, validateBool},
++      {"osd.imagefile3.substream_disabled", osd.imagefile3.substream_disabled, true,
++       validateBool},
        {"stream1.audio_enabled", stream1.audio_enabled, true, validateBool},
        {"stream1.enabled", stream1.enabled, true, validateBool},
        {"stream1.allow_shared", stream1.allow_shared, true, validateBool},
-@@ -469,6 +484,34 @@ std::vector<ConfigItem<const char *>> CFG::getCharItems() {
+@@ -469,6 +487,36 @@ std::vector<ConfigItem<const char *>> CFG::getCharItems() {
         validateCharNotEmpty},
        {"osd.burnin.background_color", osd.burnin.background_color, "#00000080",
         validateCharNotEmpty},
@@ -56,10 +59,12 @@ index cefac45..7cd0906 100644
 +       validateCharNotEmpty},
 +      {"osd.imagefile2.path", osd.imagefile2.path, "/run/prudynt/osd-image2",
 +       validateCharNotEmpty},
++      {"osd.imagefile3.path", osd.imagefile3.path, "/run/prudynt/osd-image3",
++       validateCharNotEmpty},
  #if defined(WEBSOCKET_ENABLED)
        {"websocket.name", websocket.name, "wss prudynt", validateCharNotEmpty},
        {"websocket.token", websocket.token, "auto",
-@@ -520,6 +563,56 @@ std::vector<ConfigItem<int>> CFG::getIntItems() {
+@@ -520,6 +568,65 @@ std::vector<ConfigItem<int>> CFG::getIntItems() {
         [](const int &v) { return v >= 0 && v <= 65536; }},
        {"osd.burnin.scale", osd.burnin.scale, 0,
         [](const int &v) { return v >= 0 && v <= kBurninMaxScale; }},
@@ -113,11 +118,20 @@ index cefac45..7cd0906 100644
 +      // Above textfile3 (bottom-right): the picture would hide its text
 +      {"osd.imagefile2.pos_y", osd.imagefile2.pos_y, -64,
 +       [](const int &v) { return v >= -8192 && v <= 8192; }},
++      {"osd.imagefile3.width", osd.imagefile3.width, 200,
++       [](const int &v) { return v >= 2 && v <= kImagefileMaxWidth && v % 2 == 0; }},
++      {"osd.imagefile3.height", osd.imagefile3.height, 200,
++       [](const int &v) { return v >= 2 && v <= kImagefileMaxHeight && v % 2 == 0; }},
++      // Top-left, below where the burn-in timestamp usually is
++      {"osd.imagefile3.pos_x", osd.imagefile3.pos_x, 8,
++       [](const int &v) { return v >= -8192 && v <= 8192; }},
++      {"osd.imagefile3.pos_y", osd.imagefile3.pos_y, 40,
++       [](const int &v) { return v >= -8192 && v <= 8192; }},
  
        {"image.ae_compensation", image.ae_compensation, 128, validateInt255},
        /* Expert overrides preserved for backward compatibility */
 diff --git a/src/config/Config.hpp b/src/config/Config.hpp
-index fb30ab0..f85e005 100644
+index fb30ab0..37e8dd5 100644
 --- a/src/config/Config.hpp
 +++ b/src/config/Config.hpp
 @@ -206,6 +206,39 @@ struct _privacy {
@@ -156,11 +170,11 @@ index fb30ab0..f85e005 100644
 +  int pos_x;
 +  int pos_y;
 +};
-+constexpr int kImagefileSlots = 2;
++constexpr int kImagefileSlots = 3;
  
  struct _osd {
    _stream_stats stats;
-@@ -222,6 +255,17 @@ struct _osd {
+@@ -222,6 +255,18 @@ struct _osd {
      const char *fill_color;
      const char *outline_color;
    } burnin;
@@ -170,15 +184,16 @@ index fb30ab0..f85e005 100644
 +  _osd_textfile textfile;
 +  _osd_textfile textfile2;
 +  _osd_textfile textfile3;
-+  // Image overlays, independent of each other (e.g. a logo and a G-ball
-+  // that are placed separately). Defaults: top-right, bottom-right above
-+  // textfile3.
++  // Image overlays, independent of each other (e.g. a logo, a G-ball and a
++  // track map that are placed separately). Defaults: top-right, bottom-right
++  // above textfile3, top-left.
 +  _osd_imagefile imagefile;
 +  _osd_imagefile imagefile2;
++  _osd_imagefile imagefile3;
  };
  struct _recorder {
    bool enabled;
-@@ -338,6 +382,9 @@ public:
+@@ -338,6 +383,9 @@ public:
    bool config_loaded = false;
    bool config_corrupted = false;
    bool dirty_ = false; // set when set<T>() actually changes a value
@@ -188,7 +203,7 @@ index fb30ab0..f85e005 100644
    mutable std::string serialized_cache_; // cached json_to_string(jsonConfig)
    JsonValue *jsonConfig = nullptr;
    std::string filePath{};
-@@ -449,6 +496,9 @@ public:
+@@ -449,6 +497,9 @@ public:
            }
  
            if constexpr (std::is_same_v<T, const char *>) {
@@ -199,7 +214,7 @@ index fb30ab0..f85e005 100644
              item.value = value ? strdup(value) : nullptr;
            } else {
 diff --git a/src/config/JsonAPI.cpp b/src/config/JsonAPI.cpp
-index fb883cc..3d12ede 100644
+index fb883cc..2c41a51 100644
 --- a/src/config/JsonAPI.cpp
 +++ b/src/config/JsonAPI.cpp
 @@ -507,6 +507,84 @@ void handle_osd(JsonValue *obj, int idx, std::string &sect, bool &s2,
@@ -247,8 +262,8 @@ index fb883cc..3d12ede 100644
 +    wrote = true;
 +  }
 +
-+  // imagefile, imagefile2 (image overlays, see OSDImagefile.cpp)
-+  for (const char *slot : {"imagefile", "imagefile2"}) {
++  // imagefile, imagefile2, imagefile3 (image overlays, see OSDImagefile.cpp)
++  for (const char *slot : {"imagefile", "imagefile2", "imagefile3"}) {
 +    JsonValue *node = obj_get(obj, slot);
 +    if (!node || (node->type != JSON_OBJECT && node->type != JSON_NULL))
 +      continue;
@@ -288,7 +303,7 @@ index fb883cc..3d12ede 100644
  
  void handle_audio(JsonValue *obj, std::string &out, bool &sep) {
 diff --git a/src/video/IMPEncoder.cpp b/src/video/IMPEncoder.cpp
-index 4e49062..58efd37 100644
+index 4e49062..08b6154 100644
 --- a/src/video/IMPEncoder.cpp
 +++ b/src/video/IMPEncoder.cpp
 @@ -498,7 +498,13 @@ int IMPEncoder::init() {
@@ -302,7 +317,7 @@ index 4e49062..58efd37 100644
 +    if (cfg->osd.sei.enabled || cfg->osd.burnin.enabled ||
 +        cfg->osd.textfile.enabled || cfg->osd.textfile2.enabled ||
 +        cfg->osd.textfile3.enabled || cfg->osd.imagefile.enabled ||
-+        cfg->osd.imagefile2.enabled) {
++        cfg->osd.imagefile2.enabled || cfg->osd.imagefile3.enabled) {
        LOG_INFO("stream " << name
                 << ": binding FS->OSD->ENC, OSD via hardware + SEI");
        osd = OSD::createNew(cfg->osd, encGrp, encChn, name);
@@ -457,12 +472,12 @@ index e0ba5b2..d35de20 100644
    // until ts_scale_ changes (osd.burnin.scale takes effect live).
 diff --git a/src/video/OSDImagefile.cpp b/src/video/OSDImagefile.cpp
 new file mode 100644
-index 0000000..bb953b4
+index 0000000..374cfa8
 --- /dev/null
 +++ b/src/video/OSDImagefile.cpp
-@@ -0,0 +1,324 @@
+@@ -0,0 +1,326 @@
 +// -- image overlays -------------------------------------------------------
-+// Burned-in OSD regions (osd.imagefile, osd.imagefile2), each showing a raw
++// Burned-in OSD regions (osd.imagefile, imagefile2, imagefile3), each showing a raw
 +// BGRA bitmap read from a file (the slot's path, meant to live on tmpfs): exactly
 +// width x height x 4 bytes, no header, B G R A per pixel, straight (not
 +// premultiplied) alpha. Whoever writes the file does the decoding (PNG ->
@@ -502,7 +517,7 @@ index 0000000..bb953b4
 +}
 +
 +const char *imageSlotName(int i) {
-+  static const char *const names[kImagefileSlots] = {"imagefile", "imagefile2"};
++  static const char *const names[kImagefileSlots] = {"imagefile", "imagefile2", "imagefile3"};
 +  return names[i];
 +}
 +
@@ -631,7 +646,9 @@ index 0000000..bb953b4
 +size_t OSD::updateImagefileOverlay(int index, size_t budget, bool once_per_second,
 +                                   bool release_only) {
 +  ImagefileSlot &s = img_slots_[index];
-+  const _osd_imagefile &c = index == 0 ? cfg->osd.imagefile : cfg->osd.imagefile2;
++  const _osd_imagefile &c = index == 0   ? cfg->osd.imagefile
++                            : index == 1 ? cfg->osd.imagefile2
++                                         : cfg->osd.imagefile3;
 +  const char *name = imageSlotName(index);
 +  const bool enabled = c.enabled && !(is_substream_ && c.substream_disabled);
 +  if (!enabled) {
@@ -1015,10 +1032,10 @@ index 0000000..ea05235
 +} // namespace osdtext
 diff --git a/src/video/OSDTextfile.cpp b/src/video/OSDTextfile.cpp
 new file mode 100644
-index 0000000..45e19cd
+index 0000000..5109b1a
 --- /dev/null
 +++ b/src/video/OSDTextfile.cpp
-@@ -0,0 +1,427 @@
+@@ -0,0 +1,428 @@
 +// -- text-file overlay --------------------------------------------------
 +// Extra burned-in OSD regions ("slots": osd.textfile, osd.textfile2,
 +// osd.textfile3) that each show the contents of a text file (the slot's
@@ -1082,7 +1099,8 @@ index 0000000..45e19cd
 +      (cfg->osd.textfile2.enabled && !cfg->osd.textfile2.substream_disabled) ||
 +      (cfg->osd.textfile3.enabled && !cfg->osd.textfile3.substream_disabled) ||
 +      (cfg->osd.imagefile.enabled && !cfg->osd.imagefile.substream_disabled) ||
-+      (cfg->osd.imagefile2.enabled && !cfg->osd.imagefile2.substream_disabled);
++      (cfg->osd.imagefile2.enabled && !cfg->osd.imagefile2.substream_disabled) ||
++      (cfg->osd.imagefile3.enabled && !cfg->osd.imagefile3.substream_disabled);
 +  if (on_substream && cfg->stream1.enabled)
 +    bytes /= 2;
 +  return bytes;

@@ -107,6 +107,28 @@
             </p>
           </div>
 
+          <div class="card bg-dark-subtle mb-3 p-2" id="image3_card">
+            <div class="d-flex align-items-center mb-2">
+              <h6 class="mb-0 me-3">Track map <span class="text-secondary fw-normal small">osd.imagefile3 · a third picture, placed on its own (osd-feed plots the GPS track into it)</span></h6>
+              <span class="form-switch mb-0">
+                <input type="checkbox" id="imagefile3_enabled" role="switch" class="form-check-input">
+                <label for="imagefile3_enabled" class="form-check-label small">Enabled</label>
+              </span>
+            </div>
+            <div class="d-flex flex-wrap align-items-end gap-2 mb-2">
+              <div><label class="form-label small mb-0" for="imagefile3_pos_x">X</label><input type="number" id="imagefile3_pos_x" class="form-control form-control-sm num" min="-8192" max="8192"></div>
+              <div><label class="form-label small mb-0" for="imagefile3_pos_y">Y</label><input type="number" id="imagefile3_pos_y" class="form-control form-control-sm num" min="-8192" max="8192"></div>
+              <div><label class="form-label small mb-0" for="imagefile3_width">Width</label><input type="number" id="imagefile3_width" class="form-control form-control-sm num" min="2" max="1280" step="2"></div>
+              <div><label class="form-label small mb-0" for="imagefile3_height">Height</label><input type="number" id="imagefile3_height" class="form-control form-control-sm num" min="2" max="720" step="2"></div>
+              <div class="small text-secondary align-self-center" id="imagefile3_state"></div>
+            </div>
+            <p class="small text-secondary mb-0">
+              <strong>Shows <span id="imagefile3_png">…</span></strong> <span id="imagefile3_png_note"></span>; osd-feed writes
+              <code id="imagefile3_path">/run/prudynt/osd-image3</code>. Same rules as Image (even sizes, pool). The map fills
+              the slot, north up, and is drawn again from the start when osd-feed restarts or the size changes.
+            </p>
+          </div>
+
           <div class="card bg-dark-subtle mb-3 p-2">
             <div class="d-flex align-items-center mb-2">
               <h6 class="mb-0 me-3">Date/time (osd.burnin)</h6>
@@ -332,13 +354,17 @@
 
   // Every number field an integer within its min/max, every colour #rrggbbaa.
   // Returns the first offending input (focused, marked) or null. Apply and Save
-  // refuse to run with a bad field rather than silently leaving it out.
+  // refuse to run with a bad field rather than silently leaving it out. An
+  // image card's number left empty is fine: it stays empty when prudynt does
+  // not have that slot (a build without imagefile2/3), and is not sent.
   function firstInvalid() {
     var bad = null;
-    document.querySelectorAll('#slots input, #image_card input, #burnin_scale, #burnin_colors input[type=text], #pool_size').forEach(function(inp) {
+    document.querySelectorAll('#slots input, #image_card input, #image2_card input, #image3_card input, #burnin_scale, #burnin_colors input[type=text], #pool_size').forEach(function(inp) {
       if (bad) return;
       var ok = true;
-      if (inp.type === 'number') {
+      if (inp.type === 'number' && inp.value === '' && !inp.validity.badInput && inp.closest('[id^=image][id$=_card]')) {
+        ok = true;
+      } else if (inp.type === 'number') {
         var n = readNum(inp.id, parseInt(inp.min, 10), parseInt(inp.max, 10));
         ok = n !== undefined && !(inp.step === '2' && n % 2 !== 0); // image sizes: even only
       } else if (inp.type === 'text' && /_color$/.test(inp.id)) {
@@ -394,7 +420,7 @@
   }
 
   var IMAGE_NUMS = ['pos_x', 'pos_y', 'width', 'height'];
-  var IMAGES = ['imagefile', 'imagefile2'];
+  var IMAGES = ['imagefile', 'imagefile2', 'imagefile3'];
   var imageBytes = {}; // size of each image slot's file at the last status, for updateImageState
 
   function fillImage(k, v) {
@@ -403,7 +429,7 @@
     if (v.path) $(k + '_path').textContent = v.path;
   }
 
-  // What osd-feed draws into each image slot (slots.imagefile(2) in its config)
+  // What osd-feed draws into each image slot (slots.imagefile/2/3 in its config)
   function showImageSource(s) {
     var png = s.image_png, note = '';
     if (png) {
@@ -426,6 +452,14 @@
     $('imagefile2_png').textContent = what.length ? what.join(' + ') : 'nothing yet';
     $('imagefile2_png_note').textContent = what.length ? '(from ' + s.osd_feed_config + ')'
       : s.osd_feed_config ? '(add "imagefile2": {"gball": {"source": "racebox"}} to slots in ' + s.osd_feed_config + ', see docs/osd-feed.md)'
+      : '(osd-feed is not installed: see docs/osd-feed.md)';
+
+    what = [];
+    if (s.image3_track) what.push('a track map from source "' + s.image3_track + '"');
+    if (s.image3_png) what.push(s.image3_png);
+    $('imagefile3_png').textContent = what.length ? what.join(' + ') : 'nothing yet';
+    $('imagefile3_png_note').textContent = what.length ? '(from ' + s.osd_feed_config + ')'
+      : s.osd_feed_config ? '(add "imagefile3": {"track": {"source": "racebox"}} to slots in ' + s.osd_feed_config + ', see docs/osd-feed.md)'
       : '(osd-feed is not installed: see docs/osd-feed.md)';
   }
 
@@ -538,7 +572,7 @@
   // loaded from an older state puts that state back - after a reboot with an
   // empty prudynt-osd.json, Apply from a page loaded at that moment switched
   // every overlay off again although the SD file had been fixed meanwhile.
-  var LIVE_KEYS = ['textfile', 'textfile2', 'textfile3', 'imagefile', 'imagefile2', 'burnin'];
+  var LIVE_KEYS = ['textfile', 'textfile2', 'textfile3', 'imagefile', 'imagefile2', 'imagefile3', 'burnin'];
   function liveOf(live) {
     var o = {};
     LIVE_KEYS.forEach(function(k) { o[k] = live ? live[k] : undefined; });

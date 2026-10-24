@@ -36,6 +36,12 @@ func TestLoadConfigRejects(t *testing.T) {
 		"gball max_g":     `{"sources":{"rb":{"type":"udp","listen":":5005"}},"slots":{"imagefile":{"gball":{"source":"rb","max_g":100000}}}}`,
 		"gball huge":      `{"sources":{"rb":{"type":"udp","listen":":5005"}},"slots":{"imagefile":{"gball":{"source":"rb","size":100000}}}}`,
 		"gball trail":     `{"sources":{"rb":{"type":"udp","listen":":5005"}},"slots":{"imagefile":{"gball":{"source":"rb","trail":99}}}}`,
+		"track on text":   `{"sources":{"rb":{"type":"udp","listen":":5005"}},"slots":{"textfile":{"template":"x","track":{"source":"rb"}}}}`,
+		"track no source": `{"slots":{"imagefile3":{"track":{}}}}`,
+		"track unknown":   `{"slots":{"imagefile3":{"track":{"source":"rb"}}}}`,
+		"track points":    `{"sources":{"rb":{"type":"udp","listen":":5005"}},"slots":{"imagefile3":{"track":{"source":"rb","points":1000000}}}}`,
+		"track tiny":      `{"sources":{"rb":{"type":"udp","listen":":5005"}},"slots":{"imagefile3":{"track":{"source":"rb","width":8}}}}`,
+		"track move":      `{"sources":{"rb":{"type":"udp","listen":":5005"}},"slots":{"imagefile3":{"track":{"source":"rb","min_move_m":-1}}}}`,
 		"png_box no png":  `{"sources":{"rb":{"type":"udp","listen":":5005"}},"slots":{"imagefile":{"png_box":{"width":2,"height":2},"gball":{"source":"rb"}}}}`,
 		"png_box empty":   `{"slots":{"imagefile":{"png":"/x.png","png_box":{"x":0,"y":0}}}}`,
 	} {
@@ -97,18 +103,21 @@ func TestLoadConfigAcceptsGBall(t *testing.T) {
 	}
 }
 
-// The logo and the G-ball in prudynt's two image slots, each placed on its own
-func TestLoadConfigAcceptsTwoImageSlots(t *testing.T) {
+// The logo, the G-ball and the track map in prudynt's three image slots,
+// each placed on its own
+func TestLoadConfigAcceptsThreeImageSlots(t *testing.T) {
 	c, err := loadConfig(writeCfg(t, `{"sources":{"racebox":{"type":"udp","listen":":5005"}},
-	  "slots":{"imagefile":{"png":"/x.png"},"imagefile2":{"gball":{"source":"racebox"}}}}`))
+	  "slots":{"imagefile":{"png":"/x.png"},"imagefile2":{"gball":{"source":"racebox"}},
+	    "imagefile3":{"track":{"source":"racebox","points":1200,"min_move_m":0}}}}`))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if c.Slots["imagefile"].PNG != "/x.png" || c.Slots["imagefile2"].GBall == nil {
+	tr := c.Slots["imagefile3"].Track
+	if c.Slots["imagefile"].PNG != "/x.png" || c.Slots["imagefile2"].GBall == nil || tr == nil || tr.Points != 1200 || *tr.MinMoveM != 0 {
 		t.Errorf("got %+v", c.Slots)
 	}
-	if _, err := loadConfig(writeCfg(t, `{"slots":{"imagefile3":{"png":"/x.png"}}}`)); err == nil {
-		t.Error("imagefile3 must be rejected: prudynt has two image slots")
+	if _, err := loadConfig(writeCfg(t, `{"slots":{"imagefile4":{"png":"/x.png"}}}`)); err == nil {
+		t.Error("imagefile4 must be rejected: prudynt has three image slots")
 	}
 	if _, err := loadConfig(writeCfg(t, `{"slots":{"imagefile2":{}}}`)); err == nil || !strings.Contains(err.Error(), "slot imagefile2 needs") {
 		t.Errorf("an empty imagefile2 must be rejected by its name, got %v", err)
