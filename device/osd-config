@@ -34,6 +34,18 @@
 # pulling the SD card) does not undo it: prudynt keeps the values until it is
 # restarted (or the camera reboots), and then starts from /etc/prudynt.json.
 #
+# The newer of the two wins: this file and the Web UI's "Save configuration to
+# file" (Streamer pages: prudynt writes everything it runs with, flips
+# included, to /etc/prudynt.json). A note next to the file (.osd-config-image)
+# keeps the section and a checksum of /etc/prudynt.json from when the section
+# was last sent. When the section is the same as then but /etc/prudynt.json
+# was written since, the Web UI was saved later: the section is not sent (once
+# logged) and prudynt keeps what /etc/prudynt.json says, until the section in
+# the file is changed. The whole file, not the flip values, tells: a save that
+# sets the same values /etc/prudynt.json had (flip turned off again) is still
+# the user's latest word. This script's own write (osd_pool_size) updates the
+# note, so that it does not count.
+#
 # Re-sent when prudynt was restarted (new pid) or the file changed / appeared /
 # moved (SD inserted). File gone (SD pulled), or an overlay block (text or image)
 # removed from it -> the overlays it had turned on are turned off again; slots it never
@@ -129,12 +141,48 @@ fails=0
 image_complained=""
 image_fails=0
 image_trying="" # the request image_fails counts the failures of
+
+# etc_sum - checksum of /etc/prudynt.json (changes when the Web UI saves)
+etc_sum() {
+	md5sum "$PRUDYNT_CONFIG" 2>/dev/null | cut -d' ' -f1
+}
+
+# image_note <cfg> - where the note on the last sent "image" section lives
+image_note() {
+	echo "${1%/*}/.osd-config-image"
+}
+
+# note_etc_refresh <cfg> - after this script wrote /etc/prudynt.json itself:
+# the note keeps the new checksum, so the write is not taken for a Web UI save
+note_etc_refresh() {
+	n=$(image_note "$1")
+	[ -f "$n" ] || return 0
+	note_file=""
+	. "$n"
+	printf 'note_file="%s"\nnote_etc="%s"\n' "$note_file" "$(etc_sum)" >"$n.tmp" && mv "$n.tmp" "$n" && sync
+}
+
 apply_image() {
 	# one line, so that it reads well in the log
 	body=$(jct "$1" get image 2>/dev/null | tr -s ' \t\n' ' ')
 	case "$body" in "{"*) ;; *) return 1 ;; esac
-	want="$2|$1|$(printf '%s' "$body" | md5sum | cut -d' ' -f1)"
+	sum=$(printf '%s' "$body" | md5sum | cut -d' ' -f1)
+	want="$2|$1|$sum"
 	[ "$want" = "$image_applied" ] && return 0
+	# Saved in the Web UI after the section was last sent: that wins
+	etc_now=$(etc_sum)
+	note_file=""
+	note_etc=""
+	[ -f "$(image_note "$1")" ] && . "$(image_note "$1")"
+	if [ "$note_file" = "$1|$sum" ] && [ "$note_etc" != "$etc_now" ]; then
+		if [ "$image_complained" != "web:$want" ]; then
+			log "Not sending the image settings in $1: /etc/prudynt.json was saved (the Web UI's "Save configuration to file") after they were last sent; prudynt keeps what it says. Change them in $1 to send them again"
+			image_complained="web:$want"
+		fi
+		image_applied=$want
+		save_state
+		return 0
+	fi
 	# A new request (new prudynt, or the file changed) gets its own 30 s
 	if [ "$want" != "$image_trying" ]; then
 		image_trying=$want
@@ -146,6 +194,11 @@ apply_image() {
 		log "Applied image settings from $1 to prudynt (pid $2): $body"
 		image_applied=$want
 		save_state
+		# The note goes next to the file (the SD card: sync, see the CGI)
+		n=$(image_note "$1")
+		if [ "$note_file|$note_etc" != "$1|$sum|$etc_now" ]; then
+			printf 'note_file="%s"\nnote_etc="%s"\n' "$1|$sum" "$etc_now" >"$n.tmp" && mv "$n.tmp" "$n" && sync
+		fi
 		image_complained=""
 		image_fails=0
 		return 0
@@ -230,6 +283,7 @@ apply_pool() {
 		prudynt_unlock
 		return 1
 	fi
+	note_etc_refresh "$1"
 	log "general.osd_pool_size $have -> $want KB in $PRUDYNT_CONFIG (from $1) - restarting prudynt"
 	restart_prudynt
 	rc=$?
@@ -250,6 +304,7 @@ apply_pool() {
 	if jct "$PRUDYNT_CONFIG" set general.osd_pool_size "$have" >/dev/null 2>&1 &&
 		[ "$(jct "$PRUDYNT_CONFIG" get general.osd_pool_size 2>/dev/null)" = "$have" ]; then
 		log "prudynt did not come up with osd_pool_size=$want - restored $have"
+		note_etc_refresh "$1"
 	else
 		log "prudynt did not come up with osd_pool_size=$want and $have could not be written back to $PRUDYNT_CONFIG"
 	fi

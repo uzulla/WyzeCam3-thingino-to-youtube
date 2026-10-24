@@ -272,8 +272,18 @@ cat /tmp/osd-image.raw | ssh root@<camera-ip> 'cat > /run/prudynt/osd-image.tmp 
 - `osd` が無く `image` だけのファイルでもよい
 - ファイルから消しても (SD を抜いても) **元には戻さない**。prudynt が再起動するまで (カメラの再起動を含む) その値のまま。
   すぐ戻したい時は `false` を書く
-- 同じ設定を Web UI の Image のページで変えても、prudynt が再起動するとファイルの値に戻る
-  (Web UI の「Save configuration to file」で `/etc/prudynt.json` に保存しても、ファイルの方が後から送られる)
+- Web UI (Streamer > Image Quality の V-Flip / H-Flip など) と、このファイルの `image` は、**後から変えた方が勝つ**
+  - Web UI で変えて「Save configuration to file」で保存すると (prudynt が今の設定を全部 `/etc/prudynt.json` に書く)、
+    再起動後もその値のまま。`osd-config` はファイルの `image` を送らず、`logread | grep osd-config` に
+    `Not sending the image settings in ...` と 1 回出る
+  - その後でファイルの `image` を書き換えると、またファイルの値が送られる (再起動の後も)
+  - Web UI で変えただけで保存しなかった時は、Thingino の普段の動きと同じく再起動で元に戻り、ファイルの値が送られる
+  - 注意: Streamer のどのページの「Save configuration to file」も、その時の反転を含めて全部保存する。反転以外を
+    保存した時も、以後はその時の反転 (ファイルの値を送っていればファイルと同じ) が使われる
+  - 仕組み: ファイルの隣の `.osd-config-image` (SD カードなら `/mnt/mmcblk0p1/.osd-config-image`) に、最後に送った時の
+    ファイルの `image` と、`/etc/prudynt.json` 全体のチェックサムを残す。ファイルが同じままで `/etc/prudynt.json` が
+    書き換わっていれば、Web UI で保存されたと見なす (保存した値が前と同じでも)。`osd-config` 自身の書き込み
+    (`osd_pool_size`) は数えない。`.osd-config-image` を消せば、次の起動でファイルの値を送る
 - 夜間モードの切り替え (`daynightd`) が変える項目 (`running_mode` など) は、書いても上書きされる可能性がある (未確認)
 - ログ: `logread | grep osd-config` に `Applied image settings from ... : { "vflip": true }`
 
