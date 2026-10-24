@@ -37,14 +37,16 @@
 # The newer of the two wins: this file and the Web UI's "Save configuration to
 # file" (Streamer pages: prudynt writes everything it runs with, flips
 # included, to /etc/prudynt.json). A note next to the file (.osd-config-image)
-# keeps the section and a checksum of /etc/prudynt.json from when the section
-# was last sent. When the section is the same as then but /etc/prudynt.json
-# was written since, the Web UI was saved later: the section is not sent (once
-# logged) and prudynt keeps what /etc/prudynt.json says, until the section in
-# the file is changed. The whole file, not the flip values, tells: a save that
-# sets the same values /etc/prudynt.json had (flip turned off again) is still
-# the user's latest word. This script's own write (osd_pool_size) updates the
-# note, so that it does not count.
+# keeps the section, the checksum and mtime of /etc/prudynt.json and this
+# camera's MAC address from when the section was last sent. When the section
+# is the same as then but /etc/prudynt.json was written since, the Web UI was
+# saved later: the section is not sent (once logged) and prudynt keeps what
+# /etc/prudynt.json says, until the section in the file is changed. The whole
+# file, not the flip values, tells: a save that sets the same values
+# /etc/prudynt.json had (flip turned off again) is still the user's latest
+# word. This script's own write (osd_pool_size) moves the notes along, unless
+# a note already stands for a save not acted on yet. No note, or one from
+# another camera: the section is sent.
 #
 # Re-sent when prudynt was restarted (new pid) or the file changed / appeared /
 # moved (SD inserted). File gone (SD pulled), or an overlay block (text or image)
@@ -142,9 +144,17 @@ image_complained=""
 image_fails=0
 image_trying="" # the request image_fails counts the failures of
 
-# etc_sum - checksum of /etc/prudynt.json (changes when the Web UI saves)
+# etc_sum - what /etc/prudynt.json looks like now: its checksum and mtime.
+# The mtime too: a save that writes the very bytes the file already had (flip
+# turned off again, nothing else changed) is still a save.
 etc_sum() {
-	md5sum "$PRUDYNT_CONFIG" 2>/dev/null | cut -d' ' -f1
+	echo "$(md5sum "$PRUDYNT_CONFIG" 2>/dev/null | cut -d' ' -f1)-$(date -r "$PRUDYNT_CONFIG" +%s 2>/dev/null)"
+}
+
+# This camera, so that a note on an SD card that was in another camera (or
+# restored from a backup) is not taken for a Web UI save here
+host_id() {
+	cat /sys/class/net/*/address 2>/dev/null | grep -v '^00:00:00:00:00:00$' | sort | head -n 1
 }
 
 # image_note <cfg> - where the note on the last sent "image" section lives
@@ -152,14 +162,33 @@ image_note() {
 	echo "${1%/*}/.osd-config-image"
 }
 
-# note_etc_refresh <cfg> - after this script wrote /etc/prudynt.json itself:
-# the note keeps the new checksum, so the write is not taken for a Web UI save
-note_etc_refresh() {
+# read_note <cfg> - note_file / note_etc / note_host from the note, read as
+# text (it is on the SD card: never run as shell code). Empty when absent.
+read_note() {
+	note_file="" note_etc="" note_host=""
 	n=$(image_note "$1")
 	[ -f "$n" ] || return 0
-	note_file=""
-	. "$n"
-	printf 'note_file="%s"\nnote_etc="%s"\n' "$note_file" "$(etc_sum)" >"$n.tmp" && mv "$n.tmp" "$n" && sync
+	note_file=$(sed -n 's/^file=//p' "$n" | head -n 1)
+	note_etc=$(sed -n 's/^etc=//p' "$n" | head -n 1)
+	note_host=$(sed -n 's/^host=//p' "$n" | head -n 1)
+}
+
+# write_note <cfg> <file|sum> <etc>
+write_note() {
+	n=$(image_note "$1")
+	printf 'file=%s\netc=%s\nhost=%s\n' "$2" "$3" "$(host_id)" >"$n.tmp" && mv "$n.tmp" "$n" && sync
+}
+
+# note_etc_refresh <etc before> - after this script wrote /etc/prudynt.json
+# itself: notes that matched the file before that write follow it, so the
+# write is not taken for a Web UI save. A note that did not match already
+# stands for a Web UI save not acted on yet: it is left as it is.
+note_etc_refresh() {
+	for c in $CONFIG_CANDIDATES; do
+		read_note "$c"
+		[ -n "$note_file" ] && [ "$note_etc" = "$1" ] && [ "$note_host" = "$(host_id)" ] || continue
+		write_note "$c" "$note_file" "$(etc_sum)"
+	done
 }
 
 apply_image() {
@@ -171,12 +200,10 @@ apply_image() {
 	[ "$want" = "$image_applied" ] && return 0
 	# Saved in the Web UI after the section was last sent: that wins
 	etc_now=$(etc_sum)
-	note_file=""
-	note_etc=""
-	[ -f "$(image_note "$1")" ] && . "$(image_note "$1")"
-	if [ "$note_file" = "$1|$sum" ] && [ "$note_etc" != "$etc_now" ]; then
+	read_note "$1"
+	if [ "$note_file" = "$1|$sum" ] && [ "$note_etc" != "$etc_now" ] && [ "$note_host" = "$(host_id)" ]; then
 		if [ "$image_complained" != "web:$want" ]; then
-			log "Not sending the image settings in $1: /etc/prudynt.json was saved (the Web UI's "Save configuration to file") after they were last sent; prudynt keeps what it says. Change them in $1 to send them again"
+			log "Not sending the image settings in $1: /etc/prudynt.json was saved (the Web UI's 'Save configuration to file') after they were last sent; prudynt keeps what it says. Change them in $1 to send them again"
 			image_complained="web:$want"
 		fi
 		image_applied=$want
@@ -195,9 +222,8 @@ apply_image() {
 		image_applied=$want
 		save_state
 		# The note goes next to the file (the SD card: sync, see the CGI)
-		n=$(image_note "$1")
-		if [ "$note_file|$note_etc" != "$1|$sum|$etc_now" ]; then
-			printf 'note_file="%s"\nnote_etc="%s"\n' "$1|$sum" "$etc_now" >"$n.tmp" && mv "$n.tmp" "$n" && sync
+		if [ "$note_file|$note_etc|$note_host" != "$1|$sum|$etc_now|$(host_id)" ]; then
+			write_note "$1" "$1|$sum" "$etc_now"
 		fi
 		image_complained=""
 		image_fails=0
@@ -276,6 +302,7 @@ apply_pool() {
 	prudynt_lock || return 1
 	# Read back what was written: if it does not match, do not restart, and do
 	# not try again (that would write flash on every pass).
+	etc_before=$(etc_sum)
 	if ! jct "$PRUDYNT_CONFIG" set general.osd_pool_size "$want" >/dev/null 2>&1 ||
 		[ "$(jct "$PRUDYNT_CONFIG" get general.osd_pool_size 2>/dev/null)" != "$want" ]; then
 		log "cannot write general.osd_pool_size=$want to $PRUDYNT_CONFIG"
@@ -283,7 +310,7 @@ apply_pool() {
 		prudynt_unlock
 		return 1
 	fi
-	note_etc_refresh "$1"
+	note_etc_refresh "$etc_before"
 	log "general.osd_pool_size $have -> $want KB in $PRUDYNT_CONFIG (from $1) - restarting prudynt"
 	restart_prudynt
 	rc=$?
@@ -301,10 +328,11 @@ apply_pool() {
 		return 1
 		;;
 	esac
+	etc_before=$(etc_sum)
 	if jct "$PRUDYNT_CONFIG" set general.osd_pool_size "$have" >/dev/null 2>&1 &&
 		[ "$(jct "$PRUDYNT_CONFIG" get general.osd_pool_size 2>/dev/null)" = "$have" ]; then
 		log "prudynt did not come up with osd_pool_size=$want - restored $have"
-		note_etc_refresh "$1"
+		note_etc_refresh "$etc_before"
 	else
 		log "prudynt did not come up with osd_pool_size=$want and $have could not be written back to $PRUDYNT_CONFIG"
 	fi

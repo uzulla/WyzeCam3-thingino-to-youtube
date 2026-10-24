@@ -282,8 +282,12 @@ cat /tmp/osd-image.raw | ssh root@<camera-ip> 'cat > /run/prudynt/osd-image.tmp 
     保存した時も、以後はその時の反転 (ファイルの値を送っていればファイルと同じ) が使われる
   - 仕組み: ファイルの隣の `.osd-config-image` (SD カードなら `/mnt/mmcblk0p1/.osd-config-image`) に、最後に送った時の
     ファイルの `image` と、`/etc/prudynt.json` 全体のチェックサムを残す。ファイルが同じままで `/etc/prudynt.json` が
-    書き換わっていれば、Web UI で保存されたと見なす (保存した値が前と同じでも)。`osd-config` 自身の書き込み
-    (`osd_pool_size`) は数えない。`.osd-config-image` を消せば、次の起動でファイルの値を送る
+    書き換わっていれば (チェックサムか更新時刻)、Web UI で保存されたと見なす (保存した値が前と同じでも)。
+    `osd-config` 自身の書き込み (`osd_pool_size`) は数えない。`.osd-config-image` を消せば、次の起動でファイルの値を送る
+  - `.osd-config-image` が無い時 (この機能を入れた直後、新しい SD カード) と、別のカメラで書かれたもの (MAC アドレスで
+    見分ける) の時は、ファイルの値を送る。この機能を入れる前に Web UI で保存した反転は、入れた後の最初の起動で
+    1 回だけファイルの値に戻る (もう一度 Web UI で保存すれば、以後はそちらが残る)
+  - ファームウェアの更新や設定の初期化、手で `/etc/prudynt.json` を書き換えた時も、Web UI の保存と同じに数える
 - 夜間モードの切り替え (`daynightd`) が変える項目 (`running_mode` など) は、書いても上書きされる可能性がある (未確認)
 - ログ: `logread | grep osd-config` に `Applied image settings from ... : { "vflip": true }`
 
