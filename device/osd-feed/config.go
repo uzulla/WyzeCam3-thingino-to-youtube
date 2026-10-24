@@ -59,6 +59,8 @@ type SlotConfig struct {
 	PNGBox *Box `json:"png_box"`
 	// image slots only: a G-ball (gball.go) drawn from a source's values
 	GBall *GBallConfig `json:"gball"`
+	// image slots only: a track map (track.go) plotted from a source's GPS position
+	Track *TrackConfig `json:"track"`
 }
 
 // Box is a rectangle inside the image slot, in pixels from its top left.
@@ -89,6 +91,28 @@ type GBallConfig struct {
 	X                  int     `json:"x"`     // top left in the slot (default 0, 0)
 	Y                  int     `json:"y"`
 	Size               int     `json:"size"` // side in pixels (default: what fits in the slot from x, y)
+}
+
+// TrackConfig: a track map in the image slot, plotted from a source's GPS
+// position at every redraw (track.go). The latest position is marked while
+// the source is fresh; the plotted track stays, the oldest points rubbed out
+// beyond "points".
+type TrackConfig struct {
+	Source string `json:"source"` // the source the values come from (required)
+	// Keys in that source, in degrees; defaults are esp32-racebox's. A
+	// position whose valid key is false is not plotted (a source without that
+	// key: every position counts).
+	Lat    string `json:"lat"`    // default "lat"
+	Lon    string `json:"lon"`    // default "lon"
+	Valid  string `json:"valid"`  // default "latlon_valid"
+	Points int    `json:"points"` // positions kept on the map (default 6000: 10 minutes at a 100 ms redraw)
+	// a position closer than this to the last plotted one is not plotted, so
+	// that standing still does not use up "points" (default 3; 0 = every one)
+	MinMoveM *float64 `json:"min_move_m"`
+	X        int      `json:"x"` // top left in the slot (default 0, 0)
+	Y        int      `json:"y"`
+	Width    int      `json:"width"` // default: the rest of the slot from x, y
+	Height   int      `json:"height"`
 }
 
 // interval - the redraw period. prudynt looks at the files every 100 ms, so
@@ -127,11 +151,11 @@ func loadConfig(path string) (*Config, error) {
 	}
 	for name, sc := range c.Slots {
 		if !validSlot(name) {
-			return nil, fmt.Errorf("%s: unknown slot %q (textfile, textfile2, textfile3, imagefile or imagefile2)", path, name)
+			return nil, fmt.Errorf("%s: unknown slot %q (textfile, textfile2, textfile3, imagefile, imagefile2 or imagefile3)", path, name)
 		}
 		if isImageSlot(name) {
-			if sc.PNG == "" && sc.GBall == nil {
-				return nil, fmt.Errorf("%s: slot %s needs \"png\" (the file to show) or \"gball\"", path, name)
+			if sc.PNG == "" && sc.GBall == nil && sc.Track == nil {
+				return nil, fmt.Errorf("%s: slot %s needs \"png\" (the file to show), \"gball\" or \"track\"", path, name)
 			}
 			if b := sc.PNGBox; b != nil && (sc.PNG == "" || b.X < 0 || b.Y < 0 || b.Width < 1 || b.Height < 1) {
 				return nil, fmt.Errorf("%s: slot %s: png_box needs png, x/y >= 0 and width/height >= 1", path, name)
@@ -152,6 +176,21 @@ func loadConfig(path string) (*Config, error) {
 					return nil, fmt.Errorf("%s: slot %s: gball trail must be 0..%d", path, name, maxGBallTrail)
 				}
 			}
+			if tr := sc.Track; tr != nil {
+				if tr.Source == "" {
+					return nil, fmt.Errorf("%s: slot %s: track needs \"source\"", path, name)
+				}
+				if _, ok := c.Sources[tr.Source]; !ok {
+					return nil, fmt.Errorf("%s: slot %s: track source %q is not in sources", path, name, tr.Source)
+				}
+				if tr.Points < 0 || tr.Points > maxTrackPoints || (tr.MinMoveM != nil && *tr.MinMoveM < 0) {
+					return nil, fmt.Errorf("%s: slot %s: track points must be 0..%d (0 = default), min_move_m >= 0", path, name, maxTrackPoints)
+				}
+				if tr.X < 0 || tr.Y < 0 || tr.Width < 0 || tr.Width > maxImageWidth || tr.Height < 0 || tr.Height > maxImageHeight ||
+					(tr.Width != 0 && tr.Width < minTrackSize) || (tr.Height != 0 && tr.Height < minTrackSize) {
+					return nil, fmt.Errorf("%s: slot %s: track x and y must be >= 0, width %d..%d and height %d..%d (or left out)", path, name, minTrackSize, maxImageWidth, minTrackSize, maxImageHeight)
+				}
+			}
 			if sc.Fit != "" && sc.Fit != "contain" && sc.Fit != "none" {
 				return nil, fmt.Errorf("%s: slot %s: fit must be \"contain\" or \"none\"", path, name)
 			}
@@ -163,8 +202,8 @@ func loadConfig(path string) (*Config, error) {
 			if sc.Height < 0 || sc.Height > maxImageHeight || sc.Height%2 != 0 || (sc.Height != 0 && sc.Height < 2) {
 				return nil, fmt.Errorf("%s: slot %s: height must be an even number 2..%d (or left out)", path, name, maxImageHeight)
 			}
-		} else if sc.PNG != "" || sc.Fit != "" || sc.Width != 0 || sc.Height != 0 || sc.PNGBox != nil || sc.GBall != nil {
-			return nil, fmt.Errorf("%s: slot %s: png/fit/width/height/png_box/gball are for the imagefile slots", path, name)
+		} else if sc.PNG != "" || sc.Fit != "" || sc.Width != 0 || sc.Height != 0 || sc.PNGBox != nil || sc.GBall != nil || sc.Track != nil {
+			return nil, fmt.Errorf("%s: slot %s: png/fit/width/height/png_box/gball/track are for the imagefile slots", path, name)
 		}
 	}
 	for name, s := range c.Sources {
@@ -186,6 +225,8 @@ func validSlot(name string) bool {
 	return name == "textfile" || name == "textfile2" || name == "textfile3" || isImageSlot(name)
 }
 
-// isImageSlot - prudynt's two image overlays (e.g. a logo and a G-ball,
-// each placed on its own)
-func isImageSlot(name string) bool { return name == "imagefile" || name == "imagefile2" }
+// isImageSlot - prudynt's three image overlays (e.g. a logo, a G-ball and a
+// track map, each placed on its own)
+func isImageSlot(name string) bool {
+	return name == "imagefile" || name == "imagefile2" || name == "imagefile3"
+}

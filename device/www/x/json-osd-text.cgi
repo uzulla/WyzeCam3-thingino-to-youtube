@@ -13,11 +13,12 @@
 #            or null>, "config_error":...,
 #            "pool_size":<general.osd_pool_size in /etc/prudynt.json>,
 #            "live":<prudyntctl json osd.textfile/2/3/imagefile/2/burnin>,
-#            "texts":{"textfile":"...", ..., "imagefile": <bytes>, "imagefile2": <bytes>}
+#            "texts":{"textfile":"...", ..., "imagefile": <bytes>, "imagefile2": <bytes>, "imagefile3": <bytes>}
 #                     (current overlay files, null = none),
 #            "osd_feed_config": <osd-feed.json on the SD card or null>,
 #            "image_png" / "image2_png": <its slots.imagefile(2).png or null>,
 #            "image_gball" / "image2_gball": <its slots.imagefile(2).gball.source or null>,
+#            "image3_png" / "image3_track": <slots.imagefile3.png / .track.source or null>,
 #            "log":[...]}                     (last logread lines about textfile/osd-config)
 #   POST ?action=text&slot=1|2|3   body: the text (plain, ASCII)
 #        -> writes the slot's file (osd.textfileN.path) with the tmp + mv contract from
@@ -162,7 +163,7 @@ status)
 	mountpoint -q "$SD" || config_error='"SD card not mounted"'
 	pool=$(jct "$PRUDYNT_CONFIG" get general.osd_pool_size 2>/dev/null)
 	case "$pool" in "" | *[!0-9]*) pool=0 ;; esac
-	live=$(prudyntctl json '{"osd":{"textfile":null,"textfile2":null,"textfile3":null,"imagefile":null,"imagefile2":null,"burnin":null}}' 2>/dev/null)
+	live=$(prudyntctl json '{"osd":{"textfile":null,"textfile2":null,"textfile3":null,"imagefile":null,"imagefile2":null,"imagefile3":null,"burnin":null}}' 2>/dev/null)
 	case "$live" in "{"*) ;; *) live=null ;; esac
 	texts=""
 	for n in 1 2 3; do
@@ -176,7 +177,7 @@ status)
 	done
 	# The image slots' files are binary: report their size only (null = none)
 	[ "$live" != null ] && printf '%s' "$live" >"$TMP"
-	for slot in imagefile imagefile2; do
+	for slot in imagefile imagefile2 imagefile3; do
 		ip=""
 		[ "$live" != null ] && ip=$(jct "$TMP" get $slot.path 2>/dev/null)
 		[ -n "$ip" ] || ip=/run/prudynt/osd-image${slot#imagefile}
@@ -189,7 +190,7 @@ status)
 	# What osd-feed draws into each image slot (its config on the SD card), so
 	# the page can tell the user where to put the PNG and what the slot shows
 	feed_cfg=null
-	image_png=null image2_png=null image_gball=null image2_gball=null
+	image_png=null image2_png=null image_gball=null image2_gball=null image3_png=null image3_track=null
 	for fc in /mnt/mmcblk0p1/osd-feed.json; do
 		[ -f "$fc" ] || continue
 		feed_cfg="\"$fc\""
@@ -197,6 +198,8 @@ status)
 		v=$(jct "$fc" get slots.imagefile2.png 2>/dev/null) && [ -n "$v" ] && image2_png="\"$(json_escape "$v")\""
 		v=$(jct "$fc" get slots.imagefile.gball.source 2>/dev/null) && [ -n "$v" ] && image_gball="\"$(json_escape "$v")\""
 		v=$(jct "$fc" get slots.imagefile2.gball.source 2>/dev/null) && [ -n "$v" ] && image2_gball="\"$(json_escape "$v")\""
+		v=$(jct "$fc" get slots.imagefile3.png 2>/dev/null) && [ -n "$v" ] && image3_png="\"$(json_escape "$v")\""
+		v=$(jct "$fc" get slots.imagefile3.track.source 2>/dev/null) && [ -n "$v" ] && image3_track="\"$(json_escape "$v")\""
 	done
 	log=""
 	# The patched prudynt tags its warnings "textfile" / "imagefile" (reduced to / not shown)
@@ -205,7 +208,7 @@ status)
 	done <<EOF
 $(logread 2>/dev/null | grep -E 'textfile|imagefile|osd-config|osd-feed' | tail -n 12)
 EOF
-	send_json "{\"config_path\":\"$CONFIG\",\"config_source\":$config_source,\"config\":$config,\"config_error\":$config_error,\"pool_size\":$pool,\"live\":$live,\"texts\":{$texts},\"osd_feed_config\":$feed_cfg,\"image_png\":$image_png,\"image2_png\":$image2_png,\"image_gball\":$image_gball,\"image2_gball\":$image2_gball,\"log\":[$log]}"
+	send_json "{\"config_path\":\"$CONFIG\",\"config_source\":$config_source,\"config\":$config,\"config_error\":$config_error,\"pool_size\":$pool,\"live\":$live,\"texts\":{$texts},\"osd_feed_config\":$feed_cfg,\"image_png\":$image_png,\"image2_png\":$image2_png,\"image_gball\":$image_gball,\"image2_gball\":$image2_gball,\"image3_png\":$image3_png,\"image3_track\":$image3_track,\"log\":[$log]}"
 	;;
 
 text)

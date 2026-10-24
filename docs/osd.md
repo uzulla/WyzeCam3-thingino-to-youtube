@@ -65,6 +65,7 @@ echo 'REC' > /run/prudynt/osd-text2.tmp && mv /run/prudynt/osd-text2.tmp /run/pr
 | `osd.textfile3` | 右下 (-8, -8) | `/run/prudynt/osd-text3` | 24×2 |
 | `osd.imagefile` (画像、[下記](#画像-ロゴなど-を重ねる-osdimagefile)) | 右上 (-8, 8) | `/run/prudynt/osd-image` | 200×200 px |
 | `osd.imagefile2` (2 枚目の画像) | 右下、`textfile3` の上 (-8, -64) | `/run/prudynt/osd-image2` | 160×160 px |
+| `osd.imagefile3` (3 枚目の画像) | 左上 (8, 40) | `/run/prudynt/osd-image3` | 200×200 px |
 
 位置はどれも自由に変えられる (3 つの違いは既定値だけ)。矩形同士が重なった場合は番号の大きい方が手前。
 
@@ -99,6 +100,7 @@ Thingino の Web UI の Streamer メニュー → **OSD Settings** (`http://<cam
 - **Image** カードは `osd.imagefile` (有効、位置、幅・高さ)。**PNG を置く場所** (osd-feed.json の `slots.imagefile.png`、通常は SD カードの
   `logo.png`) と、prudynt が読む生ファイルの場所、ファイルの有無と大きさが合っているかを表示する。中身の変換は [osd-feed](osd-feed.md)
 - **G-ball** カードは `osd.imagefile2` (同じ項目)。osd-feed がそこに何を描くか (`slots.imagefile2` の G ボールや PNG) を表示する
+- **Track map** カードは `osd.imagefile3` (同じ項目)。osd-feed がそこに何を描くか (`slots.imagefile3` の走行図や PNG) を表示する
 - **prudynt-osd.json** 欄に、いま Save を押したら書かれる JSON がフォームに追従して出る。**Download** で
   `prudynt-osd.json` としてダウンロード、**Copy** でクリップボードへ (試した配置を PC に持ち帰る、別の SD カードに置く、
   `device/prudynt-osd.json.example` のように保存しておく、といった用途)。テキスト欄の中身はこの JSON には入らない
@@ -127,9 +129,9 @@ curl -s --data-binary @prudynt-osd.json "http://<camera-ip>/x/json-osd-text.cgi?
 
 ## 画像 (ロゴなど) を重ねる: `osd.imagefile`
 
-テキストの 3 枚とは別に、**ラスタ画像を 2 枚** (`osd.imagefile` と `osd.imagefile2`) 重ねられる。2 枚は別々に置ける
-(ロゴと [G ボール](osd-feed.md#racebox-の-g-ボールと速度) など)。下の表は `imagefile` のもので、`imagefile2` も同じキーを持つ
-(既定値だけ違う: `/run/prudynt/osd-image2`、160 × 160、右下の `textfile3` の上 (-8, -64))。prudynt が読むのは**ヘッダなしの生 BGRA** (1 画素 4 バイト、
+テキストの 3 枚とは別に、**ラスタ画像を 3 枚** (`osd.imagefile`、`osd.imagefile2`、`osd.imagefile3`) 重ねられる。3 枚は別々に置ける
+(ロゴと [G ボール](osd-feed.md#racebox-の-g-ボールと速度)、[走行図](osd-feed.md#racebox-の-gps-から走行図) など)。下の表は `imagefile` のもので、`imagefile2` / `imagefile3` も同じキーを持つ
+(既定値だけ違う: `imagefile2` は `/run/prudynt/osd-image2`、160 × 160、右下の `textfile3` の上 (-8, -64)。`imagefile3` は `/run/prudynt/osd-image3`、200 × 200、左上 (8, 40))。prudynt が読むのは**ヘッダなしの生 BGRA** (1 画素 4 バイト、
 B G R A の順、アルファはストレート) で、`width` × `height` × 4 バイトちょうどのファイル。PNG などのデコードは prudynt
 ではなく書き込み側がやる — [osd-feed](osd-feed.md) の `imagefile` スロットが SD カード上の透過 PNG を読んでこの形式に
 変換して置く (下記)。更新の契約はテキストと同じ: tmpfs に書いて `mv`、0.1 秒以内に反映、無い/空なら非表示。
@@ -142,18 +144,18 @@ B G R A の順、アルファはストレート) で、`width` × `height` × 4 
 | `width` / `height` | 200 / 200 | 大きさ (px)。**偶数のみ**、上限 1280 × 720。リージョンは常にこの大きさで確保され、ファイルはこの大きさ × 4 バイトでないと表示されない (`logread` に 1 回出る) |
 | `pos_x` / `pos_y` | -8 / 8 (右上) | 位置。0 以上は左/上端から、負の値は右/下端からの距離 |
 
-- OSD プールの予算はテキスト 3 枚の**後**に、`imagefile`、`imagefile2` の順で割り当てる。入らなければ**縮めずに表示しない** (切れた絵は意味が無い) で、
+- OSD プールの予算はテキスト 3 枚の**後**に、`imagefile`、`imagefile2`、`imagefile3` の順で割り当てる。入らなければ**縮めずに表示しない** (切れた絵は意味が無い) で、
   `logread | grep imagefile` に理由が出る。必要なプールは画像の `width × height × 4` + テキスト分 (`osd_pool_size` と
   同じ KiB 換算): 200 × 200 なら 156KB (既定のプールに入る)、640 × 360 で 900KB、**1280 × 720 で 3600KB (`osd_pool_size` 8192)**
-- 足りない時に消えるのは後ろの `imagefile2` から。G ボールを確実に出したいなら、ロゴを小さくするか `osd_pool_size` を上げる
+- 足りない時に消えるのは後ろの `imagefile3`、`imagefile2` の順。G ボールや走行図を確実に出したいなら、ロゴを小さくするか `osd_pool_size` を上げる
   (1 枚にまとめる場合は、G ボールとロゴが一緒に消える)
 - 映像 (720p なら 1280 × 720) より大きい画像は表示しない
 - prudynt は `osd.sei.enabled` と `osd.burnin.enabled` が**両方 false** だと OSD の処理自体を起動しない (テキストの節と同じ)。
   その構成で画像だけ出すなら `/etc/prudynt.json` に `osd.imagefile.enabled: true` を書いて起動する必要がある
   (SD の `prudynt-osd.json` は起動後に送られるので、それだけでは OSD オブジェクトが作られない)
-- 描画の順序はテキストの上 (重なったら画像が手前、`imagefile2` が一番手前)
+- 描画の順序はテキストの上 (重なったら画像が手前、番号の大きい方が手前で `imagefile3` が一番手前)
 - 設定は他のスロットと同じく `prudyntctl json '{"osd":{"imagefile":{...}}}'`、`prudynt-osd.json`、[Web UI](#web-ui-から編集する) の
-  Image / G-ball カードから。`prudynt-osd.json` から `imagefile` (`imagefile2`) のブロックを消すと `osd-config` が無効に戻す
+  Image / G-ball / Track map カードから。`prudynt-osd.json` から `imagefile` (`imagefile2`、`imagefile3`) のブロックを消すと `osd-config` が無効に戻す
 
 ![ロゴ 200×200 (右上)](images/osd-image-logo.jpg)
 
@@ -191,7 +193,7 @@ cat /tmp/osd-image.raw | ssh root@<camera-ip> 'cat > /run/prudynt/osd-image.tmp 
 | `background_color` | `#00000080` | 背景ボックスの色。alpha が 0 なら背景なし |
 
 - prudynt は `osd.sei.enabled` と `osd.burnin.enabled` が**両方 false** だと OSD の処理自体を起動しない。その構成で
-  テキスト (や画像) だけ出したい時は、`/etc/prudynt.json` に `osd.textfile.enabled: true` (または `textfile2` / `textfile3` / `imagefile` / `imagefile2`) を書いて
+  テキスト (や画像) だけ出したい時は、`/etc/prudynt.json` に `osd.textfile.enabled: true` (または `textfile2` / `textfile3` / `imagefile` / `imagefile2` / `imagefile3`) を書いて
   起動する必要がある (実行中に `prudyntctl json` で有効化しても出ない)。どちらかが true なら (既定は両方 true)
   実行中に有効化できる
 - `path` と色の変更が映像に出るまで最大 1 秒かかる (文字列の設定は 1 秒に 1 回だけ読み直す。ファイルの中身の

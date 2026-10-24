@@ -70,7 +70,7 @@ device/install-osd-feed.sh root@<camera-ip>       # SD にバイナリと (無�
 | `interval_ms` | 描く間隔 (既定 250、下限 100)。prudynt 側がファイルを見るのは 100ms ごとなので、それより短くしても速くならない |
 | `clear_on_exit` | 終了時にスロットのファイルを消す (既定 true) |
 | `sources.<名前>` | データ源。`type` と `interval_ms` (取得間隔、既定 1000)、type ごとの項目 (下表)。名前はテンプレートから `.<名前>.<キー>` で参照する |
-| `slots.imagefile` / `slots.imagefile2` | 画像スロット ([osd.md](osd.md#画像-ロゴなど-を重ねる-osdimagefile))。2 枚は別々に置ける (ロゴと G ボールなど)。`png` (SD カード上の透過 PNG)、`fit` (`contain` = 縮めて収める・拡大はしない・中央配置、`none` = そのまま中央に置き、はみ出た分は切る。既定 `contain`)、`png_box` (PNG を置く場所 `{"x","y","width","height"}`。既定はスロット全体)、`gball` ([G ボール](#racebox-の-g-ボールと速度))。`png` と `gball` の少なくとも一方が要る。`width` / `height` / `path` は普通は書かない (prudynt から読む) |
+| `slots.imagefile` / `slots.imagefile2` / `slots.imagefile3` | 画像スロット ([osd.md](osd.md#画像-ロゴなど-を重ねる-osdimagefile))。3 枚は別々に置ける (ロゴ、G ボール、走行図など)。`png` (SD カード上の透過 PNG)、`fit` (`contain` = 縮めて収める・拡大はしない・中央配置、`none` = そのまま中央に置き、はみ出た分は切る。既定 `contain`)、`png_box` (PNG を置く場所 `{"x","y","width","height"}`。既定はスロット全体)、`gball` ([G ボール](#racebox-の-g-ボールと速度))、`track` ([走行図](#racebox-の-gps-から走行図))。`png`、`gball`、`track` の少なくとも 1 つが要る。`width` / `height` / `path` は普通は書かない (prudynt から読む) |
 | `slots.<スロット>` | `textfile` / `textfile2` / `textfile3`。`template` は Go の text/template。`path` / `cols` / `rows` は普通は書かない: 起動時と以後 30 秒ごとに prudynt から読んで追従する (Web UI で大きさを変えれば 30 秒以内に切る幅も変わる。prudynt が答えない時は docs/osd.md の既定値)。**ここに書いた値は prudynt の値より常に優先される**ので、Web UI で変えたのに反映されない時はここに古い値が残っていないか見る |
 
 ### source の種類
@@ -186,6 +186,46 @@ LAN (同じブロードキャストドメイン) にあること。
   - 画像は玉と軌跡の周りだけ描き直す。スロット全体 (200×242、189KB) を毎回複製すると、それだけで osd-feed が 8% を超えた
   - JSON は自前の読み取り (`flatjson.go`)。Go の `encoding/json` はこのカメラで RaceBox 1 件 (約 600 バイト) に 3.4ms
     かかり (自前は 0.5ms)、1 秒 25 件をすべて読むと数 % になる。さらに読むのは取得のたびの最新 1 件だけ
+
+### RaceBox の GPS から走行図
+
+同じ esp32-racebox の緯度・経度を 3 枚目の画像スロット (`imagefile3`) に**走行図**として描く。地図は持たず、走った位置を
+点で積み上げるだけ。一周 2〜3 分のサーキットなら、数周 (5〜10 分) 走ると軌跡だけでコースの形になる。古い点は
+`points` 個を超えた分から消える (G ボールの軌跡と同じ考え方)。描く範囲は、残っている点の緯度・経度の最小〜最大 (北が上、
+縦横同じ縮尺)。位置は Web UI の OSD Settings の **Track map** カードで動かせる。
+
+osd-feed.json の `slots` に足す (source は G ボールと同じ `racebox`):
+
+```json
+"imagefile3": { "track": { "source": "racebox" } }
+```
+
+`prudynt-osd.json` (SD) 側:
+
+```json
+"imagefile3": { "enabled": true, "width": 200, "height": 200, "pos_x": 8, "pos_y": 40 }
+```
+
+![RaceBox の GPS から走行図 (右上、ダミーの GPS で 1 周 60 秒のコースを数周)](images/osd-track.jpg)
+
+白い点が走った跡、赤い点が今の位置。データが来ない間 (`stale_ms`) は赤い点だけ消し、走行図は残す。
+
+| キー | 既定値 | 意味 |
+|---|---|---|
+| `source` | (必須) | 値を取る source |
+| `lat` / `lon` | `lat` / `lon` | 緯度・経度 (度) のキー。既定は esp32-racebox |
+| `valid` | `latlon_valid` | これが false の位置は描かない (GPS が測位できていない)。source にこのキーが無ければ全部描く |
+| `points` | 6000 | 残す点の数 (36000 まで)。描き直しの間隔 (`interval_ms`) ごとに 1 点なので、100ms なら 6000 点で 10 分 |
+| `min_move_m` | 3 | 前の点からこれ (m) 未満しか動いていなければ点を足さない。ピットで止まっている間に `points` を使い切らないため (0 で毎回足す) |
+| `x` / `y` / `width` / `height` | 0 / 0 / 残り全部 | スロット内の位置と大きさ (px、32 以上) |
+
+- 描く範囲は、はみ出す点が来た時に余白 (幅の 10%) を付けて広げ、古い点が消えて範囲が十分小さくなったら縮める。
+  範囲が変わった時だけ全部の点を描き直し、普段は増えた点と消えた点の画素だけ描き直す。範囲は最小でも 100m 四方
+- 前の点から 20km 以上離れた位置が来たら (別のサーキットに移った)、それまでの点を捨てて描き直す
+- 点は osd-feed のメモリにだけあるので、osd-feed の再起動や、スロットの大きさを変えた時は最初から描き直しになる
+- 負荷 (720p 配信中、RaceBox 形式のダミーを 20 件/秒、上の G ボール・速度と同時、200×200): 走行図ありで osd-feed **4.5%**、prudynt 10.0%、
+  走行図なしで osd-feed 3.4%、prudynt 9.1%。走行図の分は合わせて約 2%。osd-feed は増えた点と動いた赤い点の周りしか
+  描き直さないが、赤い点が毎回動くので、スロットのファイル (156KB) は毎回書き直され、prudynt はそれを毎回読む
 
 ### 外部データを足す
 

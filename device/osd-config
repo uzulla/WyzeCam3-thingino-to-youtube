@@ -72,7 +72,7 @@ send() {
 }
 
 # send_off <slots> - turn them off. prudynt answering {} is fine here: it does
-# not know those slots (a prudynt without imagefile2, say), so they are not on.
+# not know those slots (a prudynt without imagefile2 / imagefile3, say), so they are not on.
 # Counting that as a failure kept the slot in "managed" for good, and every
 # later config change waited for it.
 send_off() {
@@ -91,10 +91,10 @@ known_slots() {
 	printf '%s' "$k"
 }
 
-# Slots (textfile, textfile2, textfile3, imagefile, imagefile2) that the config file mentions:
+# Slots (textfile, textfile2, textfile3, imagefile, imagefile2, imagefile3) that the config file mentions:
 # only those are ours to turn off again when the file goes away.
 slots_in() {
-	for slot in textfile textfile2 textfile3 imagefile imagefile2; do
+	for slot in textfile textfile2 textfile3 imagefile imagefile2 imagefile3; do
 		case $(jct "$1" get "osd.$slot" 2>/dev/null) in "{"*) printf '%s ' "$slot" ;; esac
 	done
 }

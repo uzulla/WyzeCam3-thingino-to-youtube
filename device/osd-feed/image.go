@@ -12,7 +12,7 @@ import (
 	"time"
 )
 
-// ImageSlot is one of prudynt's image overlays (osd.imagefile, osd.imagefile2):
+// ImageSlot is one of prudynt's image overlays (osd.imagefile, imagefile2, imagefile3):
 // a raw BGRA file of exactly
 // Width x Height pixels (straight alpha, no header; docs/osd.md). The PNG
 // named in the config is decoded here, fitted into that size and converted;
@@ -23,13 +23,14 @@ type ImageSlot struct {
 	Path   string
 	Width  int
 	Height int
-	PNG    string // "" when the slot only has a G-ball
+	PNG    string // "" when the slot only has a G-ball or a track map
 	Fit    string // "contain" (default) or "none"
 	box    *Box   // where the PNG goes; nil = the whole slot
 
 	pending bool // the slot file does not match the picture yet (main's loop)
 
 	gcfg    *GBallConfig
+	tcfg    *TrackConfig
 	widgets []widget // made for the current size on first use (nil: to be made)
 	base    []byte   // PNG + the widgets' static parts (nil = to be redone)
 	frame   []byte   // base + the widgets as last drawn; what render returns
@@ -78,7 +79,7 @@ func (s *ImageSlot) wrote() {
 
 func newImageSlot(name string, cfg SlotConfig, geo SlotGeometry) *ImageSlot {
 	s := &ImageSlot{Name: name, Path: geo.Path, Width: geo.Width, Height: geo.Height, PNG: cfg.PNG, Fit: cfg.Fit,
-		box: cfg.PNGBox, gcfg: cfg.GBall, pending: true}
+		box: cfg.PNGBox, gcfg: cfg.GBall, tcfg: cfg.Track, pending: true}
 	if s.Fit == "" {
 		s.Fit = "contain"
 	}
@@ -126,7 +127,7 @@ func (s *ImageSlot) follow(geo SlotGeometry, cfg SlotConfig) bool {
 // still show. The composed bytes are the slot's own buffer: valid until the
 // next call.
 func (s *ImageSlot) render(data map[string]any) (pix []byte, changed bool, err error) {
-	if s.gcfg == nil && s.box == nil {
+	if s.gcfg == nil && s.tcfg == nil && s.box == nil {
 		return s.renderPNG()
 	}
 	var png []byte
@@ -192,6 +193,19 @@ func (s *ImageSlot) makeWidgets() []widget {
 		}
 		if size >= minGBallSize {
 			ws = append(ws, newGBall(*g, size))
+		}
+	}
+	if t := s.tcfg; t != nil {
+		w, h := t.Width, t.Height
+		if w == 0 {
+			w = s.Width - t.X
+		}
+		if h == 0 {
+			h = s.Height - t.Y
+		}
+		w, h = min(w, s.Width-t.X), min(h, s.Height-t.Y)
+		if w >= minTrackSize && h >= minTrackSize {
+			ws = append(ws, newTrack(*t, t.X, t.Y, w, h))
 		}
 	}
 	return ws
