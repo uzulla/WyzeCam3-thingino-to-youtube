@@ -29,7 +29,12 @@ fi
 . "$HERE/common.sh"
 check_camera "$CAM"
 
-ours=$(md5sum "$HERE/agent-adapter" | cut -d' ' -f1)
+# hashed on the PC (md5sum, or macOS md5 -r which prints the same "hash file" form)
+ours=$( (md5sum "$HERE/agent-adapter" 2>/dev/null || md5 -r "$HERE/agent-adapter" 2>/dev/null) | cut -d' ' -f1)
+if [ -z "$ours" ]; then
+	echo "Cannot hash device/agent-adapter (needs md5sum or md5 on this PC) - nothing was changed" >&2
+	exit 1
+fi
 current=$(ssh "$CAM" "md5sum $ADAPTER 2>/dev/null | cut -d' ' -f1")
 case "$current" in
 "$ours")

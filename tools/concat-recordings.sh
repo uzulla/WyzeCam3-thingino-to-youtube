@@ -24,18 +24,25 @@ mkdir -p "$WORK/v" "$WORK/a"
 : >"$WORK/v.txt"
 : >"$WORK/a.txt"
 
-n=0
-for f in $(find "$DIR" -name '*.mp4' | sort); do
-	b=$(basename "$f")
+# Clips are numbered in sorted path order: the recorder's file names repeat
+# across days (%Y/%m/%d/%H-%M-%S), so the basename alone is not unique. The
+# concat lists use paths relative to the list file, so $WORK needs no quoting.
+i=0
+find "$DIR" -name '*.mp4' -print | sort | while IFS= read -r f; do
+	i=$((i + 1))
+	b=$(printf '%06d.mp4' "$i")
 	ffmpeg -v error -y -i "$f" -map 0:v -c copy -avoid_negative_ts make_zero "$WORK/v/$b"
 	ffmpeg -v error -y -i "$f" -map 0:a -c copy -avoid_negative_ts make_zero "$WORK/a/$b"
-	# audio span of this clip = offset for the next clip in both tracks
-	dur=$(ffprobe -v error -select_streams a:0 -show_entries packet=pts_time -of csv "$WORK/a/$b" |
-		awk -F, '{last=$2; n++} END{printf "%.3f", last + 0.064}')
-	printf "file '%s'\nduration %s\n" "$WORK/v/$b" "$dur" >>"$WORK/v.txt"
-	printf "file '%s'\nduration %s\n" "$WORK/a/$b" "$dur" >>"$WORK/a.txt"
-	n=$((n + 1))
+	# audio span of this clip (last packet's pts + its duration) = offset for
+	# the next clip in both tracks. Falls back to one AAC frame (1024 samples)
+	# when ffprobe gives no packet duration.
+	sr=$(ffprobe -v error -select_streams a:0 -show_entries stream=sample_rate -of csv=p=0 "$WORK/a/$b")
+	dur=$(ffprobe -v error -select_streams a:0 -show_entries packet=pts_time,duration_time -of csv=p=0 "$WORK/a/$b" |
+		awk -F, -v sr="${sr:-16000}" '{last=$1; d=$2} END{if (d !~ /^[0-9.]+$/) d = 1024 / sr; printf "%.3f", last + d}')
+	printf "file 'v/%s'\nduration %s\n" "$b" "$dur" >>"$WORK/v.txt"
+	printf "file 'a/%s'\nduration %s\n" "$b" "$dur" >>"$WORK/a.txt"
 done
+n=$(grep -c '^file ' "$WORK/v.txt") || true
 [ "$n" -gt 0 ] || { echo "no .mp4 files under $DIR" >&2; exit 1; }
 
 ffmpeg -v error -y -f concat -safe 0 -i "$WORK/v.txt" -c copy "$WORK/v-all.mp4"
