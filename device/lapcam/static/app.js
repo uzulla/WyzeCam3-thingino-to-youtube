@@ -1,4 +1,4 @@
-// webui app: one page, plain JS. Talks to /api/* (webui's Go server).
+// lapcam app: one page, plain JS. Talks to /api/* (lapcam's Go server).
 (() => {
   "use strict";
   const $ = (id) => document.getElementById(id);
@@ -26,7 +26,7 @@
     return data;
   }
 
-  window.webui = { api };
+  window.lapcam = { api };
 
   // --- screens -------------------------------------------------------------
   function showLogin() {
@@ -105,7 +105,7 @@
       $("preview").classList.add("hidden");
       $("preview-video").classList.remove("hidden");
       window.livePlayer.start($("preview-video"), "/api/preview.mp4", (why) => {
-        if (why === "HTTP 401") { showLogin(); return; } // the session is gone (webui restarted): sign in again
+        if (why === "HTTP 401") { showLogin(); return; } // the session is gone (lapcam restarted): sign in again
         console.warn("video preview failed:", why);
         if (!PERMANENT.test(why) && videoRetries < VIDEO_RETRIES) {
           // a hiccup (encoder restart, Wi-Fi, a slot taken): try the video again shortly

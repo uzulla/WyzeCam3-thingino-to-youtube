@@ -39,7 +39,7 @@ type recState struct {
 	Active    bool   `json:"active"`
 	Path      string `json:"path,omitempty"`      // the file being written
 	Segment   int    `json:"segment_s,omitempty"` // seconds per file
-	Elapsed   int    `json:"elapsed_s"`           // since webui first saw it recording
+	Elapsed   int    `json:"elapsed_s"`           // since lapcam first saw it recording
 	Mount     string `json:"mount"`
 	SDMounted bool   `json:"sd_mounted"`
 	FreeMB    int64  `json:"free_mb"`

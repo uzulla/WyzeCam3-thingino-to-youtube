@@ -43,7 +43,7 @@ var osdElements = []string{"burnin", "textfile", "textfile2", "textfile3", "imag
 func isText(name string) bool  { return strings.HasPrefix(name, "textfile") }
 func isImage(name string) bool { return strings.HasPrefix(name, "imagefile") }
 
-// osdElem - the fields webui edits; pointers so that "not given" is distinct
+// osdElem - the fields lapcam edits; pointers so that "not given" is distinct
 type osdElem struct {
 	Enabled *bool `json:"enabled,omitempty"`
 	PosX    *int  `json:"pos_x,omitempty"`

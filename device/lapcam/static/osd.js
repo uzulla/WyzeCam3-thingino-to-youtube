@@ -3,7 +3,7 @@
 (() => {
   "use strict";
   const $ = (id) => document.getElementById(id);
-  const api = (...a) => window.webui.api(...a);
+  const api = (...a) => window.lapcam.api(...a);
   const SNAP = 20; // px (stream pixels) from an edge to snap to the 8 px margin
   const MARGIN = 8;
 

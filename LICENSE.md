@@ -35,13 +35,13 @@ releases. Everything is available free of charge.
 
 | | v1.0.0 | v1.1.0 |
 |---|---|---|
-| Release page | [v1.0.0](https://github.com/uzulla/WyzeCam3-thingino-to-youtube/releases/tag/v1.0.0) | [v1.1.0](https://github.com/uzulla/WyzeCam3-thingino-to-youtube/releases/tag/v1.1.0) |
+| Release page | [v1.0.0](https://github.com/uzulla/lapcam/releases/tag/v1.0.0) | [v1.1.0](https://github.com/uzulla/lapcam/releases/tag/v1.1.0) |
 | FFmpeg source | [ffmpeg-8.0.1.tar.xz](https://ffmpeg.org/releases/ffmpeg-8.0.1.tar.xz), **unmodified** | same |
 | Changes to FFmpeg | none | none |
-| Build recipe (thingino-firmware) | [`c334a03`](https://github.com/themactep/thingino-firmware/tree/c334a03), `package/thingino-ffmpeg/thingino-ffmpeg.mk` with [`patches/thingino-ffmpeg-rtmps.diff` @ v1.0.0](https://github.com/uzulla/WyzeCam3-thingino-to-youtube/blob/v1.0.0/patches/thingino-ffmpeg-rtmps.diff) applied | [`da40db6`](https://github.com/themactep/thingino-firmware/tree/da40db6), same file with [the patch @ v1.1.0](https://github.com/uzulla/WyzeCam3-thingino-to-youtube/blob/v1.1.0/patches/thingino-ffmpeg-rtmps.diff) |
+| Build recipe (thingino-firmware) | [`c334a03`](https://github.com/themactep/thingino-firmware/tree/c334a03), `package/thingino-ffmpeg/thingino-ffmpeg.mk` with [`patches/thingino-ffmpeg-rtmps.diff` @ v1.0.0](https://github.com/uzulla/lapcam/blob/v1.0.0/patches/thingino-ffmpeg-rtmps.diff) applied | [`da40db6`](https://github.com/themactep/thingino-firmware/tree/da40db6), same file with [the patch @ v1.1.0](https://github.com/uzulla/lapcam/blob/v1.1.0/patches/thingino-ffmpeg-rtmps.diff) |
 | Buildroot (thingino-firmware submodule) | [`313414b`](https://github.com/buildroot/buildroot/tree/313414b92c2501a2bc123ffa1b6383dca464de05) | [`d518030`](https://github.com/buildroot/buildroot/tree/d5180309b1b66ef3b8eaccca70ad69be8e0729a1) |
 | mbedTLS (linked dynamically against the camera's `/lib/libmbedtls.so`) | mbedTLS 3.6.6 as built by Buildroot's `package/mbedtls` at the commit above; source: [mbedtls-3.6.6](https://github.com/Mbed-TLS/mbedtls/releases/tag/mbedtls-3.6.6) | same |
-| Build steps as written at the time | [README @ v1.0.0, "ビルド手順"](https://github.com/uzulla/WyzeCam3-thingino-to-youtube/blob/v1.0.0/README.md#ビルド手順) | [README @ v1.1.0, "ビルド手順"](https://github.com/uzulla/WyzeCam3-thingino-to-youtube/blob/v1.1.0/README.md#ビルド手順) |
+| Build steps as written at the time | [README @ v1.0.0, "ビルド手順"](https://github.com/uzulla/lapcam/blob/v1.0.0/README.md#ビルド手順) | [README @ v1.1.0, "ビルド手順"](https://github.com/uzulla/lapcam/blob/v1.1.0/README.md#ビルド手順) |
 
 Notes:
 

@@ -1,6 +1,6 @@
 package main
 
-// Preview, two ways (docs/webui.md): prudynt's MJPEG (:8080/mjpeg, 5 fps,
+// Preview, two ways (docs/lapcam.md): prudynt's MJPEG (:8080/mjpeg, 5 fps,
 // JPEG channel), relayed and thinned to the fps the client asked for, which
 // every browser shows in an <img>; and prudynt's fragmented MP4 (:8080/ch0.mp4,
 // the stream as it goes to YouTube), relayed byte for byte for the page's

@@ -3,7 +3,7 @@
 (() => {
   "use strict";
   const $ = (id) => document.getElementById(id);
-  const api = (...a) => window.webui.api(...a);
+  const api = (...a) => window.lapcam.api(...a);
   const CLIP_STEPS = [30, 60, 120, 300, 600, 900, 1800, 3600];
   let data = null;
   let pendingDelete = null; // path waiting for the second tap

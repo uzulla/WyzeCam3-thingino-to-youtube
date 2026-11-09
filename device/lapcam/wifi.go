@@ -472,9 +472,9 @@ func (s *server) getWifiNote() string {
 	return s.wifiNote
 }
 
-// backupOnce - copy path to path.before-webui unless that exists already
+// backupOnce - copy path to path.before-lapcam unless that exists already
 func backupOnce(path string) {
-	bak := path + ".before-webui"
+	bak := path + ".before-lapcam"
 	if exists(bak) {
 		return
 	}

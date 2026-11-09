@@ -1,12 +1,12 @@
 #!/bin/sh
 # wifi-ap - turn the camera into an open Wi-Fi access point until the next
-# reboot (docs/webui.md). Install to /usr/sbin/wifi-ap (chmod +x); run by the
+# reboot (docs/lapcam.md). Install to /usr/sbin/wifi-ap (chmod +x); run by the
 # button (hold 5 s, see install-wifi-ap.sh) or by hand.
 #
 # For the track, when the saved Wi-Fi is not there: the phone joins "Wyze-cam"
 # (no password: the user's choice, recovery only; whoever is in range can join
 # and see the traffic, so do not type the password near others for long) and
-# opens http://100.64.1.1/ (the app's port, read from webui.args) to fix the
+# opens http://100.64.1.1/ (the app's port, read from lapcam.args) to fix the
 # Wi-Fi settings. Thingino's S38wpa_supplicant already knows how to run an
 # access point (a config with mode=2: 100.64.1.1/24, DHCP, DNS), so this only
 # swaps the config file for the moment it starts, then puts the saved networks
@@ -19,7 +19,7 @@ CONF=/etc/wpa_supplicant.conf
 KEEP=/etc/wpa_supplicant.conf.station
 INIT=/etc/init.d/S38wpa_supplicant
 AP_IP=100.64.1.1 # WLANAP_IP of S38wpa_supplicant
-port=$(sed -n 's/.*-listen *[^:]*:\([0-9]*\).*/\1/p' /mnt/mmcblk0p1/webui.args 2>/dev/null | head -n 1)
+port=$(sed -n 's/.*-listen *[^:]*:\([0-9]*\).*/\1/p' /mnt/mmcblk0p1/lapcam.args 2>/dev/null | head -n 1)
 case "$port" in "" | 80) URL="http://$AP_IP/" ;; *) URL="http://$AP_IP:$port/" ;; esac
 
 log() { logger -p daemon.info -t wifi-ap "$1"; }

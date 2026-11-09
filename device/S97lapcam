@@ -1,21 +1,21 @@
 #!/bin/sh
-# Start/stop webui (docs/webui.md): the phone-first web app of this repo that
+# Start/stop lapcam (docs/lapcam.md): the phone-first web app of this repo that
 # replaces Thingino's web UI (preview, YouTube stream, OSD, SD recording,
 # Wi-Fi). The binary lives on the SD card:
-#   /mnt/mmcblk0p1/webui        (built with device/webui/build.sh)
-#   /mnt/mmcblk0p1/webui.args   (one line of options; install-webui.sh writes
+#   /mnt/mmcblk0p1/lapcam        (built with device/lapcam/build.sh)
+#   /mnt/mmcblk0p1/lapcam.args   (one line of options; install-lapcam.sh writes
 #                                "-listen :80")
 # With "-listen :80" this script stops Thingino's web server uhttpd (S60uhttpd,
 # ports 80/443) right before starting the app, and starts uhttpd again when the
 # app is stopped. uhttpd itself stays enabled: a camera without the SD card or
 # the binary keeps Thingino's UI instead of having none.
 # Runs in portal / access point mode too: it is the only UI then.
-# Install to /etc/init.d/S97webui (chmod +x). service enable/disable webui.
+# Install to /etc/init.d/S97lapcam (chmod +x). service enable/disable lapcam.
 
-DAEMON="webui"
+DAEMON="lapcam"
 SD="/mnt/mmcblk0p1"
-DAEMON_PATH="$SD/webui"
-ARGS_FILE="$SD/webui.args"
+DAEMON_PATH="$SD/lapcam"
+ARGS_FILE="$SD/lapcam.args"
 PIDFILE="/run/$DAEMON.pid"
 
 # takes_port_80 <args> - does the app serve on port 80 (uhttpd's port)?
@@ -61,7 +61,7 @@ start() {
 			return 1
 		fi
 	fi
-	# -N 5: below prudynt/ISP, above nothing important. -syslog: logread | grep webui
+	# -N 5: below prudynt/ISP, above nothing important. -syslog: logread | grep lapcam
 	# shellcheck disable=SC2086
 	if start-stop-daemon -S -b -m -N 5 -p "$PIDFILE" -x "$DAEMON_PATH" -- -syslog $args; then
 		echo "OK"
@@ -96,7 +96,7 @@ stop() {
 	rm -f "$PIDFILE"
 	args=""
 	[ -f "$ARGS_FILE" ] && args=$(head -n 1 "$ARGS_FILE" | tr -d '\r')
-	if takes_port_80 "$args" && [ -x /etc/init.d/S60uhttpd ] && [ ! -f /run/webui-restarting ]; then
+	if takes_port_80 "$args" && [ -x /etc/init.d/S60uhttpd ] && [ ! -f /run/lapcam-restarting ]; then
 		sh /etc/init.d/S60uhttpd start >/dev/null 2>&1 # Thingino's UI is back
 	fi
 }
@@ -105,9 +105,9 @@ case "$1" in
 	start) start ;;
 	stop) stop ;;
 	restart)
-		touch /run/webui-restarting # no uhttpd in between
-		stop || { rm -f /run/webui-restarting; exit 1; }
-		rm -f /run/webui-restarting
+		touch /run/lapcam-restarting # no uhttpd in between
+		stop || { rm -f /run/lapcam-restarting; exit 1; }
+		rm -f /run/lapcam-restarting
 		start
 		;;
 	status)

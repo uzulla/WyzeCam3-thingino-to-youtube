@@ -3,7 +3,7 @@
 (() => {
   "use strict";
   const $ = (id) => document.getElementById(id);
-  const api = (...a) => window.webui.api(...a);
+  const api = (...a) => window.lapcam.api(...a);
   let data = null;   // {current, networks, sd_copy}
   let edit = null;   // networks being edited [{ssid, priority, open, has_psk, psk?}]
   let scan = null;   // [{ssid, signal_dbm, secure}]

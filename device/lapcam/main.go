@@ -1,14 +1,14 @@
-// webui - a small web app for the camera, made for a phone at the track
-// (docs/webui.md): live preview, start/stop the YouTube stream and the SD
+// lapcam - a small web app for the camera, made for a phone at the track
+// (docs/lapcam.md): live preview, start/stop the YouTube stream and the SD
 // recording, flip the picture, see the state of the camera. One static Go
-// binary on the SD card, started by /etc/init.d/S97webui.
+// binary on the SD card, started by /etc/init.d/S97lapcam.
 //
-//	webui [-listen :8000] [-sd /mnt/mmcblk0p1] [-prudynt http://127.0.0.1:8080] [-syslog] [-check]
+//	lapcam [-listen :8000] [-sd /mnt/mmcblk0p1] [-prudynt http://127.0.0.1:8080] [-syslog] [-check]
 //
 // It changes nothing by itself: every action is what the existing scripts do
 // (record, /etc/init.d/S93youtube-relay, service, prudyntctl) and every
 // setting lives where it lived before (youtube-relay.json, prudynt-osd.json
-// on the SD card). Its own file is webui.json next to them (stream profiles).
+// on the SD card). Its own file is lapcam.json next to them (stream profiles).
 package main
 
 import (
@@ -47,7 +47,7 @@ type server struct {
 
 func main() {
 	listen := flag.String("listen", ":8000", "address to serve on")
-	sd := flag.String("sd", "/mnt/mmcblk0p1", "SD card mount (youtube-relay.json, prudynt-osd.json, webui.json live there)")
+	sd := flag.String("sd", "/mnt/mmcblk0p1", "SD card mount (youtube-relay.json, prudynt-osd.json, lapcam.json live there)")
 	prudynt := flag.String("prudynt", "http://127.0.0.1:8080", "prudynt's HTTP API, for the preview")
 	toSyslog := flag.Bool("syslog", false, "log to the syslog (logread) instead of stderr; the init script sets this")
 	shadow := flag.String("shadow", shadowFile, "the shadow file holding root's password hash (for testing with another file)")
@@ -56,7 +56,7 @@ func main() {
 	log.SetFlags(0)
 	shadowFile = *shadow
 	if *toSyslog {
-		if w, err := syslog.New(syslog.LOG_DAEMON|syslog.LOG_INFO, "webui"); err == nil {
+		if w, err := syslog.New(syslog.LOG_DAEMON|syslog.LOG_INFO, "lapcam"); err == nil {
 			log.SetOutput(w)
 		} else {
 			log.Printf("syslog not available (%v), logging to stderr", err)
@@ -75,7 +75,7 @@ func main() {
 	}
 	s.status = newStatusPoller(s.relay, s.rec, 2*time.Second)
 	if !*check {
-		s.sessions.persistTo("/run/webui-sessions.json")
+		s.sessions.persistTo("/run/lapcam-sessions.json")
 	}
 
 	if *check {
