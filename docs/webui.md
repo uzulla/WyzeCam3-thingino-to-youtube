@@ -18,13 +18,13 @@ device/install-webui.sh root@<camera-ip>   # SD カードにバイナリ、overl
 ```
 
 スマホのブラウザで `http://<camera-ip>/` を開き、カメラの root パスワード (Thingino の Web UI や ssh と同じ)
-でサインインする。ブラウザにパスワードを記憶させれば次回からは 1 タップ。サインインは 30 日残る (webui の再起動で消える)。
+でサインインする。ブラウザにパスワードを記憶させれば次回からは 1 タップ。サインインは 30 日残る (webui の再起動では消えない。カメラの再起動とパスワード変更で消える)。
 
 画面は下のタブで切り替える (Camera / OSD / Stream / Recordings / Wi-Fi)。
 
 | 画面 | できること |
 |---|---|
-| プレビュー (Camera) | 配信しているのと同じ映像 (OSD 込み)。既定は **Video** (prudynt の fMP4 を MediaSource で再生、配信と同じ 10 fps でなめらか。Android と PC、新しめの iPhone)。右の **Video / Pictures** ボタンで MJPEG 4 fps の静止画連続に切り替えられ (どのブラウザでも動く、軽い)、Video が動かないブラウザでは自動で Pictures になる。選択はスマホに記憶。同時に見られるのは 3 台まで。他のタブや裏に回った時は止まる。その下の行に、配信中は LIVE と経過時間、録画中は REC と経過時間 (映像には重ねない) |
+| プレビュー (Camera) | 配信しているのと同じ映像 (OSD 込み)。既定は **Video** (prudynt の fMP4 を MediaSource で再生、配信と同じ fps でなめらか。Android と PC、新しめの iPhone)。右の **Video / Pictures** ボタンで MJPEG 4 fps の静止画連続に切り替えられ (どのブラウザでも動く、軽い)、Video が動かないブラウザでは自動で Pictures になる (カメラや Wi-Fi の一時的な不調は 3 秒後に 2 回まで Video をやり直してから)。選択はスマホに記憶。同時に見られるのは 3 台まで。他のタブや裏に回った時は止まる。その下の行に、配信中は LIVE と経過時間、録画中は REC と経過時間 (映像には重ねない) |
 | Go live / Stop live | 配信 (youtube-relay) の開始・停止。停止は 3 秒以内にもう 1 回タップ (誤操作よけ) |
 | Record / Stop recording | SD 録画の開始・停止 (Rec ボタンや本体ボタンと同じ `record` コマンド)。停止も 2 回タップ |
 | Stream | エンコーダの fps と kb/s、Wi-Fi の送信 kb/s (全部の通信)、webui 起動後の ffmpeg 再起動回数 |
@@ -76,13 +76,15 @@ AP になっている間は Camera 画面の上に黄色い帯が出る。自動
   見えるので、AP の間はパスワードの入力を手短に。API への書き込みは同一サイトからの JSON (ロゴだけ multipart) に限り、
   他のサイトからブラウザ経由で操作させない (CSRF 対策)。ページは iframe に入れられない
 - 認証: `/etc/shadow` の root の `$6$` (SHA-512 crypt) を Go で検証する (`sha512crypt.go`、仕様のテストベクタで確認)。
-  間違えると 1.5 秒待たせ、同時に 1 件しか試せない。セッションはメモリ上のトークン (Cookie、HttpOnly)
+  間違えると 1.5 秒待たせ、同じアドレスから 1 分に 5 回間違えると以後は即 429。セッションのトークンは Cookie (HttpOnly) にだけあり、
+  カメラ側は SHA-256 だけを持つ。`/run/webui-sessions.json` (0600、メモリ上の一時領域) に保存するので webui の更新や再起動では切れず、
+  カメラの再起動では切れる。root のパスワードを変えると保存分は全部無効になる (ファイルにパスワードのダイジェストを添えて照合)
 - プレビュー (Video): prudynt が `:8080/ch0.mp4` で出す fragmented MP4 (配信と同じ H.264 + AAC) を webui がそのまま中継し
   (`/api/preview.mp4`)、ページ側 (`static/video.js`、Thingino の preview-fmp4.js と同じ方式) が ftyp+moov からコーデックを
   読んで MediaSource に moof+mdat 単位で流し込む。最新から 3 秒以上遅れたら追いつき、再生済みは 20 秒だけ残す。
   iPhone は ManagedMediaSource (iOS 17.1 以降) を試し、無理なら Pictures に落ちる
 - プレビュー (Pictures): prudynt が `:8080/mjpeg` で出す MJPEG (JPEG チャンネル、5 fps、1 枚 50 KB) を webui が中継し、
-  `?fps=` (既定 4、最大 10) に間引く。`<img>` で映るのでどのスマホでも動く。Android 向けのなめらかな動画 (fMP4) は後で
+  `?fps=` (既定 4、最大 10) に間引く。`<img>` で映るのでどのスマホでも動く
 - OSD: 要素の位置・大きさは `prudyntctl json` で即時に反映し、同じ値を SD の `prudynt-osd.json` の `osd.*` に書く
   (osd-config が再起動後に送り直す)。テキスト枠の枠の大きさは prudynt のビットマップフォント (1 文字 8×9 px、余白 2 px、
   × 倍率) から計算して描く。日時 (burnin) は位置が設定できないので動かせない (大きさと表示の有無だけ)。

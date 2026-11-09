@@ -287,7 +287,7 @@
     },
     close() {
       open = false;
-      $("osd-preview").src = "";
+      $("osd-preview").removeAttribute("src");
       drag = null;
     },
     isOpen() { return open; },

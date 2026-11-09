@@ -3,6 +3,7 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -89,28 +90,57 @@ func TestSessions(t *testing.T) {
 }
 
 func TestSessionsPersist(t *testing.T) {
-	file := filepath.Join(t.TempDir(), "sessions.json")
+	withShadow(t, "root:"+sha512Crypt("pw", "salt", 5000, false)+":1::::::\n")
+	dir := t.TempDir()
+	file := filepath.Join(dir, "sessions.json")
 	a := newSessions(time.Hour)
 	a.persistTo(file)
 	tok := a.create()
 	gone := a.create()
 	a.drop(gone)
-	b := newSessions(time.Hour)
-	b.persistTo(file)
-	if !b.valid(tok) {
+	if fi, err := os.Stat(file); err != nil || fi.Mode().Perm() != 0o600 {
+		t.Fatalf("session file: %v %v", fi, err)
+	}
+	if _, err := os.Stat(file + ".new"); err == nil {
+		t.Fatal("temp file left behind")
+	}
+	b, _ := os.ReadFile(file)
+	if strings.Contains(string(b), tok) {
+		t.Fatal("the token itself is in the file; only its hash may be")
+	}
+	fresh := newSessions(time.Hour)
+	fresh.persistTo(file)
+	if !fresh.valid(tok) {
 		t.Fatal("a saved session was not loaded")
 	}
-	if b.valid(gone) {
+	if fresh.valid(gone) {
 		t.Fatal("a dropped session came back")
 	}
-	// an expired one is not loaded
-	c := newSessions(time.Millisecond)
-	c.persistTo(filepath.Join(t.TempDir(), "s.json"))
-	old := c.create()
-	time.Sleep(5 * time.Millisecond)
+	// expired, malformed and foreign entries are skipped; the rest loads
+	raw := `{"shadow":"` + shadowDigest() + `","sessions":{"` + strings.Repeat("a", 64) + `":1,"short":9999999999,"` + strings.Repeat("b", 64) + `":9999999999}}`
+	if err := os.WriteFile(file, []byte(raw), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	c := newSessions(time.Hour)
+	c.persistTo(file)
+	if len(c.live) != 1 {
+		t.Fatalf("loaded %d sessions from %s, want 1", len(c.live), raw)
+	}
+	// a changed root password drops them all; broken JSON starts empty
+	if err := os.WriteFile(file, []byte(`{"shadow":"other","sessions":{"`+strings.Repeat("b", 64)+`":9999999999}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	d := newSessions(time.Hour)
-	d.persistTo(c.file)
-	if d.valid(old) {
-		t.Fatal("an expired session was loaded")
+	d.persistTo(file)
+	if len(d.live) != 0 {
+		t.Fatal("sessions from another password were loaded")
+	}
+	if err := os.WriteFile(file, []byte("{broken"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	e := newSessions(time.Hour)
+	e.persistTo(file)
+	if len(e.live) != 0 || e.create() == "" {
+		t.Fatal("a broken file must not stop the sessions from working")
 	}
 }

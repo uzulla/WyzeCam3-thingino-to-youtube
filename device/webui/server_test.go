@@ -31,7 +31,8 @@ func testServer(t *testing.T) (*httptest.Server, string) {
 	}
 	s.status = newStatusPoller(s.relay, s.rec, time.Hour) // not running: current() returns the zero status
 	srv := httptest.NewServer(s.routes())
-	t.Cleanup(srv.Close)
+	testServers.Store(srv, s)
+	t.Cleanup(func() { testServers.Delete(srv); srv.Close() })
 	return srv, sd
 }
 
