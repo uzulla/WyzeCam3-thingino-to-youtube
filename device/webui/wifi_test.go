@@ -112,3 +112,57 @@ func TestWPAKeepsOtherKeyMgmt(t *testing.T) {
 		t.Fatalf("unescape: %q", got)
 	}
 }
+
+func TestParseScanResults(t *testing.T) {
+	out := "bssid / frequency / signal level / flags / ssid\n" +
+		"84:e8:cb:03:eb:e8\t2412\t-33\t[WPA2-PSK-CCMP][ESS]\tBuffalo-2G\n" +
+		"84:e8:cb:03:eb:e9\t2437\t-60\t[WPA2-PSK-CCMP][ESS]\tBuffalo-2G\n" + // weaker twin: dropped
+		"30:f7:72:d1:e3:fc\t2437\t-79\t[ESS]\tOpenCafe\n" +
+		"aa:bb:cc:dd:ee:ff\t2462\t-50\t[RSN-SAE-CCMP][ESS]\tWPA3only\n" +
+		"11:22:33:44:55:66\t2412\t-45\t[WPA2-PSK-CCMP][ESS]\t\\xe3\\x81\\x82\\xe3\\x81\\x84\n" + // あい
+		"00:00:00:00:00:00\t2412\t-40\t[ESS]\t\n" + // hidden: no name
+		"short line\n"
+	got := parseScanResults(out)
+	if len(got) != 4 {
+		t.Fatalf("%d networks: %+v", len(got), got)
+	}
+	if got[0].SSID != "Buffalo-2G" || got[0].Signal != -33 || !got[0].Secure {
+		t.Errorf("best first: %+v", got[0])
+	}
+	byName := map[string]scanNet{}
+	for _, n := range got {
+		byName[n.SSID] = n
+	}
+	if byName["OpenCafe"].Secure {
+		t.Error("an [ESS]-only network is open")
+	}
+	if !byName["WPA3only"].Secure {
+		t.Error("a SAE network needs a password")
+	}
+	if n, ok := byName["あい"]; !ok || n.Freq != 2412 {
+		t.Errorf("escaped Japanese SSID not decoded: %+v", got)
+	}
+	if list := parseScanResults(""); list == nil || len(list) != 0 {
+		t.Errorf("empty output must give an empty list, got %v", list)
+	}
+}
+
+func TestDecodeSSID(t *testing.T) {
+	cases := []struct {
+		in, name     string
+		isHex, isRaw bool
+	}{
+		{`"Home"`, "Home", false, false},
+		{`"say \"hi\""`, `say \"hi\"`, false, false}, // verbatim: no escape processing
+		{"486f6d65", "Home", true, false},
+		{"e38182", "あ", true, false},
+		{"ff00ff", "ff00ff", true, true}, // not UTF-8: kept as the hex itself
+		{"abc", "abc", true, true},       // odd length: not hex, kept raw
+	}
+	for _, c := range cases {
+		name, isHex, isRaw := decodeSSID(c.in)
+		if name != c.name || isHex != c.isHex || isRaw != c.isRaw {
+			t.Errorf("decodeSSID(%q) = %q %v %v; want %q %v %v", c.in, name, isHex, isRaw, c.name, c.isHex, c.isRaw)
+		}
+	}
+}

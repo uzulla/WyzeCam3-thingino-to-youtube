@@ -50,6 +50,9 @@ type relay struct {
 
 func newRelay(sd string) *relay { return &relay{sd: sd} }
 
+// isMounted - mounted(), replaceable by tests (a temp dir is no mount point)
+var isMounted = mounted
+
 // configPath - the file the relay reads: the SD card first, then /etc
 // (device/youtube-relay: CONFIG_CANDIDATES); for writing, the SD card when
 // it is mounted
@@ -187,7 +190,7 @@ func (rl *relay) saveProfiles(cfg webuiConfig) (changed bool, err error) {
 
 	rl.mu.Lock()
 	defer rl.mu.Unlock()
-	if !mounted(rl.sd) {
+	if !isMounted(rl.sd) {
 		return false, errors.New("no SD card: profiles are kept on it")
 	}
 	if err := writeJSONFile(rl.webuiPath(), cfg, 0o600); err != nil {

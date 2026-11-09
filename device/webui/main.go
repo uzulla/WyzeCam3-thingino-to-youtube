@@ -85,6 +85,30 @@ func main() {
 	defer stop()
 	go s.status.run(ctx)
 
+	srv := &http.Server{
+		Addr:              *listen,
+		Handler:           s.routes(),
+		ReadHeaderTimeout: 10 * time.Second,
+		ReadTimeout:       2 * time.Minute, // a 4 MB logo over a weak Wi-Fi
+		IdleTimeout:       60 * time.Second,
+		// no WriteTimeout: the MJPEG preview and the zip are long responses
+		// (the preview sets its own deadline per frame)
+	}
+	go func() {
+		<-ctx.Done()
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		defer cancel()
+		_ = srv.Shutdown(shutdownCtx)
+	}()
+	log.Printf("Started: listening on %s", *listen)
+	if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+		log.Fatalf("%v", err)
+	}
+	log.Printf("Stopped")
+}
+
+// routes - the whole HTTP surface: pages, sign-in, and the API behind auth
+func (s *server) routes() http.Handler {
 	static, err := fs.Sub(staticFS, "static")
 	if err != nil {
 		log.Fatalf("%v", err)
@@ -126,26 +150,7 @@ func main() {
 	mux.Handle("POST /api/recordings/delete", s.auth(http.HandlerFunc(s.handleRecordingDelete)))
 	mux.Handle("POST /api/recordings/settings", s.auth(http.HandlerFunc(s.handleRecordingSettings)))
 
-	srv := &http.Server{
-		Addr:              *listen,
-		Handler:           guard(mux),
-		ReadHeaderTimeout: 10 * time.Second,
-		ReadTimeout:       2 * time.Minute, // a 4 MB logo over a weak Wi-Fi
-		IdleTimeout:       60 * time.Second,
-		// no WriteTimeout: the MJPEG preview and the zip are long responses
-		// (the preview sets its own deadline per frame)
-	}
-	go func() {
-		<-ctx.Done()
-		shutdownCtx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-		defer cancel()
-		_ = srv.Shutdown(shutdownCtx)
-	}()
-	log.Printf("Started: listening on %s", *listen)
-	if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-		log.Fatalf("%v", err)
-	}
-	log.Printf("Stopped")
+	return guard(mux)
 }
 
 // guard - headers for every response, and the rules for API writes:

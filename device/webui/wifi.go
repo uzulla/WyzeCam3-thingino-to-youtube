@@ -267,6 +267,13 @@ func wifiScan() ([]scanNet, error) {
 	if err != nil {
 		return nil, fmt.Errorf("scan_results: %v", err)
 	}
+	return parseScanResults(out), nil
+}
+
+// parseScanResults - wpa_cli scan_results: a header line, then
+// bssid / frequency / signal / flags / ssid separated by tabs; the best
+// signal per SSID wins
+func parseScanResults(out string) []scanNet {
 	best := map[string]scanNet{}
 	for i, line := range strings.Split(out, "\n") {
 		if i == 0 {
@@ -285,12 +292,12 @@ func wifiScan() ([]scanNet, error) {
 			best[n.SSID] = n
 		}
 	}
-	var list []scanNet
+	list := []scanNet{}
 	for _, n := range best {
 		list = append(list, n)
 	}
 	sort.Slice(list, func(i, j int) bool { return list[i].Signal > list[j].Signal })
-	return list, nil
+	return list
 }
 
 // unescapeWPA - wpa_cli prints SSIDs printf-style: \xe3\x81\x82 for bytes

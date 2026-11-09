@@ -84,6 +84,17 @@ AP になっている間は Camera 画面の上に黄色い帯が出る。自動
 - 状態は webui の中で 2 秒ごとに 1 回だけ集め (`prudyntctl json` の stats、`/proc`、`wpa_cli`)、スマホが何台見ても
   コマンドは増えない。配信の ffmpeg は youtube-relay の子プロセスをコマンドラインで見分ける (json-youtube.cgi と同じ)
 
+## テスト
+
+`device/webui/build.sh` が `go vet` と `go test` を通してからビルドする (Mac だけで回る。カメラは要らない)。
+テストにあるもの: SHA-512 crypt (仕様のテストベクタ)、`/etc/shadow` の読み方 (空ハッシュ・ロック・無いユーザー・`$6$` 以外)、
+セッションの期限と延長、`wpa_supplicant.conf` の解析と書き戻し (16 進 SSID、SAE、引用符、`scan_ssid` の保持)、
+スキャン結果の解析 (エスケープの復号、WPA3 の判定、重複の統合)、録画ファイルのパス正規化 (`safeRel`)、ストリームキーの
+伏せ字、OSD と画質の入力検証、`/proc/<pid>/stat` の解析、プロファイル保存の検証と書き込み・壊れた `webui.json` からの
+復帰、そして HTTP の表テスト (全 API が未サインインで 401、フォームや他サイトからの POST は 415 / 403、未知の API は
+JSON の 404、ヘッダ、サインインの成否と Cookie、不明なフィールドや op は 400、prudynt 不在でスナップショットが 502)。
+実機の挙動 (prudynt、init スクリプト、wpa_cli) に依存する部分はテストにせず、インストール時の起動確認と手での確認に任せる。
+
 ## 実測 (2026-11-09、`ciao+da40db6`)
 
 - メモリ RSS 6.7 MB (待機) 〜 8.4 MB (プレビュー中)。CPU は待機で約 1%

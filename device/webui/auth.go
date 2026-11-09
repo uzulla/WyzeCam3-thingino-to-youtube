@@ -25,9 +25,11 @@ var shadowFile = "/etc/shadow"
 const (
 	sessionCookie  = "webui_session"
 	loginUser      = "root"
-	loginDelay     = 1500 * time.Millisecond // after a wrong password
 	maxPasswordLen = 128
 )
+
+// loginDelay - served after a wrong password (a variable: tests shorten it)
+var loginDelay = 1500 * time.Millisecond
 
 type sessions struct {
 	mu   sync.Mutex
