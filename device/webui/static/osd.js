@@ -265,7 +265,6 @@
         panel.appendChild(note);
       }
     }
-    const msg = document.createElement("p"); msg.id = "osd-msg"; msg.className = "msg"; panel.appendChild(msg);
   }
 
   // --- open / close ---------------------------------------------------------

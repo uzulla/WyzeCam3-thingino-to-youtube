@@ -14,6 +14,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -96,11 +97,15 @@ func prudyntRestart() (seconds int, err error) {
 		return 0, errors.New(prudyntInit + " not found")
 	}
 	if err := os.Mkdir(prudyntLock, 0o755); err != nil {
+		// osd-config writes "since" with date +%s, newline included
 		since := int64(0)
 		if b, err := os.ReadFile(filepath.Join(prudyntLock, "since")); err == nil {
-			since, _ = strconv.ParseInt(string(b), 10, 64)
-		} else if fi, err := os.Stat(prudyntLock); err == nil {
-			since = fi.ModTime().Unix()
+			since, _ = strconv.ParseInt(strings.TrimSpace(string(b)), 10, 64)
+		}
+		if since == 0 {
+			if fi, err := os.Stat(prudyntLock); err == nil {
+				since = fi.ModTime().Unix()
+			}
 		}
 		if time.Now().Unix()-since < lockStaleS {
 			return 0, errors.New("prudynt is being restarted by something else (osd-config?) - try again in a moment")
@@ -137,27 +142,19 @@ func prudyntRestart() (seconds int, err error) {
 
 func prudyntPid() int {
 	out, err := runCmd("pidof", "prudynt")
-	if err != nil || out == "" {
+	f := strings.Fields(out)
+	if err != nil || len(f) == 0 {
 		return 0
 	}
-	n, _ := strconv.Atoi(firstField(out))
+	n, _ := strconv.Atoi(f[0])
 	return n
-}
-
-func firstField(s string) string {
-	for i, c := range s {
-		if c == ' ' || c == '\n' {
-			return s[:i]
-		}
-	}
-	return s
 }
 
 // --- HTTP ---
 
 func (s *server) handleQualityGet(w http.ResponseWriter, r *http.Request) {
 	l := readSensor()
-	var sizes [][2]int
+	sizes := [][2]int{}
 	for _, sz := range qualitySizes {
 		if sz[0] <= l.Width && sz[1] <= l.Height {
 			sizes = append(sizes, sz)
@@ -189,12 +186,14 @@ func (s *server) handleQualitySet(w http.ResponseWriter, r *http.Request) {
 		"stream0.fps": strconv.Itoa(q.FPS), "stream0.bitrate": strconv.Itoa(q.Bitrate),
 		"stream0.mode": q.Mode, "stream0.gop": strconv.Itoa(q.FPS * 2), "stream0.max_gop": strconv.Itoa(q.FPS * 3),
 	}
-	for k, v := range sets {
-		if err := jctSet(k, v); err != nil {
-			writeJSON(w, http.StatusInternalServerError, map[string]any{"error": err.Error()})
+	before := etcSum()
+	for _, k := range sortedKeys(sets) {
+		if err := jctSet(k, sets[k]); err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]any{"error": err.Error() + " (the settings may be half written: check them before applying again)"})
 			return
 		}
 	}
+	s.noteEtcRefresh(before) // not a Web UI save of the image settings (etcnote.go)
 	secs, err := prudyntRestart()
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]any{"error": "saved, but the restart failed: " + err.Error(), "settings": readQuality()})

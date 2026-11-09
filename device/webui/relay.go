@@ -6,6 +6,7 @@ package main
 // youtube-relay.json, which stays the single file the relay reads.
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -14,19 +15,20 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
-	"sort"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 )
 
 const (
-	relayInit    = "/etc/init.d/S93youtube-relay"
-	relayPidfile = "/run/youtube-relay.pid"
-	relayEtcCfg  = "/etc/youtube-relay.json"
-	relayCfgName = "youtube-relay.json"
-	webuiCfgName = "webui.json"
-	cmdTimeout   = 20 * time.Second
+	relayInit      = "/etc/init.d/S93youtube-relay"
+	relayPidfile   = "/run/youtube-relay.pid"
+	relayEtcCfg    = "/etc/youtube-relay.json"
+	relayCfgName   = "youtube-relay.json"
+	webuiCfgName   = "webui.json"
+	cmdTimeout     = 20 * time.Second
+	relayOpTimeout = 90 * time.Second
 )
 
 type profile struct {
@@ -38,6 +40,7 @@ type profile struct {
 type webuiConfig struct {
 	Profiles []profile `json:"profiles"`
 	Active   string    `json:"active"`
+	Warning  string    `json:"-"` // for the page, not for the file
 }
 
 type relay struct {
@@ -112,12 +115,18 @@ func writeJSONFile(path string, v any, mode os.FileMode) error {
 func (rl *relay) loadProfiles() (webuiConfig, error) {
 	var cfg webuiConfig
 	b, err := os.ReadFile(rl.webuiPath())
-	switch {
-	case err == nil:
-		if err := json.Unmarshal(b, &cfg); err != nil {
-			return cfg, fmt.Errorf("%s: not valid JSON: %w", rl.webuiPath(), err)
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return cfg, err
+	}
+	if err == nil {
+		if jerr := json.Unmarshal(b, &cfg); jerr != nil {
+			// a broken webui.json must not lock the user out of the page:
+			// start over from what the relay runs with, and say so
+			cfg = webuiConfig{}
+			cfg.Warning = fmt.Sprintf("%s was not valid JSON and is ignored; saving writes a fresh one", rl.webuiPath())
 		}
-	case errors.Is(err, os.ErrNotExist):
+	}
+	if len(cfg.Profiles) == 0 {
 		relayCfg, err := readJSONFile(rl.configPath())
 		if err != nil {
 			return cfg, err
@@ -129,13 +138,14 @@ func (rl *relay) loadProfiles() (webuiConfig, error) {
 		}
 		cfg.Profiles = []profile{{Name: "YouTube", RTMPURL: url, StreamKey: key}}
 		cfg.Active = "YouTube"
-	default:
-		return cfg, err
 	}
 	return cfg, nil
 }
 
-var profileName = regexp.MustCompile(`^[^\x00-\x1f]{1,40}$`)
+var (
+	profileName = regexp.MustCompile(`^[^\x00-\x1f]{1,40}$`)
+	printable   = regexp.MustCompile(`^[\x21-\x7e]+$`) // what a URL or a stream key may hold
+)
 
 // saveProfiles - validate, write webui.json, and put the active profile's
 // key and URL into the relay's config (keeping its other keys). Returns
@@ -158,11 +168,11 @@ func (rl *relay) saveProfiles(cfg webuiConfig) (changed bool, err error) {
 			return false, fmt.Errorf("two profiles are named %q", p.Name)
 		}
 		seen[p.Name] = true
-		if !strings.HasPrefix(p.RTMPURL, "rtmp://") && !strings.HasPrefix(p.RTMPURL, "rtmps://") {
-			return false, fmt.Errorf("%s: the URL must start with rtmp:// or rtmps://", p.Name)
+		if (!strings.HasPrefix(p.RTMPURL, "rtmp://") && !strings.HasPrefix(p.RTMPURL, "rtmps://")) || !printable.MatchString(p.RTMPURL) {
+			return false, fmt.Errorf("%s: the URL must start with rtmp:// or rtmps:// and have no spaces", p.Name)
 		}
-		if strings.ContainsAny(p.StreamKey, " \t\"'\\") {
-			return false, fmt.Errorf("%s: the stream key has a space or a quote in it", p.Name)
+		if p.StreamKey != "" && (!printable.MatchString(p.StreamKey) || strings.ContainsAny(p.StreamKey, `"'\\`)) {
+			return false, fmt.Errorf("%s: the stream key has a space, a quote or an odd character in it", p.Name)
 		}
 		if p.Name == cfg.Active {
 			active = p
@@ -205,29 +215,27 @@ func (rl *relay) saveProfiles(cfg webuiConfig) (changed bool, err error) {
 	return true, nil
 }
 
-// runCmd - run a command with a timeout; its combined output comes back
+// runCmd - run a command with the usual timeout; its combined output comes back
 func runCmd(name string, args ...string) (string, error) {
-	cmd := exec.Command(name, args...)
-	out := make(chan struct {
-		b   []byte
-		err error
-	}, 1)
-	go func() {
-		b, err := cmd.CombinedOutput()
-		out <- struct {
-			b   []byte
-			err error
-		}{b, err}
-	}()
-	select {
-	case r := <-out:
-		return strings.TrimSpace(string(r.b)), r.err
-	case <-time.After(cmdTimeout):
-		if cmd.Process != nil {
-			_ = cmd.Process.Kill()
-		}
-		return "", fmt.Errorf("%s: no answer in %v", name, cmdTimeout)
+	return runCmdTimeout(cmdTimeout, name, args...)
+}
+
+// runCmdTimeout - runCmd with a timeout of the caller's choosing. The
+// command gets its own process group, so an init script's children go with
+// it when the timeout kills it, and WaitDelay stops a daemon that kept our
+// pipes from holding the call open.
+func runCmdTimeout(timeout time.Duration, name string, args ...string) (string, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, name, args...)
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	cmd.Cancel = func() error { return syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL) }
+	cmd.WaitDelay = 2 * time.Second
+	b, err := cmd.CombinedOutput()
+	if ctx.Err() != nil {
+		return strings.TrimSpace(string(b)), fmt.Errorf("%s: no answer in %v", name, timeout)
 	}
+	return strings.TrimSpace(string(b)), err
 }
 
 // op - start/stop/restart now (through sh, so it works while disabled at
@@ -237,12 +245,17 @@ func (rl *relay) op(op string) (string, error) {
 	defer rl.mu.Unlock()
 	switch op {
 	case "start", "stop", "restart":
-		return runCmd("sh", relayInit, op)
+		// S93youtube-relay's stop waits up to 45 s for the supervisor, then
+		// kills it: give the whole sequence room, or a restart cut short by
+		// our timeout would leave the relay stopped
+		return runCmdTimeout(relayOpTimeout, "sh", relayInit, op)
 	case "enable", "disable":
 		return runCmd("service", op, "youtube-relay")
 	}
-	return "", fmt.Errorf("unknown op %q", op)
+	return "", errBadOp
 }
+
+var errBadOp = errors.New("unknown op")
 
 // restartIfRunning - after a config change: the relay picks up a new key only
 // when restarted (the stream drops for a few seconds)
@@ -335,8 +348,12 @@ func (s *server) handleRelayOp(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	out, err := s.relay.op(body.Op)
+	if errors.Is(err, errBadOp) {
+		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "op must be start, stop, restart, enable or disable"})
+		return
+	}
 	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]any{"error": fmt.Sprintf("%s failed: %v %s", body.Op, err, out)})
+		writeJSON(w, http.StatusInternalServerError, map[string]any{"error": redactKey(fmt.Sprintf("%s failed: %v %s", body.Op, err, out))})
 		return
 	}
 	s.status.refresh()
@@ -349,13 +366,16 @@ func (s *server) handleRelayConfigGet(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusInternalServerError, map[string]any{"error": err.Error()})
 		return
 	}
-	sort.SliceStable(cfg.Profiles, func(i, j int) bool { return false }) // keep the file's order
-	writeJSON(w, http.StatusOK, map[string]any{
+	resp := map[string]any{
 		"profiles":    cfg.Profiles,
 		"active":      cfg.Active,
 		"config_path": s.relay.configPath(),
 		"autostart":   relayAutostart(),
-	})
+	}
+	if cfg.Warning != "" {
+		resp["warning"] = cfg.Warning
+	}
+	writeJSON(w, http.StatusOK, resp)
 }
 
 func (s *server) handleRelayConfigSet(w http.ResponseWriter, r *http.Request) {

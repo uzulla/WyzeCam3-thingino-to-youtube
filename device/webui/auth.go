@@ -11,6 +11,7 @@ import (
 	"encoding/json"
 	"errors"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"strings"
@@ -22,9 +23,10 @@ import (
 var shadowFile = "/etc/shadow"
 
 const (
-	sessionCookie = "webui_session"
-	loginUser     = "root"
-	loginDelay    = 1500 * time.Millisecond // after a wrong password
+	sessionCookie  = "webui_session"
+	loginUser      = "root"
+	loginDelay     = 1500 * time.Millisecond // after a wrong password
+	maxPasswordLen = 128
 )
 
 type sessions struct {
@@ -150,9 +152,17 @@ func (s *server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]any{"error": err.Error()})
 		return
 	}
+	if len(body.Password) > maxPasswordLen {
+		// sha512-crypt hashes the password len(password) times: keep that small
+		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "the password is too long"})
+		return
+	}
+	// one check at a time (the hash takes a moment on this CPU); the delay
+	// after a wrong password is served outside the lock, so a stream of wrong
+	// guesses from one side does not hold the owner's correct sign-in back
 	s.sessions.attempt.Lock()
-	defer s.sessions.attempt.Unlock()
 	ok, err := checkPassword(body.Password)
+	s.sessions.attempt.Unlock()
 	if err != nil {
 		log.Printf("sign-in: cannot check the password: %v", err)
 		writeJSON(w, http.StatusInternalServerError, map[string]any{"error": "cannot check the password: " + err.Error()})
@@ -184,11 +194,10 @@ func (s *server) handleLogout(w http.ResponseWriter, r *http.Request) {
 }
 
 func clientIP(r *http.Request) string {
-	host := r.RemoteAddr
-	if i := strings.LastIndex(host, ":"); i > 0 {
-		host = host[:i]
+	if host, _, err := net.SplitHostPort(r.RemoteAddr); err == nil {
+		return host
 	}
-	return host
+	return r.RemoteAddr
 }
 
 // readJSON - decode a small JSON body (at most limit bytes)

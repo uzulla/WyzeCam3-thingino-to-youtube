@@ -32,9 +32,10 @@ const (
 )
 
 type recFile struct {
-	Path  string `json:"path"` // relative to the recordings root, e.g. 2026/11/09/14-42-31.mp4
-	Size  int64  `json:"size"`
-	MTime int64  `json:"mtime"` // unix seconds
+	Path      string `json:"path"` // relative to the recordings root, e.g. 2026/11/09/14-42-31.mp4
+	Size      int64  `json:"size"`
+	MTime     int64  `json:"mtime"`     // unix seconds
+	Recording bool   `json:"recording"` // being written right now
 }
 
 type recSettings struct {
@@ -154,6 +155,11 @@ func (s *server) handleRecordingsList(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusInternalServerError, map[string]any{"error": err.Error()})
 		return
 	}
+	if cur, _, active := activeFile(); active {
+		for i := range files {
+			files[i].Recording = filepath.Clean(cur) == filepath.Join(root, files[i].Path)
+		}
+	}
 	free, total := diskMB(root)
 	var used int64
 	for _, f := range files {
@@ -212,6 +218,7 @@ func (s *server) handleRecordingDelete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	cur, _, active := activeFile()
+	cur = filepath.Clean(cur)
 	deleted, skipped := 0, []string{}
 	for _, p := range body.Paths {
 		full, err := safeRel(root, p)
@@ -228,6 +235,11 @@ func (s *server) handleRecordingDelete(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 		deleted++
+		// empty day/month/year folders go too, except while a recording runs
+		// (its next segment expects today's folder to be there)
+		if active {
+			continue
+		}
 		for d := filepath.Dir(full); d != root && strings.HasPrefix(d, root); d = filepath.Dir(d) {
 			if os.Remove(d) != nil {
 				break
@@ -269,17 +281,20 @@ func (s *server) handleZipPrepare(w http.ResponseWriter, r *http.Request) {
 	}
 	var total int64
 	var paths []string
+	seen := map[string]bool{}
 	for _, p := range body.Paths {
 		full, err := safeRel(root, p)
 		if err != nil {
 			continue
 		}
 		fi, err := os.Stat(full)
-		if err != nil {
+		if err != nil || seen[full] {
 			continue
 		}
+		seen[full] = true
 		total += fi.Size()
-		paths = append(paths, p)
+		rel, _ := filepath.Rel(root, full) // the cleaned name, never the client's spelling
+		paths = append(paths, filepath.ToSlash(rel))
 	}
 	if len(paths) == 0 {
 		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "nothing selected"})
@@ -313,42 +328,60 @@ func (s *server) handleZipGet(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusNotFound)
 		return
 	}
+	// open everything first: a missing file is an error before any byte is
+	// sent, not a silently shorter archive
+	type entry struct {
+		rel string
+		f   *os.File
+		fi  os.FileInfo
+	}
+	var entries []entry
+	defer func() {
+		for _, e := range entries {
+			e.f.Close()
+		}
+	}()
+	for _, p := range job.paths {
+		full, err := safeRel(root, p)
+		if err != nil {
+			http.Error(w, "bad path in the selection", http.StatusBadRequest)
+			return
+		}
+		f, err := os.Open(full)
+		if err != nil {
+			http.Error(w, p+" is gone; select the files again", http.StatusNotFound)
+			return
+		}
+		fi, err := f.Stat()
+		if err != nil {
+			f.Close()
+			http.Error(w, p+": "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+		entries = append(entries, entry{rel: p, f: f, fi: fi})
+	}
 	name := "recordings-" + time.Now().Format("20060102-150405") + ".zip"
 	if len(job.paths) > 0 {
-		first := strings.ReplaceAll(strings.TrimSuffix(filepath.Base(job.paths[0]), ".mp4"), "/", "-")
+		first := strings.TrimSuffix(filepath.Base(job.paths[0]), ".mp4")
 		day := strings.ReplaceAll(filepath.Dir(job.paths[0]), "/", "-")
 		name = fmt.Sprintf("rec-%s-%s-%dfiles.zip", day, first, len(job.paths))
 	}
 	w.Header().Set("Content-Type", "application/zip")
-	w.Header().Set("Content-Disposition", `attachment; filename="`+name+`"`)
+	w.Header().Set("Content-Disposition", `attachment; filename="`+strings.ReplaceAll(name, `"`, "")+`"`)
 	zw := zip.NewWriter(w)
-	for _, p := range job.paths {
-		full, err := safeRel(root, p)
-		if err != nil {
-			continue
-		}
-		f, err := os.Open(full)
-		if err != nil {
-			continue
-		}
-		fi, _ := f.Stat()
-		hdr := &zip.FileHeader{Name: p, Method: zip.Store}
-		if fi != nil {
-			hdr.Modified = fi.ModTime()
-			hdr.UncompressedSize64 = uint64(fi.Size())
-		}
+	for _, e := range entries {
+		hdr := &zip.FileHeader{Name: e.rel, Method: zip.Store, Modified: e.fi.ModTime(), UncompressedSize64: uint64(e.fi.Size())}
 		ww, err := zw.CreateHeader(hdr)
 		if err != nil {
-			f.Close()
-			return
+			panic(http.ErrAbortHandler) // cut the connection: a half zip must not look complete
 		}
-		if _, err := io.Copy(ww, f); err != nil {
-			f.Close()
-			return // the phone went away
+		if _, err := io.Copy(ww, e.f); err != nil {
+			panic(http.ErrAbortHandler) // the phone went away, or the card failed
 		}
-		f.Close()
 	}
-	_ = zw.Close()
+	if err := zw.Close(); err != nil {
+		panic(http.ErrAbortHandler)
+	}
 }
 
 func (s *server) handleRecordingSettings(w http.ResponseWriter, r *http.Request) {
@@ -401,12 +434,14 @@ func (s *server) handleRecordingSettings(w http.ResponseWriter, r *http.Request)
 		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "nothing to change"})
 		return
 	}
-	for k, v := range sets {
-		if err := jctSet(k, v); err != nil {
+	before := etcSum()
+	for _, k := range sortedKeys(sets) {
+		if err := jctSet(k, sets[k]); err != nil {
 			writeJSON(w, http.StatusInternalServerError, map[string]any{"error": err.Error()})
 			return
 		}
 	}
+	s.noteEtcRefresh(before) // not a Web UI save of the image settings (etcnote.go)
 	resp := map[string]any{"ok": true, "settings": readRecSettings()}
 	if cleanupTouched {
 		// recordmgr reads its settings at start; S95recordmgr starts it only
@@ -415,6 +450,15 @@ func (s *server) handleRecordingSettings(w http.ResponseWriter, r *http.Request)
 			resp["error"] = "saved, but recordmgr did not restart: " + out
 		}
 	}
-	_ = time.Now
 	writeJSON(w, http.StatusOK, resp)
+}
+
+// sortedKeys - a fixed order for writing several keys (a map's order is random)
+func sortedKeys(m map[string]string) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
 }

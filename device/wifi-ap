@@ -4,18 +4,23 @@
 # button (hold 5 s, see install-wifi-ap.sh) or by hand.
 #
 # For the track, when the saved Wi-Fi is not there: the phone joins "Wyze-cam"
-# (no password) and opens http://100.64.1.1:8000/ to fix the Wi-Fi settings.
-# Thingino's S38wpa_supplicant already knows how to run an access point (a
-# config with mode=2: 100.64.1.1/24, DHCP, DNS), so this only swaps the config
-# for the moment it starts, then puts the saved networks back so a reboot
-# returns to normal. Nothing is written to flash except that swap (and the
-# saved file comes back within a second).
+# (no password: the user's choice, recovery only; whoever is in range can join
+# and see the traffic, so do not type the password near others for long) and
+# opens http://100.64.1.1/ (the app's port, read from webui.args) to fix the
+# Wi-Fi settings. Thingino's S38wpa_supplicant already knows how to run an
+# access point (a config with mode=2: 100.64.1.1/24, DHCP, DNS), so this only
+# swaps the config file for the moment it starts, then puts the saved networks
+# back so a reboot returns to normal. The swap touches /etc (flash) twice; the
+# saved file is kept next to it meanwhile, so a power cut in between still
+# leaves it there (wpa_supplicant.conf.station) to copy back by hand.
 
 SSID="${WIFI_AP_SSID:-Wyze-cam}"
 CONF=/etc/wpa_supplicant.conf
-KEEP=/run/wpa_supplicant.conf.station
+KEEP=/etc/wpa_supplicant.conf.station
 INIT=/etc/init.d/S38wpa_supplicant
 AP_IP=100.64.1.1 # WLANAP_IP of S38wpa_supplicant
+port=$(sed -n 's/.*-listen *[^:]*:\([0-9]*\).*/\1/p' /mnt/mmcblk0p1/webui.args 2>/dev/null | head -n 1)
+case "$port" in "" | 80) URL="http://$AP_IP/" ;; *) URL="http://$AP_IP:$port/" ;; esac
 
 log() { logger -p daemon.info -t wifi-ap "$1"; }
 
@@ -48,13 +53,13 @@ network={
 EOF
 sh "$INIT" start >/dev/null 2>&1
 # the running wpa_supplicant has its config; the file goes back to the saved
-# networks, so the next boot is normal
-cp "$KEEP" "$CONF"
+# networks (atomically), so the next boot is normal
+cp "$KEEP" "$CONF.tmp" && mv "$CONF.tmp" "$CONF" && sync
 
 i=0
 while [ $i -lt 20 ]; do
 	if wpa_cli -i wlan0 status 2>/dev/null | grep -q '^wpa_state=COMPLETED'; then
-		log "access point '$SSID' is up: http://$AP_IP:8000/ (reboot to return to the saved Wi-Fi)"
+		log "access point '$SSID' is up: $URL (reboot to return to the saved Wi-Fi)"
 		play /usr/share/sounds/configurationportalisup.opus >/dev/null 2>&1
 		exit 0
 	fi

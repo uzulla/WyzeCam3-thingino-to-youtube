@@ -6,6 +6,7 @@ package main
 // stop" to end it. The state is prudynt's /run/prudynt/mp4ctl-ch0.active.
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
 	"os"
@@ -24,7 +25,12 @@ const (
 
 type recorder struct {
 	mu    sync.Mutex
-	since time.Time // when the poller first saw the recording (zero: not seen)
+	since time.Time  // when the poller first saw the recording (zero: not seen)
+	opMu  sync.Mutex // one start/stop at a time (a double tap must not start two)
+
+	mountMu sync.Mutex
+	mount   string
+	mountAt time.Time
 }
 
 func newRecorder() *recorder { return &recorder{} }
@@ -60,16 +66,26 @@ func activeFile() (path string, duration int, ok bool) {
 	return "", 0, false
 }
 
-// recorderMount - where the recorder writes (recorder.mount of prudynt.json)
-func recorderMount() string {
-	out, err := runCmd("jct", "/etc/prudynt.json", "get", "recorder.mount")
-	if err != nil || out == "" || out == "null" {
-		return recMountDef
+// recorderMount - where the recorder writes (recorder.mount of prudynt.json),
+// asked once a minute at most: the poller calls this every 2 s
+func (rc *recorder) recorderMount() string {
+	rc.mountMu.Lock()
+	defer rc.mountMu.Unlock()
+	if rc.mount != "" && time.Since(rc.mountAt) < time.Minute {
+		return rc.mount
 	}
-	return strings.Trim(out, "\"")
+	out, err := runCmd("jct", prudyntConfig, "get", "recorder.mount")
+	m := strings.Trim(out, "\"")
+	if err != nil || m == "" || m == "null" {
+		m = recMountDef
+	}
+	rc.mount, rc.mountAt = m, time.Now()
+	return m
 }
 
+// mounted - is a file system mounted at path? (its device differs from its parent's)
 func mounted(path string) bool {
+	path = filepath.Clean(path)
 	var a, b syscall.Stat_t
 	if syscall.Stat(path, &a) != nil || syscall.Stat(filepath.Dir(path), &b) != nil {
 		return false
@@ -108,13 +124,15 @@ func (rc *recorder) state(mount string) recState {
 }
 
 func (rc *recorder) op(op string) (string, error) {
+	rc.opMu.Lock()
+	defer rc.opMu.Unlock()
 	switch op {
 	case "start":
 		return runCmd("record", "-c", "0", "start")
 	case "stop":
 		return runCmd("record", "stop")
 	}
-	return "", fmt.Errorf("unknown op %q", op)
+	return "", errBadOp
 }
 
 func (s *server) handleRecordOp(w http.ResponseWriter, r *http.Request) {
@@ -126,18 +144,23 @@ func (s *server) handleRecordOp(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	out, err := s.rec.op(body.Op)
+	if errors.Is(err, errBadOp) {
+		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "op must be start or stop"})
+		return
+	}
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]any{"error": fmt.Sprintf("record %s failed: %v %s", body.Op, err, out)})
 		return
 	}
 	// prudynt creates the state file within a second
+	active := false
 	for i := 0; i < 20; i++ {
-		_, _, active := activeFile()
+		_, _, active = activeFile()
 		if active == (body.Op == "start") {
 			break
 		}
 		time.Sleep(100 * time.Millisecond)
 	}
 	s.status.refresh()
-	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "op": body.Op, "output": out})
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "op": body.Op, "output": out, "active": active})
 }

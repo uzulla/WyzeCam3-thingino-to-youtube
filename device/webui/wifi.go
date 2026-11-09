@@ -9,8 +9,10 @@ package main
 
 import (
 	"bufio"
+	"encoding/hex"
 	"errors"
 	"fmt"
+	"log"
 	"net/http"
 	"os"
 	"os/exec"
@@ -20,6 +22,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 )
 
 const (
@@ -34,7 +37,24 @@ type wifiNet struct {
 	Open     bool     `json:"open"`          // no password (key_mgmt=NONE)
 	HasPSK   bool     `json:"has_psk"`       // a password is stored (never shown)
 	PSK      string   `json:"psk,omitempty"` // only in requests: a new password
+	hexSSID  bool     // the file had ssid=<hex> (written back that way)
+	rawSSID  bool     // ...and it is not valid UTF-8: SSID holds the hex itself
 	extra    []string // other lines of the block, kept as they are
+}
+
+// decodeSSID - the ssid= value of wpa_supplicant.conf: "quoted", or hex
+// digits for names that are not printable (the file shows hex, the air has
+// the bytes). Returns the name as text plus how it was written.
+func decodeSSID(v string) (name string, isHex, raw bool) {
+	if m := wpaQuoted.FindStringSubmatch(v); m != nil {
+		return m[1], false, false // wpa_supplicant takes the quoted text as it is (no escapes)
+	}
+	if b, err := hex.DecodeString(v); err == nil && len(v) > 0 && len(v)%2 == 0 {
+		if utf8.Valid(b) {
+			return string(b), true, false
+		}
+	}
+	return v, true, true
 }
 
 type wpaFile struct {
@@ -75,11 +95,7 @@ func parseWPA(path string) (*wpaFile, error) {
 		k, v, _ := strings.Cut(t, "=")
 		switch k {
 		case "ssid":
-			if m := wpaQuoted.FindStringSubmatch(v); m != nil {
-				cur.SSID = m[1]
-			} else {
-				cur.SSID = v // hex form: kept as-is, shown raw
-			}
+			cur.SSID, cur.hexSSID, cur.rawSSID = decodeSSID(v)
 		case "psk":
 			cur.HasPSK = true
 		case "priority":
@@ -87,11 +103,13 @@ func parseWPA(path string) (*wpaFile, error) {
 		case "key_mgmt":
 			if v == "NONE" {
 				cur.Open = true
+			} else {
+				cur.extra = append(cur.extra, t) // WPA-PSK is the default; SAE, WPA-EAP, ... must stay
 			}
-		case "scan_ssid", "":
-			// regenerated / blank
+		case "":
+			// blank
 		default:
-			cur.extra = append(cur.extra, t)
+			cur.extra = append(cur.extra, t) // scan_ssid, bssid, sae_password, ...
 		}
 	}
 	if err := sc.Err(); err != nil {
@@ -124,11 +142,7 @@ func readPSKs(path string) map[string]string {
 				out[ssid] = psk
 			}
 		case strings.HasPrefix(t, "ssid="):
-			if m := wpaQuoted.FindStringSubmatch(t[5:]); m != nil {
-				ssid = m[1]
-			} else {
-				ssid = t[5:]
-			}
+			ssid, _, _ = decodeSSID(t[5:])
 		case strings.HasPrefix(t, "psk="):
 			psk = t[4:] // quoted passphrase or 64 hex digits, written back verbatim
 		}
@@ -136,8 +150,27 @@ func readPSKs(path string) map[string]string {
 	return out
 }
 
-func quoteWPA(s string) string {
-	return `"` + strings.NewReplacer(`\`, `\\`, `"`, `\"`).Replace(s) + `"`
+// quotable - can the SSID be written as "..."? wpa_supplicant reads the
+// quoted text verbatim, so a quote or a backslash inside, or anything
+// outside printable ASCII, goes as hex instead.
+func quotable(s string) bool {
+	for _, c := range s {
+		if c < 0x20 || c > 0x7e || c == '"' || c == '\\' {
+			return false
+		}
+	}
+	return s != ""
+}
+
+func quoteWPA(s string) string { return `"` + s + `"` }
+
+func hasKey(lines []string, key string) bool {
+	for _, l := range lines {
+		if strings.HasPrefix(l, key+"=") {
+			return true
+		}
+	}
+	return false
 }
 
 func (w *wpaFile) render(psks map[string]string) (string, error) {
@@ -148,17 +181,24 @@ func (w *wpaFile) render(psks map[string]string) (string, error) {
 	}
 	for _, n := range w.nets {
 		b.WriteString("\nnetwork={\n")
-		b.WriteString("\tssid=" + quoteWPA(n.SSID) + "\n")
-		b.WriteString("\tscan_ssid=1\n")
+		switch {
+		case n.rawSSID:
+			b.WriteString("\tssid=" + n.SSID + "\n")
+		case n.hexSSID || !quotable(n.SSID):
+			b.WriteString("\tssid=" + hex.EncodeToString([]byte(n.SSID)) + "\n")
+		default:
+			b.WriteString("\tssid=" + quoteWPA(n.SSID) + "\n")
+		}
+		if !hasKey(n.extra, "scan_ssid") {
+			b.WriteString("\tscan_ssid=1\n")
+		}
 		if n.Open {
 			b.WriteString("\tkey_mgmt=NONE\n")
-		} else {
-			psk := psks[n.SSID]
-			if psk == "" {
-				return "", fmt.Errorf("%s: no password", n.SSID)
-			}
+		} else if psk := psks[n.SSID]; psk != "" {
 			b.WriteString("\tpsk=" + psk + "\n")
-		}
+		} else if !hasKey(n.extra, "key_mgmt") && !hasKey(n.extra, "sae_password") && !hasKey(n.extra, "password") {
+			return "", fmt.Errorf("%s: no password", n.SSID)
+		} // else: a network whose secret is in its own lines (SAE, EAP), kept as they were
 		if n.Priority != 0 {
 			b.WriteString("\tpriority=" + strconv.Itoa(n.Priority) + "\n")
 		}
@@ -238,7 +278,9 @@ func wifiScan() ([]scanNet, error) {
 		}
 		sig, _ := strconv.Atoi(f[2])
 		freq, _ := strconv.Atoi(f[1])
-		n := scanNet{SSID: f[4], Signal: sig, Secure: strings.Contains(f[3], "WPA") || strings.Contains(f[3], "WEP"), Freq: freq}
+		flags := f[3]
+		secure := strings.Contains(flags, "WPA") || strings.Contains(flags, "RSN") || strings.Contains(flags, "SAE") || strings.Contains(flags, "WEP")
+		n := scanNet{SSID: unescapeWPA(f[4]), Signal: sig, Secure: secure, Freq: freq}
 		if b, ok := best[n.SSID]; !ok || n.Signal > b.Signal {
 			best[n.SSID] = n
 		}
@@ -251,17 +293,55 @@ func wifiScan() ([]scanNet, error) {
 	return list, nil
 }
 
+// unescapeWPA - wpa_cli prints SSIDs printf-style: \xe3\x81\x82 for bytes
+// outside printable ASCII, \\ \" \n \t \e for the rest
+func unescapeWPA(s string) string {
+	if !strings.Contains(s, "\\") {
+		return s
+	}
+	var b strings.Builder
+	for i := 0; i < len(s); i++ {
+		if s[i] != '\\' || i+1 >= len(s) {
+			b.WriteByte(s[i])
+			continue
+		}
+		i++
+		switch s[i] {
+		case 'x':
+			if i+2 < len(s) {
+				if v, err := strconv.ParseUint(s[i+1:i+3], 16, 8); err == nil {
+					b.WriteByte(byte(v))
+					i += 2
+					continue
+				}
+			}
+			b.WriteString("\\x")
+		case 'n':
+			b.WriteByte('\n')
+		case 't':
+			b.WriteByte('\t')
+		case 'e':
+			b.WriteByte(0x1b)
+		default:
+			b.WriteByte(s[i]) // \\ and \"
+		}
+	}
+	return b.String()
+}
+
 // wifiSave - the new list of networks: write the config file(s) and make
-// wpa_supplicant re-read them
-func (s *server) wifiSave(nets []wifiNet) error {
+// wpa_supplicant re-read them. applied is false when the camera is an access
+// point (wifi-ap / portal): the running supplicant holds the AP config then,
+// and a reconfigure would drop the phone; the file waits for the reboot.
+func (s *server) wifiSave(nets []wifiNet) (applied bool, err error) {
 	if len(nets) == 0 {
-		return errors.New("at least one network must stay (or the camera falls into portal mode at the next boot)")
+		return false, errors.New("at least one network must stay (or the camera falls into portal mode at the next boot)")
 	}
 	s.relay.mu.Lock()
 	defer s.relay.mu.Unlock()
 	w, err := parseWPA(wpaConf)
 	if err != nil {
-		return err
+		return false, err
 	}
 	psks := readPSKs(wpaConf)
 	old := map[string]wifiNet{}
@@ -272,54 +352,102 @@ func (s *server) wifiSave(nets []wifiNet) error {
 	for i := range nets {
 		n := &nets[i]
 		n.SSID = strings.TrimSpace(n.SSID)
-		if n.SSID == "" || len(n.SSID) > 32 {
-			return fmt.Errorf("network %d: the name must be 1 to 32 characters", i+1)
+		if o, ok := old[n.SSID]; ok {
+			n.hexSSID, n.rawSSID, n.extra = o.hexSSID, o.rawSSID, o.extra
+		}
+		if n.SSID == "" || (!n.rawSSID && len(n.SSID) > 32) {
+			return false, fmt.Errorf("network %d: the name must be 1 to 32 bytes", i+1)
+		}
+		if strings.ContainsAny(n.SSID, "\x00\r\n") || strings.ContainsAny(n.PSK, "\x00\r\n") {
+			return false, fmt.Errorf("%s: the name or password has a line break in it", n.SSID)
 		}
 		if seen[n.SSID] {
-			return fmt.Errorf("%s is listed twice", n.SSID)
+			return false, fmt.Errorf("%s is listed twice", n.SSID)
 		}
 		seen[n.SSID] = true
 		if n.Priority < 0 || n.Priority > 100 {
-			return fmt.Errorf("%s: priority must be 0 to 100", n.SSID)
+			return false, fmt.Errorf("%s: priority must be 0 to 100", n.SSID)
 		}
 		if n.PSK != "" {
 			if len(n.PSK) < 8 || len(n.PSK) > 63 {
-				return fmt.Errorf("%s: the password must be 8 to 63 characters", n.SSID)
+				return false, fmt.Errorf("%s: the password must be 8 to 63 characters", n.SSID)
 			}
-			if strings.ContainsAny(n.PSK, "\"\\\n") {
-				return fmt.Errorf("%s: the password has a quote or a backslash in it", n.SSID)
+			if !quotable(n.PSK) {
+				return false, fmt.Errorf("%s: the password may use printable ASCII without quotes or backslashes", n.SSID)
 			}
 			psks[n.SSID] = quoteWPA(n.PSK)
 			n.PSK = ""
 		}
-		if !n.Open && psks[n.SSID] == "" {
-			return fmt.Errorf("%s: a password is needed", n.SSID)
-		}
-		if o, ok := old[n.SSID]; ok {
-			n.extra = o.extra
+		if !n.Open && psks[n.SSID] == "" && !hasKey(n.extra, "key_mgmt") && !hasKey(n.extra, "sae_password") {
+			return false, fmt.Errorf("%s: a password is needed", n.SSID)
 		}
 	}
 	w.nets = nets
 	text, err := w.render(psks)
 	if err != nil {
-		return err
+		return false, err
 	}
 	// the first rewrite keeps the original next to it (comments and all)
 	backupOnce(wpaConf)
+	prevBytes, _ := os.ReadFile(wpaConf)
+	previous := string(prevBytes)
 	if err := writeText(wpaConf, text, 0o600); err != nil {
-		return err
+		return false, err
 	}
 	sd := filepath.Join(s.sd, wpaSDName)
 	if exists(sd) {
 		backupOnce(sd)
 		if err := writeText(sd, text, 0o644); err != nil {
-			return fmt.Errorf("written to %s, but not to the SD card: %v", wpaConf, err)
+			return false, fmt.Errorf("written to %s, but not to the SD card: %v", wpaConf, err)
 		}
 	}
-	if out, err := wpaCli("reconfigure"); err != nil || !strings.Contains(out, "OK") {
-		return fmt.Errorf("saved, but wpa_supplicant did not reload: %v %s", err, out)
+	if exists("/run/wlan_ap_mode") || exists("/run/portal_mode") {
+		return false, nil // the access point stays up; the saved networks come with the reboot
 	}
-	return nil
+	wasUp := wifiStatus().State == "COMPLETED"
+	if out, err := wpaCli("reconfigure"); err != nil || !strings.Contains(out, "OK") {
+		return false, fmt.Errorf("saved, but wpa_supplicant did not reload: %v %s", err, out)
+	}
+	if wasUp && previous != "" {
+		go s.wifiWatch(previous, sd)
+	}
+	return true, nil
+}
+
+// wifiWatch - after a save that the camera was connected before: if it is
+// not connected again within 30 s (a typo in the only reachable network),
+// the previous file comes back and is loaded again, so the camera is not
+// lost until someone holds the button for the access point
+func (s *server) wifiWatch(previous, sd string) {
+	for i := 0; i < 30; i++ {
+		time.Sleep(time.Second)
+		if wifiStatus().State == "COMPLETED" {
+			s.setWifiNote("")
+			return
+		}
+	}
+	s.relay.mu.Lock()
+	defer s.relay.mu.Unlock()
+	_ = writeText(wpaConf, previous, 0o600)
+	if sd != "" && exists(sd) {
+		_ = writeText(sd, previous, 0o644)
+	}
+	_, _ = wpaCli("reconfigure")
+	msg := "The last Wi-Fi save was undone: the camera did not reconnect within 30 s. Check the name and password."
+	log.Printf("wifi: %s", msg)
+	s.setWifiNote(msg)
+}
+
+func (s *server) setWifiNote(msg string) {
+	s.wifiMu.Lock()
+	s.wifiNote = msg
+	s.wifiMu.Unlock()
+}
+
+func (s *server) getWifiNote() string {
+	s.wifiMu.Lock()
+	defer s.wifiMu.Unlock()
+	return s.wifiNote
 }
 
 // backupOnce - copy path to path.before-webui unless that exists already
@@ -365,6 +493,8 @@ func (s *server) handleWifiGet(w http.ResponseWriter, r *http.Request) {
 		"current":  wifiStatus(),
 		"networks": nets,
 		"sd_copy":  exists(filepath.Join(s.sd, wpaSDName)),
+		"ap_mode":  exists("/run/wlan_ap_mode") || exists("/run/portal_mode"),
+		"note":     s.getWifiNote(),
 	})
 }
 
@@ -388,9 +518,10 @@ func (s *server) handleWifiSet(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]any{"error": err.Error()})
 		return
 	}
-	if err := s.wifiSave(body.Networks); err != nil {
+	applied, err := s.wifiSave(body.Networks)
+	if err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]any{"error": err.Error()})
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "applied": applied})
 }

@@ -71,7 +71,8 @@ type statusPoller struct {
 	mu       sync.RWMutex
 	last     status
 	lastAt   time.Time
-	ffmpeg   int // last ffmpeg pid seen
+	seenAt   time.Time // last /api/status
+	ffmpeg   int       // last ffmpeg pid seen
 	restarts int
 	txBytes  int64
 	txAt     time.Time
@@ -82,6 +83,9 @@ func newStatusPoller(rl *relay, rc *recorder, interval time.Duration) *statusPol
 	return &statusPoller{relay: rl, rec: rc, interval: interval, kick: make(chan struct{}, 1)}
 }
 
+// run - every interval while someone is looking (a /api/status within the
+// last 30 s), otherwise ten times slower: the collection starts a few
+// processes each time, and the camera is usually streaming with nobody watching
 func (p *statusPoller) run(ctx context.Context) {
 	p.update()
 	t := time.NewTicker(p.interval)
@@ -91,11 +95,35 @@ func (p *statusPoller) run(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-t.C:
-			p.update()
+			if p.watched() {
+				p.update()
+			} else if time.Since(p.lastAt) >= 10*p.interval {
+				p.update()
+			}
 		case <-p.kick:
 			p.update()
 		}
 	}
+}
+
+func (p *statusPoller) watched() bool {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return time.Since(p.seenAt) < 30*time.Second
+}
+
+// current - the last status; also notes that someone is looking
+func (p *statusPoller) current() status {
+	p.mu.Lock()
+	wasWatched := time.Since(p.seenAt) < 30*time.Second
+	p.seenAt = time.Now()
+	st := p.last
+	stale := time.Since(p.lastAt) > 2*p.interval
+	p.mu.Unlock()
+	if !wasWatched || stale {
+		p.refresh() // the first look after a quiet spell gets fresh data soon
+	}
+	return st
 }
 
 // refresh - after an action, so the next /api/status shows the result
@@ -112,12 +140,6 @@ func (p *statusPoller) update() {
 	p.last = st
 	p.lastAt = time.Now()
 	p.mu.Unlock()
-}
-
-func (p *statusPoller) current() status {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.last
 }
 
 func (p *statusPoller) collect() status {
@@ -154,7 +176,7 @@ func (p *statusPoller) collect() status {
 	}
 
 	st.APMode = exists("/run/wlan_ap_mode") || exists("/run/portal_mode")
-	st.Recording = p.rec.state(recorderMount())
+	st.Recording = p.rec.state(p.rec.recorderMount())
 	img, err := imageGet()
 	if err != nil {
 		st.Errors = append(st.Errors, "flip: "+err.Error())
@@ -185,19 +207,21 @@ func (p *statusPoller) txRate(now time.Time) int {
 
 func uptime() float64 {
 	b, err := os.ReadFile("/proc/uptime")
-	if err != nil {
+	f := strings.Fields(string(b))
+	if err != nil || len(f) == 0 {
 		return 0
 	}
-	f, _ := strconv.ParseFloat(strings.Fields(string(b))[0], 64)
-	return f
+	v, _ := strconv.ParseFloat(f[0], 64)
+	return v
 }
 
 func load1() string {
 	b, err := os.ReadFile("/proc/loadavg")
-	if err != nil {
+	f := strings.Fields(string(b))
+	if err != nil || len(f) == 0 {
 		return ""
 	}
-	return strings.Fields(string(b))[0]
+	return f[0]
 }
 
 func memAvailableMB() int {
@@ -360,7 +384,11 @@ func (s *server) handleImageSet(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.status.refresh()
-	img, _ := imageGet()
+	img, err := imageGet()
+	if err != nil {
+		writeJSON(w, http.StatusOK, map[string]any{"ok": true, "image": img, "warning": "applied, but prudynt did not answer the read-back: " + err.Error()})
+		return
+	}
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "image": img})
 }
 

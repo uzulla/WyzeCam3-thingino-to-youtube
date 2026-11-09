@@ -27,8 +27,9 @@ const (
 	osdFeedInit   = "/etc/init.d/S94osd-feed"
 	logoDefault   = "logo.png"
 	logoMaxBytes  = 4 << 20
-	logoMaxSide   = 4096
-	textCellW     = 8 // prudynt's 8x8 bitmap font: cell 8 x 9 px, padding 2 px, times scale
+	logoMaxSide   = 1024    // osd-feed decodes the whole PNG in RAM (96 MB camera)
+	logoMaxPixels = 1 << 20 // 1 Mpx: the OSD cannot show more than the stream's width anyway
+	textCellW     = 8       // prudynt's 8x8 bitmap font: cell 8 x 9 px, padding 2 px, times scale
 	textCellH     = 9
 	textCellPad   = 2
 	textMaxCols   = 128
@@ -234,7 +235,7 @@ func (s *server) feedEdit(slot string, template *string, gball, track *bool) err
 			return fmt.Errorf("%s: only a text slot has a template", slot)
 		}
 		if len(*template) > 2000 {
-			return errors.New("the template is too long (2000 characters at most)")
+			return errors.New("the template is too long (2000 bytes at most)")
 		}
 		m["template"] = *template
 	}
@@ -335,6 +336,10 @@ func (s *server) handleOSDElement(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]any{"error": err.Error()})
 		return
 	}
+	if body.osdElem == (osdElem{}) {
+		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "nothing to change"})
+		return
+	}
 	if err := s.osdApply(body.Name, body.osdElem); err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]any{"error": err.Error()})
 		return
@@ -351,6 +356,10 @@ func (s *server) handleOSDFeed(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := readJSON(r, &body, 16<<10); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]any{"error": err.Error()})
+		return
+	}
+	if body.Template == nil && body.GBall == nil && body.Track == nil {
+		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "nothing to change"})
 		return
 	}
 	if err := s.feedEdit(body.Slot, body.Template, body.GBall, body.Track); err != nil {
@@ -380,34 +389,44 @@ func (s *server) handleLogoUpload(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "not a PNG file"})
 		return
 	}
-	if cfgImg.Width > logoMaxSide || cfgImg.Height > logoMaxSide {
-		writeJSON(w, http.StatusBadRequest, map[string]any{"error": fmt.Sprintf("the PNG is %dx%d; 4096 px per side at most", cfgImg.Width, cfgImg.Height)})
+	if cfgImg.Width > logoMaxSide || cfgImg.Height > logoMaxSide || cfgImg.Width*cfgImg.Height > logoMaxPixels {
+		writeJSON(w, http.StatusBadRequest, map[string]any{"error": fmt.Sprintf("the PNG is %dx%d; 1024 px per side and 1 megapixel at most (the camera decodes it in RAM)", cfgImg.Width, cfgImg.Height)})
 		return
 	}
-	path := s.logoPath()
 	if !mounted(s.sd) {
 		writeJSON(w, http.StatusInternalServerError, map[string]any{"error": "no SD card"})
 		return
 	}
-	tmp := path + ".new"
-	if err := os.WriteFile(tmp, data, 0o644); err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]any{"error": err.Error()})
-		return
-	}
-	if err := os.Rename(tmp, path); err != nil {
-		os.Remove(tmp)
+	path := s.logoPath()
+	s.relay.mu.Lock() // one writer of SD files at a time (and one upload at a time)
+	err = writeBytes(path, data, 0o644)
+	s.relay.mu.Unlock()
+	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]any{"error": err.Error()})
 		return
 	}
 	log.Printf("logo: %s replaced (%dx%d PNG, %d bytes)", path, cfgImg.Width, cfgImg.Height, len(data))
+	resp := map[string]any{"ok": true, "path": path, "width": cfgImg.Width, "height": cfgImg.Height}
 	// make sure osd-feed draws it in the logo slot
-	slots, _ := s.feedRead()
-	if slots["imagefile"].PNG == "" {
-		if err := s.feedEdit("imagefile", nil, nil, nil); err == nil {
-			_ = s.feedSetPNG("imagefile", path)
+	if slots, _ := s.feedRead(); slots["imagefile"].PNG == "" {
+		if err := s.feedSetPNG("imagefile", path); err != nil {
+			resp["warning"] = "saved, but osd-feed could not be pointed at it: " + err.Error()
 		}
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "path": path, "width": cfgImg.Width, "height": cfgImg.Height})
+	writeJSON(w, http.StatusOK, resp)
+}
+
+// writeBytes - tmp + rename, with a name no other writer uses
+func writeBytes(path string, data []byte, mode os.FileMode) error {
+	tmp := fmt.Sprintf("%s.%d.new", path, os.Getpid())
+	if err := os.WriteFile(tmp, data, mode); err != nil {
+		return err
+	}
+	if err := os.Rename(tmp, path); err != nil {
+		os.Remove(tmp)
+		return err
+	}
+	return nil
 }
 
 // feedSetPNG - point an image slot at a PNG and restart osd-feed

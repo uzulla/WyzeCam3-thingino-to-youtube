@@ -85,19 +85,20 @@
         const dayFiles = data.files.filter((x) => x.path.startsWith(parts.slice(0, -1).join("/") + "/"));
         const allOn = dayFiles.every((x) => selected.has(x.path));
         const cb = document.createElement("input"); cb.type = "checkbox"; cb.checked = allOn; cb.title = "Select the whole day";
-        cb.addEventListener("change", () => { dayFiles.forEach((x) => cb.checked ? selected.add(x.path) : selected.delete(x.path)); render(); });
+        cb.addEventListener("change", () => { dayFiles.forEach((x) => { if (x.recording) return; cb.checked ? selected.add(x.path) : selected.delete(x.path); }); render(); });
         h.append(cb, document.createTextNode(` ${d} (${dayFiles.length})`));
         list.appendChild(h);
       }
       const row = document.createElement("div"); row.className = "rec-row";
-      const cb = document.createElement("input"); cb.type = "checkbox"; cb.checked = selected.has(f.path);
+      const cb = document.createElement("input"); cb.type = "checkbox"; cb.checked = selected.has(f.path); cb.disabled = !!f.recording;
       cb.addEventListener("change", () => { cb.checked ? selected.add(f.path) : selected.delete(f.path); renderBulk(); syncDayBoxes(); });
-      const name = document.createElement("span"); name.className = "rec-name"; name.textContent = parts[parts.length - 1].replace(".mp4", "").replace(/-/g, ":");
+      const name = document.createElement("span"); name.className = "rec-name"; name.textContent = parts[parts.length - 1].replace(".mp4", "").replace(/-/g, ":") + (f.recording ? "  ● recording" : "");
       const size = document.createElement("span"); size.className = "rec-size"; size.textContent = sizeText(f.size);
       const play = document.createElement("button"); play.textContent = "Play"; play.addEventListener("click", () => playFile(f));
       const dl = document.createElement("a"); dl.textContent = "Save"; dl.href = `/api/recordings/file?p=${encodeURIComponent(f.path)}&dl=1`; dl.className = "btnlink";
       const del = document.createElement("button"); del.className = "danger";
       del.textContent = pendingDelete === f.path ? "Tap again" : "Delete";
+      del.disabled = !!f.recording;
       del.addEventListener("click", () => deleteFile(f, del));
       row.append(cb, name, size, play, dl, del);
       row.dataset.path = f.path;

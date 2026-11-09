@@ -173,3 +173,6 @@ a { color: var(--accent); }
 
 .banner { margin: 8px 12px 0; padding: 10px 12px; border-radius: 10px; background: rgba(245,165,36,.15); border: 1px solid #f5a524; color: #f5a524; font-size: 14px; }
 .foot button.confirm { background: #f5a524; color: #000; border-color: #f5a524; }
+
+.keyrow { display: flex; gap: 6px; }
+.keyrow input { flex: 1; }

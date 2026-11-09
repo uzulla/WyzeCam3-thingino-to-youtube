@@ -25,6 +25,7 @@ import (
 	"os"
 	"os/signal"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 )
@@ -39,6 +40,9 @@ type server struct {
 	status   *statusPoller
 	relay    *relay
 	rec      *recorder
+
+	wifiMu   sync.Mutex
+	wifiNote string // the last Wi-Fi save was undone (wifi.go)
 }
 
 func main() {
@@ -89,6 +93,9 @@ func main() {
 	// pages and assets: no login needed for the shell itself, the app asks
 	// /api/me and shows the sign-in form
 	mux.Handle("/", http.FileServer(http.FS(static)))
+	mux.HandleFunc("/api/", func(w http.ResponseWriter, r *http.Request) {
+		writeJSON(w, http.StatusNotFound, map[string]any{"error": "no such API"})
+	})
 	mux.HandleFunc("POST /api/login", s.handleLogin)
 	mux.HandleFunc("POST /api/logout", s.handleLogout)
 	mux.HandleFunc("GET /api/me", s.handleMe)
@@ -121,9 +128,12 @@ func main() {
 
 	srv := &http.Server{
 		Addr:              *listen,
-		Handler:           noCache(mux),
+		Handler:           guard(mux),
 		ReadHeaderTimeout: 10 * time.Second,
-		// no WriteTimeout: the MJPEG preview is one long response
+		ReadTimeout:       2 * time.Minute, // a 4 MB logo over a weak Wi-Fi
+		IdleTimeout:       60 * time.Second,
+		// no WriteTimeout: the MJPEG preview and the zip are long responses
+		// (the preview sets its own deadline per frame)
 	}
 	go func() {
 		<-ctx.Done()
@@ -138,10 +148,32 @@ func main() {
 	log.Printf("Stopped")
 }
 
-// noCache - the app and its API must never be served stale by the phone
-func noCache(next http.Handler) http.Handler {
+// guard - headers for every response, and the rules for API writes:
+//   - nothing is cached by the phone
+//   - the page may not be framed and scripts come only from here
+//   - a POST to the API must come from this app (same-site, JSON or the
+//     logo's multipart body), so a page on another site cannot drive the
+//     camera through the browser's cookie (CSRF). Browsers without
+//     Sec-Fetch-Site are old; the Content-Type rule still stops a plain form.
+func guard(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Cache-Control", "no-store")
+		h := w.Header()
+		h.Set("Cache-Control", "no-store")
+		h.Set("X-Content-Type-Options", "nosniff")
+		h.Set("Content-Security-Policy", "default-src 'self'; img-src 'self' data: blob:; media-src 'self' blob:; frame-ancestors 'none'")
+		if strings.HasPrefix(r.URL.Path, "/api/") && r.Method != http.MethodGet && r.Method != http.MethodHead {
+			if site := r.Header.Get("Sec-Fetch-Site"); site != "" && site != "same-origin" && site != "none" {
+				writeJSON(w, http.StatusForbidden, map[string]any{"error": "cross-site request refused"})
+				return
+			}
+			ct := r.Header.Get("Content-Type")
+			isJSON := strings.HasPrefix(ct, "application/json")
+			isUpload := strings.HasPrefix(ct, "multipart/form-data") && r.URL.Path == "/api/osd/logo"
+			if !isJSON && !isUpload {
+				writeJSON(w, http.StatusUnsupportedMediaType, map[string]any{"error": "send JSON (application/json)"})
+				return
+			}
+		}
 		next.ServeHTTP(w, r)
 	})
 }

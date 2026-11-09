@@ -33,9 +33,11 @@
       name.textContent = n.ssid + (n.ssid === c.ssid ? "  ✓ connected" : "") + (n.open ? "  (open)" : "");
       const up = document.createElement("button"); up.textContent = "▲"; up.title = "Try this one first"; up.disabled = pos === 0;
       up.addEventListener("click", () => {
-        // give it a priority above the one currently first
-        const top = order[0].n;
-        n.priority = (top.priority || 0) + 1;
+        // move to the top, then renumber everyone 0..N-1 from the bottom so
+        // priorities never grow past the server's limit
+        const rest = order.map((o) => o.n).filter((x) => x !== n);
+        const all = [n, ...rest];
+        all.forEach((x, idx) => { x.priority = all.length - 1 - idx; });
         render();
       });
       const del = document.createElement("button"); del.className = "danger"; del.textContent = "Remove";
@@ -51,7 +53,10 @@
     save.disabled = saving || !changed;
     save.textContent = saving ? "Saving…" : confirmSave ? (removesCurrent ? "Tap again: this removes the network you are on" : "Tap again to save") : (changed ? "Save and apply" : "No changes");
     save.className = "primary" + (confirmSave && !saving ? " confirm" : "");
-    $("wifi-sdnote").textContent = data.sd_copy ? "The SD card's wpa_supplicant.conf is updated too." : "";
+    $("wifi-sdnote").textContent = (data.sd_copy ? "The SD card's wpa_supplicant.conf is updated too. " : "") + (data.ap_mode ? "Access point mode: the list is saved now and used after the reboot." : "");
+    if (data.note) setMsg(data.note, true);
+    $("wifi-scan").disabled = !!data.ap_mode;
+    $("wifi-scan").title = data.ap_mode ? "No scan while the camera is an access point" : "";
 
     const sl = $("wifi-scan-list");
     sl.innerHTML = "";
@@ -95,9 +100,9 @@
     setMsg("Saving…");
     render();
     try {
-      await api("/api/wifi/networks", { networks: edit.map((n) => ({ ssid: n.ssid, priority: n.priority, open: !!n.open, psk: n.psk || undefined })) });
+      const r = await api("/api/wifi/networks", { networks: edit.map((n) => ({ ssid: n.ssid, priority: n.priority, open: !!n.open, psk: n.psk || undefined })) });
       saving = false;
-      setMsg("Saved. The camera reloaded its network list.");
+      setMsg(r.applied ? "Saved. The camera reloaded its network list." : "Saved. The camera is an access point now; it joins these networks after the reboot (Camera tab, bottom).");
       await load();
     } catch (err) { saving = false; setMsg(err.message, true); render(); }
   });

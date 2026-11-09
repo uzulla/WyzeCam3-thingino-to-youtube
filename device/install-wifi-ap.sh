@@ -44,4 +44,4 @@ sleep 1
 [ \"\$(pidof thingino-button | wc -w)\" = 1 ]
 grep -q '^KEY_ENTER TIMED 5 /usr/sbin/wifi-ap' $CONF"
 echo "Done. Hold the button 5 s (a chime sounds), release: the camera becomes the open access point 'Wyze-cam'."
-echo "Then open http://100.64.1.1:8000/ on the phone. Reboot to return to the saved Wi-Fi. Log: ssh $CAM 'logread | grep wifi-ap'"
+echo "Then open http://100.64.1.1/ on the phone (with the port from webui.args, if any). Reboot to return to the saved Wi-Fi. Log: ssh $CAM 'logread | grep wifi-ap'"

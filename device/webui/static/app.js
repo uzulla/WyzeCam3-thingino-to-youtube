@@ -7,6 +7,7 @@
 
   let status = null;
   let pollTimer = null;
+  let polling = false; // one /api/status in flight at a time
   let profiles = null; // {profiles:[...], active, autostart}
   const pending = {}; // button id -> timeout for "tap again"
 
@@ -76,22 +77,32 @@
   });
   // a phone that comes back from the background has a dead stream: restart it
   document.addEventListener("visibilitychange", () => {
-    if (document.visibilityState === "visible" && !$("app").classList.contains("hidden")) {
-      if (window.osdTab && window.osdTab.isOpen()) window.osdTab.open(); else startPreview();
+    if ($("app").classList.contains("hidden")) return;
+    if (document.visibilityState === "visible") {
+      if (window.osdTab && window.osdTab.isOpen()) window.osdTab.open(); else if (currentTab === "home") startPreview();
       refresh();
+    } else {
+      // in the background the pictures would only use the camera's Wi-Fi
+      $("preview").src = "";
+      if (window.osdTab && window.osdTab.isOpen()) $("osd-preview").src = "";
     }
   });
+  let currentTab = "home";
 
   // --- status --------------------------------------------------------------
   function startPolling() { stopPolling(); refresh(); pollTimer = setInterval(refresh, STATUS_MS); }
   function stopPolling() { clearInterval(pollTimer); pollTimer = null; }
 
   async function refresh() {
+    if (polling) return; // a slow Wi-Fi must not pile requests up
+    polling = true;
     try {
       status = await api("/api/status");
       render();
     } catch (err) {
-      if (err.message !== "sign in first") setMsg("action-msg", `No answer from the camera: ${err.message}`, true);
+      if (err.message !== "sign in first") setMsg("status-errors", `No answer from the camera: ${err.message}`, true);
+    } finally {
+      polling = false;
     }
   }
 
@@ -154,7 +165,7 @@
     $("st-load").textContent = st.load1 || "-";
     $("st-mem").textContent = st.mem_free_mb;
     $("ap-banner").classList.toggle("hidden", !st.ap_mode);
-    if (st.errors && st.errors.length) setMsg("action-msg", st.errors.join(" · "), true);
+    setMsg("status-errors", st.errors && st.errors.length ? st.errors.join(" · ") : "", true);
   }
 
   let rebootConfirm = null;
@@ -226,6 +237,9 @@
 
   // --- tabs ----------------------------------------------------------------
   function showTab(name) {
+    currentTab = name;
+    // one preview at a time: the Camera screen's picture stops behind other tabs
+    if (name === "home") { if (!$("preview").src) startPreview(); } else $("preview").src = "";
     $("sheet-stream").classList.toggle("hidden", name !== "stream");
     $("sheet-osd").classList.toggle("hidden", name !== "osd");
     $("sheet-rec").classList.toggle("hidden", name !== "rec");
@@ -233,8 +247,8 @@
     if (window.wifiTab) { if (name === "wifi") window.wifiTab.open(); else window.wifiTab.close(); }
     if (window.recTab) { if (name === "rec") window.recTab.open(); else window.recTab.close(); }
     if (window.osdTab) {
-      if (name === "osd" && !window.osdTab.isOpen()) { $("preview").src = ""; window.osdTab.open(); }
-      if (name !== "osd" && window.osdTab.isOpen()) { window.osdTab.close(); if (name === "home") startPreview(); }
+      if (name === "osd" && !window.osdTab.isOpen()) window.osdTab.open();
+      if (name !== "osd" && window.osdTab.isOpen()) window.osdTab.close();
     }
     document.querySelectorAll("#tabs button").forEach((b) => b.classList.toggle("on", b.dataset.tab === name));
     if (name === "stream") { loadProfiles(); loadLog(); loadQuality(); }
@@ -244,9 +258,10 @@
   async function loadProfiles() {
     try {
       profiles = await api("/api/relay/config");
+      if (!Array.isArray(profiles.profiles)) profiles.profiles = [];
       renderProfiles();
       $("btn-autostart").classList.toggle("on", !!profiles.autostart);
-      setMsg("profiles-msg", "");
+      setMsg("profiles-msg", profiles.warning || "", !!profiles.warning);
     } catch (err) {
       setMsg("profiles-msg", err.message, true);
     }
@@ -265,6 +280,10 @@
       url.addEventListener("input", () => { p.rtmp_url = url.value; });
       const key = node.querySelector(".p-key"); key.value = p.stream_key;
       key.addEventListener("input", () => { p.stream_key = key.value; });
+      node.querySelector(".p-show").addEventListener("click", (e) => {
+        key.type = key.type === "password" ? "text" : "password";
+        e.target.textContent = key.type === "password" ? "Show" : "Hide";
+      });
       node.querySelector(".p-remove").addEventListener("click", () => {
         profiles.profiles.splice(i, 1);
         if (profiles.active === p.name && profiles.profiles.length) profiles.active = profiles.profiles[0].name;
@@ -333,6 +352,7 @@
     const box = $("quality");
     box.innerHTML = "";
     if (!quality) return;
+    if (!Array.isArray(quality.sizes)) quality.sizes = [];
     const q = qEdit, sensor = quality.sensor;
     const sizes = document.createElement("div"); sizes.className = "choices";
     quality.sizes.forEach(([w, h]) => {

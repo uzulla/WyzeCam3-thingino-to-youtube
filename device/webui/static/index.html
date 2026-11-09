@@ -37,6 +37,7 @@
     <button id="btn-rec" class="big">Record</button>
   </div>
   <p id="action-msg" class="msg"></p>
+  <p id="status-errors" class="msg"></p>
 
   <div class="cards">
     <div class="card">
@@ -144,6 +145,7 @@
     <p id="wifi-sdnote" class="help"></p>
     <p id="wifi-msg" class="msg"></p>
     <h2>Add a network</h2>
+    <p class="help">A scan pauses the camera's own Wi-Fi for a moment: the stream may stutter for a second.</p>
     <div class="row"><button id="wifi-scan">Scan</button></div>
     <div id="wifi-scan-list" class="chips"></div>
     <div class="panel">
@@ -168,7 +170,7 @@
     <label class="active-row"><input type="radio" name="active"> <span>active</span></label>
     <input class="p-name" placeholder="Name" maxlength="40">
     <input class="p-url" placeholder="rtmps://a.rtmps.youtube.com:443/live2">
-    <input class="p-key" placeholder="Stream key" autocomplete="off">
+    <div class="keyrow"><input class="p-key" type="password" placeholder="Stream key" autocomplete="off"><button class="p-show small" type="button">Show</button></div>
     <button class="p-remove small">Remove</button>
   </div>
 </template>
