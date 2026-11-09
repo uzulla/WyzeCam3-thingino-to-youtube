@@ -33,10 +33,11 @@ const (
 var loginDelay = 1500 * time.Millisecond
 
 type sessions struct {
-	mu   sync.Mutex
-	ttl  time.Duration
-	live map[string]time.Time // sha256(token) -> expiry: the token itself is only in the phone's cookie
-	file string               // where the sessions are kept across a restart of webui ("" = memory only)
+	mu     sync.Mutex
+	ttl    time.Duration
+	live   map[string]time.Time // sha256(token) -> expiry: the token itself is only in the phone's cookie
+	file   string               // where the sessions are kept across a restart of webui ("" = memory only)
+	fileMu sync.Mutex           // one writer of that file at a time
 	// one password check at a time (the hash is slow on this CPU), and a
 	// count of recent failures per address: after loginMaxFails in
 	// loginFailWindow the address gets 429 at once, whatever it sends in
@@ -88,7 +89,6 @@ func (s *sessions) create() string {
 	}
 	tok := hex.EncodeToString(b)
 	s.mu.Lock()
-	defer s.mu.Unlock()
 	now := time.Now()
 	for t, exp := range s.live {
 		if exp.Before(now) {
@@ -96,7 +96,9 @@ func (s *sessions) create() string {
 		}
 	}
 	s.live[tokenKey(tok)] = now.Add(s.ttl)
-	s.saveLocked()
+	snap := s.snapshotLocked()
+	s.mu.Unlock()
+	s.write(snap) // outside the lock: valid() must not wait for the card
 	return tok
 }
 
@@ -158,30 +160,43 @@ func (s *sessions) persistTo(file string) {
 	}
 }
 
-// saveLocked - write the live sessions (caller holds s.mu). Written on
-// create and drop only: the sliding expiry of valid() is not saved, so after
-// a restart a session is as old as its last create (at most ttl behind).
-func (s *sessions) saveLocked() {
+// snapshotLocked - the live sessions as they go into the file (caller holds
+// s.mu); nil when nothing is persisted
+func (s *sessions) snapshotLocked() *sessionFile {
 	if s.file == "" {
-		return
+		return nil
 	}
-	out := sessionFile{Shadow: shadowDigest(), Sessions: map[string]int64{}}
+	out := &sessionFile{Shadow: shadowDigest(), Sessions: map[string]int64{}}
 	for key, exp := range s.live {
 		out.Sessions[key] = exp.Unix()
 	}
-	b, err := json.Marshal(out)
+	return out
+}
+
+// write - the snapshot to the file, tmp + rename, outside s.mu (a slow card
+// must not hold every request's valid() check). Written on create and drop
+// only: the sliding expiry of valid() is not saved, so after a restart a
+// session is as old as its last create (at most ttl behind). Writers are
+// serialized by fileMu so two snapshots cannot land out of order.
+func (s *sessions) write(snap *sessionFile) {
+	if snap == nil {
+		return
+	}
+	s.fileMu.Lock()
+	defer s.fileMu.Unlock()
+	b, err := json.Marshal(snap)
 	if err != nil {
 		log.Printf("sessions: cannot encode: %v", err)
 		return
 	}
 	tmp := s.file + ".new"
 	if err := os.WriteFile(tmp, b, 0o600); err != nil {
-		os.Remove(tmp)
+		_ = os.Remove(tmp)
 		log.Printf("sessions: cannot write %s: %v", tmp, err)
 		return
 	}
 	if err := os.Rename(tmp, s.file); err != nil {
-		os.Remove(tmp)
+		_ = os.Remove(tmp)
 		log.Printf("sessions: cannot replace %s: %v", s.file, err)
 	}
 }
@@ -208,9 +223,10 @@ func (s *sessions) valid(tok string) bool {
 
 func (s *sessions) drop(tok string) {
 	s.mu.Lock()
-	defer s.mu.Unlock()
 	delete(s.live, tokenKey(tok))
-	s.saveLocked()
+	snap := s.snapshotLocked()
+	s.mu.Unlock()
+	s.write(snap)
 }
 
 // shadowHash - the password hash of user from /etc/shadow
