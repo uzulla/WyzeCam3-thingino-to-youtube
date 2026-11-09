@@ -3,7 +3,7 @@
 Wyze Cam v3 の正面の状態表示 LED は、Thingino では**赤と青の 2 つの LED** として見える
 (`/sys/class/leds/led_r`、`/sys/class/leds/led_b`)。Thingino の既定では起動後は消えたまま
 (起動スクリプト `S99led` がトリガーを外し、`/etc/thingino.json` の `led.startup_indicator` が `off`)。
-このリポジトリのスクリプトは LED を使っていない。
+このリポジトリで LED を使うのは、SD カードへの録画中に赤を点ける `rec-led` だけ ([recording.md](recording.md))。
 
 夜間撮影用の赤外線 LED はこれとは別 (下記)。
 
@@ -74,4 +74,5 @@ light ir on       # 点ける (off / toggle)
 ## 確認した範囲
 
 実機 (`ciao+da40db6`) で `/sys/class/leds` の中身と各トリガー、`led` / `blink` / `light` / `S99led` のスクリプトを読んで確認した。
-**LED を実際に点けての確認はしていない** (色の見え方、明るさの段階、赤外線 LED と `daynightd` の関係は未確認)。
+赤は `rec-led` が sysfs で点け消しして `brightness` が 255 / 0 になるのを確認した (2026-11-09)。
+**見た目の確認はしていない** (色の見え方、明るさの段階、赤外線 LED と `daynightd` の関係は未確認)。

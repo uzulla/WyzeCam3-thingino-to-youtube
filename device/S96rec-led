@@ -1,0 +1,91 @@
+#!/bin/sh
+# Start/stop rec-led (docs/recording.md): red LED on while prudynt records to
+# the SD card. Install to /etc/init.d/S96rec-led (chmod +x).
+# service enable/disable rec-led. Undo: stop it and remove this file and
+# /usr/sbin/rec-led.
+
+DAEMON="rec-led"
+DAEMON_PATH="/usr/sbin/$DAEMON"
+PIDFILE="/run/$DAEMON.pid"
+
+running() {
+	[ -f "$PIDFILE" ] || return 1
+	pid=$(cat "$PIDFILE" 2>/dev/null)
+	[ -n "$pid" ] || return 1
+	grep -q "$DAEMON_PATH" "/proc/$pid/cmdline" 2>/dev/null
+}
+
+start() {
+	echo -n "Starting $DAEMON: "
+	if [ -f /run/portal_mode ]; then
+		echo "SKIP (portal mode)"
+		return 0
+	fi
+	if [ ! -x "$DAEMON_PATH" ]; then
+		echo "SKIP (no $DAEMON_PATH)"
+		return 0
+	fi
+	if [ ! -d /sys/class/leds/led_r ]; then
+		echo "SKIP (no red LED channel)"
+		return 0
+	fi
+	if running; then
+		echo "SKIP (already running, pid $(cat $PIDFILE))"
+		return 0
+	fi
+	rm -f "$PIDFILE"
+	# -N 10: lower priority, prudynt/ISP come first
+	if start-stop-daemon -S -b -m -N 10 -p "$PIDFILE" -x "$DAEMON_PATH"; then
+		echo "OK"
+	else
+		echo "FAIL"
+		return 1
+	fi
+}
+
+# stop - TERM (the script turns the LED off and exits), then wait up to 5 s
+stop() {
+	echo -n "Stopping $DAEMON: "
+	if ! running; then
+		echo "SKIP (not running)"
+		rm -f "$PIDFILE"
+		return 0
+	fi
+	pid=$(cat "$PIDFILE")
+	if ! start-stop-daemon -K -p "$PIDFILE" -s TERM 2>/dev/null && [ -d "/proc/$pid" ]; then
+		echo "FAIL (could not signal pid $pid)"
+		return 1
+	fi
+	i=0
+	while [ -d "/proc/$pid" ] && [ $i -lt 50 ]; do
+		usleep 100000
+		i=$((i + 1))
+	done
+	if [ -d "/proc/$pid" ]; then
+		echo "FAIL (pid $pid still running after 5 s)"
+		return 1
+	fi
+	echo "OK"
+	rm -f "$PIDFILE"
+}
+
+case "$1" in
+	start) start ;;
+	stop) stop ;;
+	restart)
+		stop || exit 1
+		start
+		;;
+	status)
+		if running; then
+			echo "$DAEMON is running (pid $(cat $PIDFILE))"
+		else
+			echo "$DAEMON is not running"
+			exit 1
+		fi
+		;;
+	*)
+		echo "Usage: $0 {start|stop|restart|status}"
+		exit 1
+		;;
+esac
