@@ -79,8 +79,8 @@ port=${port:-8000}
 ssh "$CAM" '[ -f /etc/init.d/S60uhttpd ] && [ ! -x /etc/init.d/S60uhttpd ] && chmod +x /etc/init.d/S60uhttpd; exit 0'
 ssh "$CAM" '/etc/init.d/S97lapcam start'
 # "started" from start-stop-daemon only means the process was spawned: wait
-# for the app to answer, or fail loudly
-if ! ssh "$CAM" "i=0; while [ \$i -lt 10 ]; do wget -q -O /dev/null http://127.0.0.1:$port/api/me 2>/dev/null && exit 0; sleep 1; i=\$((i + 1)); done; exit 1"; then
+# for the app to answer, or fail loudly (curl: Thingino's busybox has no wget)
+if ! ssh "$CAM" "i=0; while [ \$i -lt 15 ]; do curl -s -f -o /dev/null http://127.0.0.1:$port/api/me 2>/dev/null && exit 0; sleep 1; i=\$((i + 1)); done; exit 1"; then
 	echo "lapcam did not answer on port $port within 10 s. Log:" >&2
 	ssh "$CAM" 'logread | grep lapcam | tail -n 10' >&2
 	exit 1
