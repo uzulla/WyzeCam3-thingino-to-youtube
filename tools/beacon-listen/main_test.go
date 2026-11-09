@@ -7,7 +7,7 @@ import (
 )
 
 // as device/beacon sends it on the camera
-const sample = `{"type":"thingino-beacon","v":1,"seq":1,"host":"ing-wyze-cam3-9793","iface":"wlan0","ip":"192.168.11.29","mac":"02:b4:91:43:97:94","build":"ciao+da40db6","uptime_s":943,"stream":{"state":"streaming","elapsed_s":866},"rssi_dbm":-26,"mem_free_mb":68,"load1":"2.08"}`
+const sample = `{"type":"lapcam-beacon","v":1,"seq":1,"host":"ing-wyze-cam3-9793","iface":"wlan0","ip":"192.168.11.29","mac":"02:b4:91:43:97:94","build":"ciao+da40db6","uptime_s":943,"stream":{"state":"streaming","elapsed_s":866},"rssi_dbm":-26,"mem_free_mb":68,"load1":"2.08"}`
 
 func TestParseAndFormat(t *testing.T) {
 	m, ok := parse([]byte(sample))
@@ -22,7 +22,7 @@ func TestParseAndFormat(t *testing.T) {
 	}
 
 	// without the optional fields, and without an ip: the sender's address
-	m, ok = parse([]byte(`{"type":"thingino-beacon","v":1,"host":"cam","uptime_s":5,"stream":{"state":"stopped","elapsed_s":null}}`))
+	m, ok = parse([]byte(`{"type":"lapcam-beacon","v":1,"host":"cam","uptime_s":5,"stream":{"state":"stopped","elapsed_s":null}}`))
 	if !ok {
 		t.Fatal("minimal message not accepted")
 	}

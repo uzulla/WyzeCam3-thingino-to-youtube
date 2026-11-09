@@ -105,7 +105,7 @@ func main() {
 			continue // the deadline still ends the loop
 		}
 		var r Result
-		if json.Unmarshal(buf[:n], &r) != nil || r.Type != "thingino-command-result" || r.ID != cmd.ID {
+		if json.Unmarshal(buf[:n], &r) != nil || r.Type != "lapcam-command-result" || r.ID != cmd.ID {
 			continue
 		}
 		if seen[from.IP.String()] {
@@ -134,7 +134,7 @@ func main() {
 func build(words []string, host string) (Command, error) {
 	id := make([]byte, 8)
 	rand.Read(id)
-	c := Command{Type: "thingino-command", Version: 1, ID: hex.EncodeToString(id), Host: host, Cmd: words[0]}
+	c := Command{Type: "lapcam-command", Version: 1, ID: hex.EncodeToString(id), Host: host, Cmd: words[0]}
 	for _, w := range words[1:] {
 		k, v, found := strings.Cut(w, "=")
 		if !found || k == "" {

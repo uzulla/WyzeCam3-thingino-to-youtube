@@ -4,7 +4,7 @@ package main
 // (.osd-config-image: file=, etc=, host=) saying which "image" section it
 // last sent and what /etc/prudynt.json looked like then. A later change of
 // /etc/prudynt.json that the note does not know about is taken for a save in
-// Thingino's Web UI, which then wins over the SD card's flip. webui writes
+// Thingino's Web UI, which then wins over the SD card's flip. lapcam writes
 // /etc/prudynt.json too (video quality, recorder settings), so it does what
 // osd-config does after its own writes: notes that matched the file before
 // the write follow it (note_etc_refresh).
@@ -56,7 +56,7 @@ func hostID() string {
 	return macs[0]
 }
 
-// noteEtcRefresh - after webui wrote /etc/prudynt.json: for each config
+// noteEtcRefresh - after lapcam wrote /etc/prudynt.json: for each config
 // candidate, a note whose etc= matched the file before the write (and whose
 // host is this camera) is updated to the file as it is now
 func (s *server) noteEtcRefresh(before string) {

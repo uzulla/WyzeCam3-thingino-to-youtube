@@ -1,10 +1,13 @@
-// find-camera - list the Thingino cameras on the local network with their IP
-// addresses. Every Thingino camera announces an "_thingino._tcp" service over
-// mDNS (the same thing "dns-sd -B _thingino._tcp" shows); this asks for it on
-// every network interface and prints who answered.
+// find-camera - list the lapcam cameras on the local network with their IP
+// addresses. A camera set up with device/set-camera-name.sh announces an
+// "_lapcam._tcp" service over mDNS (the same thing "dns-sd -B _lapcam._tcp"
+// shows); this asks for it on every network interface and prints who
+// answered. A Thingino camera without that set-up only announces
+// "_thingino._tcp": ask for that one with -service.
 //
-//	go -C tools/find-camera run .          (from the repository root)
-//	go -C tools/find-camera run . -t 10s   (wait longer)
+//	go -C tools/find-camera run .                          (from the repository root)
+//	go -C tools/find-camera run . -t 10s                   (wait longer)
+//	go -C tools/find-camera run . -service _thingino._tcp  (any Thingino camera)
 //
 // Only the local network (same Wi-Fi / LAN) can be searched: mDNS does not
 // cross routers. See docs/find-camera.md.
@@ -21,9 +24,10 @@ import (
 	"time"
 )
 
-const service = "_thingino._tcp.local"
-
 var mdnsGroup = &net.UDPAddr{IP: net.IPv4(224, 0, 0, 251), Port: 5353}
+
+// service - the DNS-SD service type asked for, e.g. "_lapcam._tcp.local" (set from -service)
+var service = "_lapcam._tcp.local"
 
 // searcher - the socket of one network interface
 type searcher struct {
@@ -39,7 +43,9 @@ type packet struct {
 func main() {
 	timeout := flag.Duration("t", 3*time.Second, "how long to wait for answers")
 	verbose := flag.Bool("v", false, "show the interfaces used and every answer")
+	svc := flag.String("service", "_lapcam._tcp", "the mDNS service to look for (_thingino._tcp: any Thingino camera)")
 	flag.Parse()
+	service = strings.TrimSuffix(*svc, ".") + ".local"
 
 	searchers := listen(*verbose)
 	if len(searchers) == 0 {

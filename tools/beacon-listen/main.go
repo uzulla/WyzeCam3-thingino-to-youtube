@@ -87,7 +87,7 @@ func main() {
 // parse - a beacon message, or false for anything else that reached the port
 func parse(b []byte) (Message, bool) {
 	var m Message
-	if json.Unmarshal(b, &m) != nil || m.Type != "thingino-beacon" {
+	if json.Unmarshal(b, &m) != nil || m.Type != "lapcam-beacon" {
 		return Message{}, false
 	}
 	return m, true

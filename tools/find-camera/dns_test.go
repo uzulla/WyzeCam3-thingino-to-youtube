@@ -40,7 +40,7 @@ func answer() []byte {
 
 func TestBuildQuery(t *testing.T) {
 	want := []byte("\x00\x00\x00\x00\x00\x01\x00\x00\x00\x00\x00\x00\x09_thingino\x04_tcp\x05local\x00\x00\x0c\x00\x01")
-	if got := buildQuery(service, typePTR); !bytes.Equal(got, want) {
+	if got := buildQuery("_thingino._tcp.local", typePTR); !bytes.Equal(got, want) {
 		t.Errorf("got %q", got)
 	}
 }
@@ -69,7 +69,7 @@ func TestParseResponse(t *testing.T) {
 }
 
 func TestParseQueryAndBroken(t *testing.T) {
-	if recs, err := parseResponse(buildQuery(service, typePTR)); err != nil || recs != nil {
+	if recs, err := parseResponse(buildQuery("_thingino._tcp.local", typePTR)); err != nil || recs != nil {
 		t.Errorf("a query must give nothing: %v %v", recs, err)
 	}
 	full := answer()

@@ -54,7 +54,7 @@ type relaySt struct {
 	Autostart     bool   `json:"autostart"`      // at boot
 	FfmpegRunning bool   `json:"ffmpeg_running"` // the stream itself
 	FfmpegElapsed int    `json:"ffmpeg_elapsed_s"`
-	Restarts      int    `json:"restarts"` // ffmpeg restarts seen since webui started
+	Restarts      int    `json:"restarts"` // ffmpeg restarts seen since lapcam started
 	Profile       string `json:"profile"`
 }
 

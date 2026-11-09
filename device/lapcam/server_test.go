@@ -224,7 +224,7 @@ func TestSaveProfiles(t *testing.T) {
 	isMounted = func(string) bool { return true }
 	t.Cleanup(func() { isMounted = old })
 
-	bad := []webuiConfig{
+	bad := []lapcamConfig{
 		{},
 		{Profiles: []profile{{Name: "A", RTMPURL: "rtmp://h/app", StreamKey: "k"}}, Active: "B"},
 		{Profiles: []profile{{Name: "A", RTMPURL: "http://h/app", StreamKey: "k"}}, Active: "A"},
@@ -240,8 +240,8 @@ func TestSaveProfiles(t *testing.T) {
 			t.Errorf("case %d accepted: %+v", i, c)
 		}
 	}
-	// a good save writes webui.json and the relay's file, and reports the change
-	good := webuiConfig{Profiles: []profile{{Name: "Track", RTMPURL: "rtmps://a.rtmps.youtube.com:443/live2", StreamKey: "new-key"}, {Name: "Home", RTMPURL: "rtmp://h/app", StreamKey: "k"}}, Active: "Track"}
+	// a good save writes lapcam.json and the relay's file, and reports the change
+	good := lapcamConfig{Profiles: []profile{{Name: "Track", RTMPURL: "rtmps://a.rtmps.youtube.com:443/live2", StreamKey: "new-key"}, {Name: "Home", RTMPURL: "rtmp://h/app", StreamKey: "k"}}, Active: "Track"}
 	changed, err := rl.saveProfiles(good)
 	if err != nil || !changed {
 		t.Fatalf("good save: %v %v", changed, err)
@@ -257,13 +257,13 @@ func TestSaveProfiles(t *testing.T) {
 	if err != nil || len(loaded.Profiles) != 2 || loaded.Active != "Track" {
 		t.Fatalf("reload: %+v %v", loaded, err)
 	}
-	// a broken webui.json does not lock the page: a warning and a profile from the relay's file
-	if err := os.WriteFile(rl.webuiPath(), []byte("{not json"), 0o600); err != nil {
+	// a broken lapcam.json does not lock the page: a warning and a profile from the relay's file
+	if err := os.WriteFile(rl.lapcamPath(), []byte("{not json"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	loaded, err = rl.loadProfiles()
 	if err != nil || loaded.Warning == "" || len(loaded.Profiles) != 1 || loaded.Profiles[0].StreamKey != "new-key" {
-		t.Fatalf("broken webui.json: %+v %v", loaded, err)
+		t.Fatalf("broken lapcam.json: %+v %v", loaded, err)
 	}
 }
 

@@ -8,8 +8,8 @@ package main
 // what they change lasts only until prudynt restarts (the SD card's
 // prudynt-osd.json is not touched; osd-config sends its settings again then).
 //
-//	{"type":"thingino-command","v":1,"id":"5f2c...","cmd":"image","args":{"vflip":"toggle"}}
-//	-> {"type":"thingino-command-result","v":1,"id":"5f2c...","host":"ing-wyze-cam3-9793","cmd":"image","ok":true,"result":{"image":{"vflip":false}}}
+//	{"type":"lapcam-command","v":1,"id":"5f2c...","cmd":"image","args":{"vflip":"toggle"}}
+//	-> {"type":"lapcam-command-result","v":1,"id":"5f2c...","host":"ing-wyze-cam3-9793","cmd":"image","ok":true,"result":{"image":{"vflip":false}}}
 //
 // "host" in a command limits it to the camera of that name (for a command
 // sent as a broadcast); without it, every camera that gets it runs it.
@@ -28,8 +28,8 @@ import (
 )
 
 const (
-	cmdType    = "thingino-command"
-	resultType = "thingino-command-result"
+	cmdType    = "lapcam-command"
+	resultType = "lapcam-command-result"
 	cmdMaxSize = 4096
 )
 

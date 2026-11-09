@@ -1,8 +1,8 @@
 package main
 
 // The YouTube stream: the youtube-relay supervisor (device/youtube-relay)
-// and its config. webui adds "profiles" (several stream keys to switch
-// between) in its own webui.json; the chosen one is written into
+// and its config. lapcam adds "profiles" (several stream keys to switch
+// between) in its own lapcam.json; the chosen one is written into
 // youtube-relay.json, which stays the single file the relay reads.
 
 import (
@@ -26,7 +26,7 @@ const (
 	relayPidfile   = "/run/youtube-relay.pid"
 	relayEtcCfg    = "/etc/youtube-relay.json"
 	relayCfgName   = "youtube-relay.json"
-	webuiCfgName   = "webui.json"
+	lapcamCfgName  = "lapcam.json"
 	cmdTimeout     = 20 * time.Second
 	relayOpTimeout = 90 * time.Second
 )
@@ -37,7 +37,7 @@ type profile struct {
 	StreamKey string `json:"stream_key"`
 }
 
-type webuiConfig struct {
+type lapcamConfig struct {
 	Profiles []profile `json:"profiles"`
 	Active   string    `json:"active"`
 	Warning  string    `json:"-"` // for the page, not for the file
@@ -70,7 +70,7 @@ func (rl *relay) configPath() string {
 	return relayEtcCfg
 }
 
-func (rl *relay) webuiPath() string { return filepath.Join(rl.sd, webuiCfgName) }
+func (rl *relay) lapcamPath() string { return filepath.Join(rl.sd, lapcamCfgName) }
 
 // readJSONFile - a JSON object from path (empty map when the file is absent)
 func readJSONFile(path string) (map[string]any, error) {
@@ -114,20 +114,20 @@ func writeJSONFile(path string, v any, mode os.FileMode) error {
 	return nil
 }
 
-// loadProfiles - webui.json; without one, a single profile made from the
+// loadProfiles - lapcam.json; without one, a single profile made from the
 // relay's current config, so the first screen shows what runs today
-func (rl *relay) loadProfiles() (webuiConfig, error) {
-	var cfg webuiConfig
-	b, err := os.ReadFile(rl.webuiPath())
+func (rl *relay) loadProfiles() (lapcamConfig, error) {
+	var cfg lapcamConfig
+	b, err := os.ReadFile(rl.lapcamPath())
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
 		return cfg, err
 	}
 	if err == nil {
 		if jerr := json.Unmarshal(b, &cfg); jerr != nil {
-			// a broken webui.json must not lock the user out of the page:
+			// a broken lapcam.json must not lock the user out of the page:
 			// start over from what the relay runs with, and say so
-			cfg = webuiConfig{}
-			cfg.Warning = fmt.Sprintf("%s was not valid JSON and is ignored; saving writes a fresh one", rl.webuiPath())
+			cfg = lapcamConfig{}
+			cfg.Warning = fmt.Sprintf("%s was not valid JSON and is ignored; saving writes a fresh one", rl.lapcamPath())
 		}
 	}
 	if len(cfg.Profiles) == 0 {
@@ -151,10 +151,10 @@ var (
 	printable   = regexp.MustCompile(`^[\x21-\x7e]+$`) // what a URL or a stream key may hold
 )
 
-// saveProfiles - validate, write webui.json, and put the active profile's
+// saveProfiles - validate, write lapcam.json, and put the active profile's
 // key and URL into the relay's config (keeping its other keys). Returns
 // whether the relay's config changed.
-func (rl *relay) saveProfiles(cfg webuiConfig) (changed bool, err error) {
+func (rl *relay) saveProfiles(cfg lapcamConfig) (changed bool, err error) {
 	if len(cfg.Profiles) == 0 {
 		return false, errors.New("at least one profile is needed")
 	}
@@ -194,7 +194,7 @@ func (rl *relay) saveProfiles(cfg webuiConfig) (changed bool, err error) {
 	if !isMounted(rl.sd) {
 		return false, errors.New("no SD card: profiles are kept on it")
 	}
-	if err := writeJSONFile(rl.webuiPath(), cfg, 0o600); err != nil {
+	if err := writeJSONFile(rl.lapcamPath(), cfg, 0o600); err != nil {
 		return false, err
 	}
 	path := rl.configPath()
@@ -392,7 +392,7 @@ func (s *server) handleRelayConfigGet(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *server) handleRelayConfigSet(w http.ResponseWriter, r *http.Request) {
-	var cfg webuiConfig
+	var cfg lapcamConfig
 	if err := readJSON(r, &cfg, 64<<10); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]any{"error": err.Error()})
 		return

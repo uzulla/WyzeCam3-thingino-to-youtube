@@ -2,7 +2,7 @@ package main
 
 // Sign-in with the camera's root password (the same one as Thingino's web
 // UI and ssh), checked against /etc/shadow. A session is a random token in a
-// cookie, kept in memory: a restart of webui means signing in again.
+// cookie, kept in memory: a restart of lapcam means signing in again.
 
 import (
 	"bufio"
@@ -24,7 +24,7 @@ import (
 var shadowFile = "/etc/shadow"
 
 const (
-	sessionCookie  = "webui_session"
+	sessionCookie  = "lapcam_session"
 	loginUser      = "root"
 	maxPasswordLen = 128
 )
@@ -36,7 +36,7 @@ type sessions struct {
 	mu     sync.Mutex
 	ttl    time.Duration
 	live   map[string]time.Time // sha256(token) -> expiry: the token itself is only in the phone's cookie
-	file   string               // where the sessions are kept across a restart of webui ("" = memory only)
+	file   string               // where the sessions are kept across a restart of lapcam ("" = memory only)
 	fileMu sync.Mutex           // one writer of that file at a time
 	// one password check at a time (the hash is slow on this CPU), and a
 	// count of recent failures per address: after loginMaxFails in
@@ -122,11 +122,11 @@ func shadowDigest() string {
 	if err != nil {
 		return ""
 	}
-	sum := sha256.Sum256([]byte("webui-shadow:" + h))
+	sum := sha256.Sum256([]byte("lapcam-shadow:" + h))
 	return hex.EncodeToString(sum[:8])
 }
 
-// persistTo - keep the sessions in file (tmpfs: an update or restart of webui
+// persistTo - keep the sessions in file (tmpfs: an update or restart of lapcam
 // does not sign everyone out; a reboot does) and load the ones already there
 func (s *sessions) persistTo(file string) {
 	s.mu.Lock()

@@ -4,12 +4,14 @@ Web UI (`http://<camera-ip>/`) や SSH で入るにはカメラの IP が要る�
 繋ぎ先 (自宅の Wi-Fi、モバイルルーター) が変わるたびに変わりうる。カメラに画面は無いので、
 **同じ Wi-Fi / LAN に繋いだ PC やスマホから探す**。
 
-どの方法も、カメラが流している mDNS (Bonjour) の案内を拾っている。Thingino のカメラは起動すると
-`mdnsd` が自分のホスト名 (例 `ing-wyze-cam3-9793`) と、次のサービスを LAN に知らせる:
+どの方法も、カメラが流している mDNS (Bonjour) の案内を拾っている。カメラは起動すると `mdnsd` が自分のホスト名
+(`device/set-camera-name.sh` で `lapcam` にしてある。Thingino の既定は `ing-wyze-cam3-9793` のような名前) と、
+次のサービスを LAN に知らせる:
 
 | サービス | 中身 |
 |---|---|
-| `_thingino._tcp` | **Thingino のカメラだけが出す**。TXT に機種 (`product=`) とファームの版 (`version=`) |
+| `_lapcam._tcp` | **lapcam のカメラだけが出す** (`set-camera-name.sh` が `/etc/mdns.d/lapcam.service` を置く)。TXT に機種 (`product=`) とファームの版 (`version=`) |
+| `_thingino._tcp` | Thingino のカメラなら全部出す (Thingino 標準)。TXT は同じ |
 | `_http._tcp` | Web UI (ポート 80)。プリンタやルーターなども出すので、他の機器と混ざる |
 | `_rtsp._tcp`、`_ssh._tcp` など | 映像 (RTSP)、SSH |
 
@@ -25,11 +27,12 @@ go -C tools/find-camera run .
 ```
 
 ```text
-ing-wyze-cam3-9793       192.168.11.29   http://192.168.11.29/  wyze_cam3_t31x_gc2053_atbm6031 ciao+da40db6
+lapcam                   192.168.11.29   http://192.168.11.29/  wyze_cam3_t31x_gc2053_atbm6031 ciao+da40db6
 ```
 
-- 3 秒待って、答えた Thingino のカメラを 1 台 1 行で出す (名前、IP、Web UI の URL、機種とファームの版)。
+- 3 秒待って、答えた lapcam のカメラを 1 台 1 行で出す (名前、IP、Web UI の URL、機種とファームの版)。
   見つからなければその旨を出して終了コード 1
+- `set-camera-name.sh` をまだ入れていない Thingino のカメラは `-service _thingino._tcp` で探す
 - `-t 10s` で待ち時間を延ばす (Wi-Fi の省電力で返事が遅いことがある。実測では 1 秒以内)。
   `-v` で探しているネットワークインターフェース、問い合わせを送れなかったインターフェース、壊れた返事を出す
 - PC の IPv4 マルチキャストに対応したインターフェース (有線と Wi-Fi の両方、など) で探す。ループバックと、
@@ -45,22 +48,22 @@ ing-wyze-cam3-9793       192.168.11.29   http://192.168.11.29/  wyze_cam3_t31x_g
 
 | OS | 探す | 名前から IP を引く |
 |---|---|---|
-| macOS | `dns-sd -B _thingino._tcp` (`Ctrl+C` で止める) | `dns-sd -G v4 ing-wyze-cam3-9793.local` |
-| Linux (Avahi) | `avahi-browse -rt _thingino._tcp` (IP まで出る) | `avahi-resolve -4 -n ing-wyze-cam3-9793.local` |
-| Windows | 標準のコマンドでは一覧できない (1 か下記のアプリ) | `ping -4 ing-wyze-cam3-9793.local` |
+| macOS | `dns-sd -B _lapcam._tcp` (`Ctrl+C` で止める) | `dns-sd -G v4 lapcam.local` |
+| Linux (Avahi) | `avahi-browse -rt _lapcam._tcp` (IP まで出る) | `avahi-resolve -4 -n lapcam.local` |
+| Windows | 標準のコマンドでは一覧できない (1 か下記のアプリ) | `ping -4 lapcam.local` |
 
-名前が分かっていれば、ブラウザで `http://ing-wyze-cam3-9793.local/` と開くだけでもよい (macOS / iOS / Windows 10 以降 /
+名前が分かっていれば、ブラウザで `http://lapcam.local/` と開くだけでもよい (macOS / iOS / Windows 10 以降 /
 Linux の多くは `.local` の名前を引ける。Android はブラウザや端末によって引けない)。
 
 ## 3. スマホのアプリ
 
-mDNS (Bonjour / DNS-SD) のサービスを一覧するアプリで `_thingino._tcp` を探すと、名前と IP が出る
+mDNS (Bonjour / DNS-SD) のサービスを一覧するアプリで `_lapcam._tcp` (または `_thingino._tcp`) を探すと、名前と IP が出る
 (iOS なら「Discovery - DNS-SD Browser」、Android なら「Service Browser」など。どれも未確認の例)。
 ネットワーク内の機器をスキャンするアプリ (Fing など) でも見つかる。
 
 ## 4. ルーターの管理画面
 
-ルーターの「接続中の端末」「DHCP クライアント一覧」に、カメラのホスト名 (`ing-wyze-cam3-…`) で載る。
+ルーターの「接続中の端末」「DHCP クライアント一覧」に、カメラのホスト名 (`lapcam`。Thingino の既定のままなら `ing-wyze-cam3-…`) で載る。
 ルーター側で DHCP の固定割り当て (MAC アドレスに IP を結び付ける) をしておけば、そのルーターの下では毎回同じ IP になる。
 
 ## 5. 本体の Setup ボタン

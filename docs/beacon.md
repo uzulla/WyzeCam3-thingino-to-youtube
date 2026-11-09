@@ -47,7 +47,7 @@ go -C tools/beacon-listen run . -json      # 届いた JSON をそのまま 1 �
 - 他の PC 用のバイナリ: `GOOS=windows GOARCH=amd64 go -C tools/beacon-listen build -o ../../dist/beacon-listen.exe .`
 - **動作を確認したのは macOS だけ**
 
-自前のプログラムで受け取るなら、UDP の 47474 番で待ち、届いた JSON の `type` が `thingino-beacon` のものだけを使えばよい。
+自前のプログラムで受け取るなら、UDP の 47474 番で待ち、届いた JSON の `type` が `lapcam-beacon` のものだけを使えばよい。
 
 ## 送る内容
 
@@ -55,14 +55,14 @@ UDP のポート 47474 に、**ネットワークインターフェースごと*
 (例 `192.168.11.255`) 宛てに送る。中身は 1 行の JSON (300 バイト程度):
 
 ```json
-{"type":"thingino-beacon","v":1,"seq":1,"host":"ing-wyze-cam3-9793","iface":"wlan0","ip":"192.168.11.29",
+{"type":"lapcam-beacon","v":1,"seq":1,"host":"ing-wyze-cam3-9793","iface":"wlan0","ip":"192.168.11.29",
  "mac":"02:b4:91:43:97:94","build":"ciao+da40db6","uptime_s":943,
  "stream":{"state":"streaming","elapsed_s":866},"rssi_dbm":-26,"mem_free_mb":68,"load1":"2.08"}
 ```
 
 | キー | 中身 |
 |---|---|
-| `type` / `v` | 常に `thingino-beacon` / 形式の版 (今は `1`)。項目を足しても `v` は変えず、意味を変える時に上げる |
+| `type` / `v` | 常に `lapcam-beacon` / 形式の版 (今は `1`)。項目を足しても `v` は変えず、意味を変える時に上げる |
 | `seq` | 送るたびに 1 増える (同じ回はどのインターフェースでも同じ)。カメラを再起動すると 1 から |
 | `host` | ホスト名 |
 | `iface` / `ip` / `mac` | 送ったインターフェース (普通は `wlan0`) と、その IP・MAC アドレス |
@@ -129,12 +129,12 @@ ing-wyze-cam3-9793       192.168.11.29   ok     {"image":{"vflip":false}}
 自前のプログラムから送るなら、UDP でカメラ (かブロードキャストアドレス) の 47475 番に、1 パケットに JSON 1 つ (4096 バイトまで) を送る:
 
 ```json
-{"type":"thingino-command","v":1,"id":"5f2c9a01d4e3b7c8","host":"ing-wyze-cam3-9793","cmd":"image","args":{"vflip":"toggle"}}
+{"type":"lapcam-command","v":1,"id":"5f2c9a01d4e3b7c8","host":"ing-wyze-cam3-9793","cmd":"image","args":{"vflip":"toggle"}}
 ```
 
 | キー | |
 |---|---|
-| `type` / `v` | `thingino-command` / `1` |
+| `type` / `v` | `lapcam-command` / `1` |
 | `id` | 送る側が決める任意の文字列。結果にそのまま入る。送り直す時は同じ `id` にする |
 | `host` | 省略可。付けるとその名前 (大文字小文字は区別しない) のカメラだけが実行し、他は返事もしない |
 | `cmd` / `args` | 指令と引数 |
@@ -142,8 +142,8 @@ ing-wyze-cam3-9793       192.168.11.29   ok     {"image":{"vflip":false}}
 結果は、送ってきたアドレスとポートに返す:
 
 ```json
-{"type":"thingino-command-result","v":1,"id":"5f2c9a01d4e3b7c8","host":"ing-wyze-cam3-9793","cmd":"image","ok":true,"result":{"image":{"vflip":false}}}
-{"type":"thingino-command-result","v":1,"id":"...","host":"ing-wyze-cam3-9793","cmd":"reboot","ok":false,"error":"unknown command \"reboot\" (known: ping, image)"}
+{"type":"lapcam-command-result","v":1,"id":"5f2c9a01d4e3b7c8","host":"ing-wyze-cam3-9793","cmd":"image","ok":true,"result":{"image":{"vflip":false}}}
+{"type":"lapcam-command-result","v":1,"id":"...","host":"ing-wyze-cam3-9793","cmd":"reboot","ok":false,"error":"unknown command \"reboot\" (known: ping, image)"}
 ```
 
 ## 設定

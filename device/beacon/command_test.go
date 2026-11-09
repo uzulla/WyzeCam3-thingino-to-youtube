@@ -66,7 +66,7 @@ func answer(t *testing.T, c *commander, pkt string) (Result, bool) {
 
 func TestImageCommand(t *testing.T) {
 	c, f := newTestCommander()
-	r, _ := answer(t, c, `{"type":"thingino-command","v":1,"id":"a","cmd":"image","args":{"vflip":"toggle"}}`)
+	r, _ := answer(t, c, `{"type":"lapcam-command","v":1,"id":"a","cmd":"image","args":{"vflip":"toggle"}}`)
 	if !r.OK || r.ID != "a" || r.Host != "ing-wyze-cam3-9793" || r.Cmd != "image" {
 		t.Fatalf("toggle: %+v", r)
 	}
@@ -77,7 +77,7 @@ func TestImageCommand(t *testing.T) {
 		t.Errorf("sent %q", got)
 	}
 
-	r, _ = answer(t, c, `{"type":"thingino-command","v":1,"id":"b","cmd":"image","args":{"vflip":true,"hflip":false}}`)
+	r, _ = answer(t, c, `{"type":"lapcam-command","v":1,"id":"b","cmd":"image","args":{"vflip":true,"hflip":false}}`)
 	if !r.OK || f.image["vflip"] != true || f.image["hflip"] != false {
 		t.Errorf("set: %+v, %v", r, f.image)
 	}
@@ -85,7 +85,7 @@ func TestImageCommand(t *testing.T) {
 
 func TestResentCommandRunsOnce(t *testing.T) {
 	c, f := newTestCommander()
-	cmd := `{"type":"thingino-command","v":1,"id":"same","cmd":"image","args":{"vflip":"toggle"}}`
+	cmd := `{"type":"lapcam-command","v":1,"id":"same","cmd":"image","args":{"vflip":"toggle"}}`
 	first := c.handle([]byte(cmd), pc)
 	again := c.handle([]byte(cmd), pc)
 	if string(first) != string(again) {
@@ -104,13 +104,13 @@ func TestResentCommandRunsOnce(t *testing.T) {
 
 func TestCommandErrors(t *testing.T) {
 	cases := map[string]string{
-		`{"type":"thingino-command","v":1,"cmd":"reboot"}`:                                    "unknown command",
-		`{"type":"thingino-command","v":2,"cmd":"ping"}`:                                      "unsupported version",
-		`{"type":"thingino-command","v":1,"cmd":"image"}`:                                     "args must be",
-		`{"type":"thingino-command","v":1,"cmd":"image","args":{"brightness":10}}`:            "cannot be changed",
-		`{"type":"thingino-command","v":1,"cmd":"image","args":{"vflip":"yes"}}`:              "toggle",
-		`{"type":"thingino-command","v":1,"cmd":"image","args":{"vflip":1}}`:                  "toggle",
-		`{"type":"thingino-command","v":1,"cmd":"image","args":{"vflip":true,"rm -rf":true}}`: "cannot be changed",
+		`{"type":"lapcam-command","v":1,"cmd":"reboot"}`:                                    "unknown command",
+		`{"type":"lapcam-command","v":2,"cmd":"ping"}`:                                      "unsupported version",
+		`{"type":"lapcam-command","v":1,"cmd":"image"}`:                                     "args must be",
+		`{"type":"lapcam-command","v":1,"cmd":"image","args":{"brightness":10}}`:            "cannot be changed",
+		`{"type":"lapcam-command","v":1,"cmd":"image","args":{"vflip":"yes"}}`:              "toggle",
+		`{"type":"lapcam-command","v":1,"cmd":"image","args":{"vflip":1}}`:                  "toggle",
+		`{"type":"lapcam-command","v":1,"cmd":"image","args":{"vflip":true,"rm -rf":true}}`: "cannot be changed",
 	}
 	for pkt, want := range cases {
 		c, f := newTestCommander()
@@ -125,7 +125,7 @@ func TestCommandErrors(t *testing.T) {
 
 	c, f := newTestCommander()
 	f.down = true
-	r, _ := answer(t, c, `{"type":"thingino-command","v":1,"cmd":"image","args":{"vflip":true}}`)
+	r, _ := answer(t, c, `{"type":"lapcam-command","v":1,"cmd":"image","args":{"vflip":true}}`)
 	if r.OK || !strings.Contains(r.Error, "prudynt") {
 		t.Errorf("prudynt down: %+v", r)
 	}
@@ -134,15 +134,15 @@ func TestCommandErrors(t *testing.T) {
 func TestNotForUs(t *testing.T) {
 	c, _ := newTestCommander()
 	for _, pkt := range []string{
-		``, `hello`, `{"type":"thingino-beacon","v":1}`,
-		`{"type":"thingino-command","v":1,"host":"other-cam","cmd":"ping"}`,
+		``, `hello`, `{"type":"lapcam-beacon","v":1}`,
+		`{"type":"lapcam-command","v":1,"host":"other-cam","cmd":"ping"}`,
 	} {
 		if _, ok := answer(t, c, pkt); ok {
 			t.Errorf("%q answered", pkt)
 		}
 	}
 	// the name is matched without case
-	r, ok := answer(t, c, `{"type":"thingino-command","v":1,"host":"ING-WYZE-CAM3-9793","cmd":"ping"}`)
+	r, ok := answer(t, c, `{"type":"lapcam-command","v":1,"host":"ING-WYZE-CAM3-9793","cmd":"ping"}`)
 	if !ok || !r.OK {
 		t.Errorf("ping with host: %+v", r)
 	}
@@ -153,7 +153,7 @@ func TestNotForUs(t *testing.T) {
 
 func TestFailedCommandRunsAgain(t *testing.T) {
 	c, f := newTestCommander()
-	cmd := `{"type":"thingino-command","v":1,"id":"retry","cmd":"image","args":{"vflip":"toggle"}}`
+	cmd := `{"type":"lapcam-command","v":1,"id":"retry","cmd":"image","args":{"vflip":"toggle"}}`
 	f.down = true
 	if r, _ := answer(t, c, cmd); r.OK {
 		t.Fatalf("prudynt down, but ok: %+v", r)
