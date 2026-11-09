@@ -195,16 +195,22 @@ func (s *server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	addr := clientIP(r)
+	// one check at a time (the hash takes a moment on this CPU). The failure
+	// count is read and written inside the same lock, so parallel guesses
+	// from one address cannot slip past the limit together. The delay after
+	// a wrong password is served outside the lock, so a stream of wrong
+	// guesses from one side does not hold the owner's correct sign-in back.
+	s.sessions.attempt.Lock()
 	if s.sessions.tooManyFails(addr) {
+		s.sessions.attempt.Unlock()
 		log.Printf("sign-in refused for %s: too many wrong passwords", addr)
 		writeJSON(w, http.StatusTooManyRequests, map[string]any{"error": "too many wrong passwords; wait a minute"})
 		return
 	}
-	// one check at a time (the hash takes a moment on this CPU); the delay
-	// after a wrong password is served outside the lock, so a stream of wrong
-	// guesses from one side does not hold the owner's correct sign-in back
-	s.sessions.attempt.Lock()
 	ok, err := checkPassword(body.Password)
+	if err == nil && !ok {
+		s.sessions.noteFail(addr)
+	}
 	s.sessions.attempt.Unlock()
 	if err != nil {
 		log.Printf("sign-in: cannot check the password: %v", err)
@@ -212,7 +218,6 @@ func (s *server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !ok {
-		s.sessions.noteFail(addr)
 		log.Printf("sign-in failed from %s", addr)
 		time.Sleep(loginDelay)
 		writeJSON(w, http.StatusUnauthorized, map[string]any{"error": "wrong password"})

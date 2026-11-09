@@ -5,6 +5,7 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -115,8 +116,8 @@ func TestGuardAndHeaders(t *testing.T) {
 	}
 	// same-origin and none (address bar) pass the guard (then hit auth)
 	for _, site := range []string{"same-origin", "none"} {
-		if resp := jsonReq(t, "POST", srv.URL+"/api/reboot", `{}`, nil, map[string]string{"Sec-Fetch-Site": site}); resp.StatusCode != http.StatusUnauthorized {
-			t.Errorf("%s POST: %d, want 401", site, resp.StatusCode)
+		if c := code(jsonReq(t, "POST", srv.URL+"/api/reboot", `{}`, nil, map[string]string{"Sec-Fetch-Site": site})); c != http.StatusUnauthorized {
+			t.Errorf("%s POST: %d, want 401", site, c)
 		}
 	}
 	// unknown API path is a JSON 404, not the page
@@ -262,5 +263,41 @@ func TestSaveProfiles(t *testing.T) {
 	loaded, err = rl.loadProfiles()
 	if err != nil || loaded.Warning == "" || len(loaded.Profiles) != 1 || loaded.Profiles[0].StreamKey != "new-key" {
 		t.Fatalf("broken webui.json: %+v %v", loaded, err)
+	}
+}
+
+func TestSignInLimitHoldsUnderParallelGuesses(t *testing.T) {
+	srv, _ := testServer(t)
+	withShadow(t, "root:"+sha512Crypt("secret", "salty", 5000, false)+":1::::::\n")
+	old := loginDelay
+	loginDelay = 0
+	t.Cleanup(func() { loginDelay = old })
+
+	const guesses = 25
+	codes := make(chan int, guesses)
+	for i := 0; i < guesses; i++ {
+		go func(i int) {
+			codes <- code(jsonReq(t, "POST", srv.URL+"/api/login", fmt.Sprintf(`{"password":"wrong-%d"}`, i), nil, nil))
+		}(i)
+	}
+	checked, refused := 0, 0
+	for i := 0; i < guesses; i++ {
+		switch c := <-codes; c {
+		case http.StatusUnauthorized:
+			checked++
+		case http.StatusTooManyRequests:
+			refused++
+		default:
+			t.Errorf("unexpected status %d", c)
+		}
+	}
+	// exactly loginMaxFails guesses were checked against the hash, all in
+	// parallel from one address; the rest were refused at once
+	if checked != loginMaxFails || refused != guesses-loginMaxFails {
+		t.Fatalf("checked %d, refused %d; want %d and %d", checked, refused, loginMaxFails, guesses-loginMaxFails)
+	}
+	// and the right password is refused too until the window passes
+	if c := code(jsonReq(t, "POST", srv.URL+"/api/login", `{"password":"secret"}`, nil, nil)); c != http.StatusTooManyRequests {
+		t.Fatalf("right password after the limit: %d, want 429", c)
 	}
 }
