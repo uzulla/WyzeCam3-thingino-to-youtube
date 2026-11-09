@@ -348,6 +348,7 @@ func (s *server) wifiSave(nets []wifiNet) (applied bool, err error) {
 	}
 	s.relay.mu.Lock()
 	defer s.relay.mu.Unlock()
+	s.setWifiNote("") // a new save; the last undo notice is history
 	w, err := parseWPA(wpaConf)
 	if err != nil {
 		return false, err
@@ -485,6 +486,7 @@ func backupOnce(path string) {
 func writeText(path, text string, mode os.FileMode) error {
 	tmp := path + ".new"
 	if err := os.WriteFile(tmp, []byte(text), mode); err != nil {
+		os.Remove(tmp)
 		return err
 	}
 	if err := os.Chmod(tmp, mode); err != nil {

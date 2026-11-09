@@ -100,6 +100,7 @@ func writeJSONFile(path string, v any, mode os.FileMode) error {
 	b = append(b, '\n')
 	tmp := path + ".new"
 	if err := os.WriteFile(tmp, b, mode); err != nil {
+		os.Remove(tmp)
 		return err
 	}
 	if err := os.Chmod(tmp, mode); err != nil {
@@ -232,7 +233,13 @@ func runCmdTimeout(timeout time.Duration, name string, args ...string) (string, 
 	defer cancel()
 	cmd := exec.CommandContext(ctx, name, args...)
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
-	cmd.Cancel = func() error { return syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL) }
+	cmd.Cancel = func() error {
+		err := syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL) // the whole group
+		if errors.Is(err, syscall.ESRCH) {
+			return os.ErrProcessDone
+		}
+		return err
+	}
 	cmd.WaitDelay = 2 * time.Second
 	b, err := cmd.CombinedOutput()
 	if ctx.Err() != nil {

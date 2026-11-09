@@ -54,6 +54,12 @@ start() {
 			sleep 1
 			i=$((i + 1))
 		done
+		if netstat -lnt 2>/dev/null | grep -q ':80 '; then
+			# the app could not bind: better Thingino's UI than none
+			sh /etc/init.d/S60uhttpd start >/dev/null 2>&1
+			echo "FAIL (port 80 still in use after 10 s; uhttpd started again)"
+			return 1
+		fi
 	fi
 	# -N 5: below prudynt/ISP, above nothing important. -syslog: logread | grep webui
 	# shellcheck disable=SC2086

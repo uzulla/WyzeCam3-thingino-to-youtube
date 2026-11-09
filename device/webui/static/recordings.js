@@ -82,10 +82,11 @@
       if (d !== day) {
         day = d;
         const h = document.createElement("h3");
-        const dayFiles = data.files.filter((x) => x.path.startsWith(parts.slice(0, -1).join("/") + "/"));
-        const allOn = dayFiles.every((x) => selected.has(x.path));
+        // the file being written cannot be selected: it does not count
+        const dayFiles = data.files.filter((x) => x.path.startsWith(parts.slice(0, -1).join("/") + "/") && !x.recording);
+        const allOn = dayFiles.length > 0 && dayFiles.every((x) => selected.has(x.path));
         const cb = document.createElement("input"); cb.type = "checkbox"; cb.checked = allOn; cb.title = "Select the whole day";
-        cb.addEventListener("change", () => { dayFiles.forEach((x) => { if (x.recording) return; cb.checked ? selected.add(x.path) : selected.delete(x.path); }); render(); });
+        cb.addEventListener("change", () => { dayFiles.forEach((x) => { cb.checked ? selected.add(x.path) : selected.delete(x.path); }); render(); });
         h.append(cb, document.createTextNode(` ${d} (${dayFiles.length})`));
         list.appendChild(h);
       }
@@ -110,7 +111,7 @@
     document.querySelectorAll("#rec-list h3 input").forEach((cb) => {
       const label = cb.parentNode.textContent.trim().split(" ")[0]; // YYYY-MM-DD
       const prefix = label.replace(/-/g, "/") + "/";
-      const dayFiles = data.files.filter((x) => x.path.startsWith(prefix));
+      const dayFiles = data.files.filter((x) => x.path.startsWith(prefix) && !x.recording);
       cb.checked = dayFiles.length > 0 && dayFiles.every((x) => selected.has(x.path));
     });
   }

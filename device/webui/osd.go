@@ -420,6 +420,7 @@ func (s *server) handleLogoUpload(w http.ResponseWriter, r *http.Request) {
 func writeBytes(path string, data []byte, mode os.FileMode) error {
 	tmp := fmt.Sprintf("%s.%d.new", path, os.Getpid())
 	if err := os.WriteFile(tmp, data, mode); err != nil {
+		os.Remove(tmp) // a full card leaves a partial file behind otherwise
 		return err
 	}
 	if err := os.Rename(tmp, path); err != nil {

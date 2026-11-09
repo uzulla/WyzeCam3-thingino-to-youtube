@@ -35,13 +35,48 @@ type sessions struct {
 	mu   sync.Mutex
 	ttl  time.Duration
 	live map[string]time.Time // token -> expiry
-	// one sign-in attempt at a time: a wrong password costs loginDelay, so
-	// guessing from the LAN is slow
+	// one password check at a time (the hash is slow on this CPU), and a
+	// count of recent failures per address: after loginMaxFails in
+	// loginFailWindow the address gets 429 at once, whatever it sends in
+	// parallel. Guessing from the LAN is then bounded by the window.
 	attempt sync.Mutex
+	fails   map[string][]time.Time
+}
+
+const (
+	loginMaxFails   = 5
+	loginFailWindow = time.Minute
+)
+
+// tooManyFails - has addr failed too often lately? (also forgets old entries)
+func (s *sessions) tooManyFails(addr string) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	cut := time.Now().Add(-loginFailWindow)
+	for a, ts := range s.fails {
+		var keep []time.Time
+		for _, t := range ts {
+			if t.After(cut) {
+				keep = append(keep, t)
+			}
+		}
+		if len(keep) == 0 {
+			delete(s.fails, a)
+		} else {
+			s.fails[a] = keep
+		}
+	}
+	return len(s.fails[addr]) >= loginMaxFails
+}
+
+func (s *sessions) noteFail(addr string) {
+	s.mu.Lock()
+	s.fails[addr] = append(s.fails[addr], time.Now())
+	s.mu.Unlock()
 }
 
 func newSessions(ttl time.Duration) *sessions {
-	return &sessions{ttl: ttl, live: map[string]time.Time{}}
+	return &sessions{ttl: ttl, live: map[string]time.Time{}, fails: map[string][]time.Time{}}
 }
 
 func (s *sessions) create() string {
@@ -159,6 +194,12 @@ func (s *server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "the password is too long"})
 		return
 	}
+	addr := clientIP(r)
+	if s.sessions.tooManyFails(addr) {
+		log.Printf("sign-in refused for %s: too many wrong passwords", addr)
+		writeJSON(w, http.StatusTooManyRequests, map[string]any{"error": "too many wrong passwords; wait a minute"})
+		return
+	}
 	// one check at a time (the hash takes a moment on this CPU); the delay
 	// after a wrong password is served outside the lock, so a stream of wrong
 	// guesses from one side does not hold the owner's correct sign-in back
@@ -171,7 +212,8 @@ func (s *server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !ok {
-		log.Printf("sign-in failed from %s", clientIP(r))
+		s.sessions.noteFail(addr)
+		log.Printf("sign-in failed from %s", addr)
 		time.Sleep(loginDelay)
 		writeJSON(w, http.StatusUnauthorized, map[string]any{"error": "wrong password"})
 		return

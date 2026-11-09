@@ -34,6 +34,12 @@ func testServer(t *testing.T) (*httptest.Server, string) {
 	return srv, sd
 }
 
+// code - the status of a response whose body is not needed (closed here)
+func code(resp *http.Response) int {
+	resp.Body.Close()
+	return resp.StatusCode
+}
+
 func jsonReq(t *testing.T, method, url, body string, cookie *http.Cookie, hdr map[string]string) *http.Response {
 	t.Helper()
 	req, err := http.NewRequest(method, url, strings.NewReader(body))
@@ -96,12 +102,16 @@ func TestGuardAndHeaders(t *testing.T) {
 	// a plain form or no content type: refused before auth even looks
 	req, _ := http.NewRequest("POST", srv.URL+"/api/relay", strings.NewReader("op=stop"))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	if resp, _ := http.DefaultClient.Do(req); resp.StatusCode != http.StatusUnsupportedMediaType {
-		t.Errorf("form POST: %d, want 415", resp.StatusCode)
+	resp0, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if code(resp0) != http.StatusUnsupportedMediaType {
+		t.Errorf("form POST: %d, want 415", resp0.StatusCode)
 	}
 	// another site's page driving the API through the cookie
-	if resp := jsonReq(t, "POST", srv.URL+"/api/reboot", `{}`, nil, map[string]string{"Sec-Fetch-Site": "cross-site"}); resp.StatusCode != http.StatusForbidden {
-		t.Errorf("cross-site POST: %d, want 403", resp.StatusCode)
+	if c := code(jsonReq(t, "POST", srv.URL+"/api/reboot", `{}`, nil, map[string]string{"Sec-Fetch-Site": "cross-site"})); c != http.StatusForbidden {
+		t.Errorf("cross-site POST: %d, want 403", c)
 	}
 	// same-origin and none (address bar) pass the guard (then hit auth)
 	for _, site := range []string{"same-origin", "none"} {
@@ -114,11 +124,13 @@ func TestGuardAndHeaders(t *testing.T) {
 	if resp.StatusCode != http.StatusNotFound || !strings.HasPrefix(resp.Header.Get("Content-Type"), "application/json") {
 		t.Errorf("unknown api: %d %s", resp.StatusCode, resp.Header.Get("Content-Type"))
 	}
+	resp.Body.Close()
 	// headers on every answer, the page included
 	resp = jsonReq(t, "GET", srv.URL+"/", "", nil, nil)
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("page: %d", resp.StatusCode)
 	}
+	resp.Body.Close()
 	for k, want := range map[string]string{"Cache-Control": "no-store", "X-Content-Type-Options": "nosniff"} {
 		if got := resp.Header.Get(k); got != want {
 			t.Errorf("%s = %q, want %q", k, got, want)
@@ -133,6 +145,7 @@ func TestGuardAndHeaders(t *testing.T) {
 		SignedIn bool `json:"signed_in"`
 	}
 	_ = json.NewDecoder(resp.Body).Decode(&me)
+	resp.Body.Close()
 	if resp.StatusCode != http.StatusOK || me.SignedIn {
 		t.Errorf("/api/me before sign-in: %d %+v", resp.StatusCode, me)
 	}
@@ -145,19 +158,20 @@ func TestSignInFlow(t *testing.T) {
 	loginDelay = time.Millisecond
 	t.Cleanup(func() { loginDelay = old })
 
-	if resp := jsonReq(t, "POST", srv.URL+"/api/login", `{"password":"wrong"}`, nil, nil); resp.StatusCode != http.StatusUnauthorized {
-		t.Errorf("wrong password: %d", resp.StatusCode)
+	if c := code(jsonReq(t, "POST", srv.URL+"/api/login", `{"password":"wrong"}`, nil, nil)); c != http.StatusUnauthorized {
+		t.Errorf("wrong password: %d", c)
 	}
-	if resp := jsonReq(t, "POST", srv.URL+"/api/login", `{"password":"`+strings.Repeat("a", 200)+`"}`, nil, nil); resp.StatusCode != http.StatusBadRequest {
-		t.Errorf("200-byte password: %d, want 400", resp.StatusCode)
+	if c := code(jsonReq(t, "POST", srv.URL+"/api/login", `{"password":"`+strings.Repeat("a", 200)+`"}`, nil, nil)); c != http.StatusBadRequest {
+		t.Errorf("200-byte password: %d, want 400", c)
 	}
-	if resp := jsonReq(t, "POST", srv.URL+"/api/login", `{"password":"secret","extra":1}`, nil, nil); resp.StatusCode != http.StatusBadRequest {
-		t.Errorf("unknown field: %d, want 400", resp.StatusCode)
+	if c := code(jsonReq(t, "POST", srv.URL+"/api/login", `{"password":"secret","extra":1}`, nil, nil)); c != http.StatusBadRequest {
+		t.Errorf("unknown field: %d, want 400", c)
 	}
 	resp := jsonReq(t, "POST", srv.URL+"/api/login", `{"password":"secret"}`, nil, nil)
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("right password: %d", resp.StatusCode)
 	}
+	resp.Body.Close()
 	var cookie *http.Cookie
 	for _, c := range resp.Cookies() {
 		if c.Name == sessionCookie {
@@ -168,8 +182,8 @@ func TestSignInFlow(t *testing.T) {
 		t.Fatalf("session cookie: %+v", cookie)
 	}
 	// the session opens the API
-	if resp := jsonReq(t, "GET", srv.URL+"/api/me", "", cookie, nil); resp.StatusCode != http.StatusOK {
-		t.Errorf("/api/me with session: %d", resp.StatusCode)
+	if c := code(jsonReq(t, "GET", srv.URL+"/api/me", "", cookie, nil)); c != http.StatusOK {
+		t.Errorf("/api/me with session: %d", c)
 	}
 	resp = jsonReq(t, "GET", srv.URL+"/api/relay/config", "", cookie, nil)
 	var cfg struct {
@@ -177,26 +191,27 @@ func TestSignInFlow(t *testing.T) {
 		Active   string    `json:"active"`
 	}
 	_ = json.NewDecoder(resp.Body).Decode(&cfg)
+	resp.Body.Close()
 	if resp.StatusCode != http.StatusOK || len(cfg.Profiles) != 1 || cfg.Profiles[0].StreamKey != "k" || cfg.Active != "YouTube" {
 		t.Errorf("relay config: %d %+v", resp.StatusCode, cfg)
 	}
 	// a bad op is the client's fault, not a server error, and runs nothing
-	if resp := jsonReq(t, "POST", srv.URL+"/api/relay", `{"op":"explode"}`, cookie, nil); resp.StatusCode != http.StatusBadRequest {
-		t.Errorf("bad op: %d, want 400", resp.StatusCode)
+	if c := code(jsonReq(t, "POST", srv.URL+"/api/relay", `{"op":"explode"}`, cookie, nil)); c != http.StatusBadRequest {
+		t.Errorf("bad op: %d, want 400", c)
 	}
-	if resp := jsonReq(t, "POST", srv.URL+"/api/record", `{"op":"start","x":1}`, cookie, nil); resp.StatusCode != http.StatusBadRequest {
-		t.Errorf("unknown field on record: %d, want 400", resp.StatusCode)
+	if c := code(jsonReq(t, "POST", srv.URL+"/api/record", `{"op":"start","x":1}`, cookie, nil)); c != http.StatusBadRequest {
+		t.Errorf("unknown field on record: %d, want 400", c)
 	}
 	// the preview fails cleanly when prudynt is not there
-	if resp := jsonReq(t, "GET", srv.URL+"/api/snapshot.jpg", "", cookie, nil); resp.StatusCode != http.StatusBadGateway {
-		t.Errorf("snapshot without prudynt: %d, want 502", resp.StatusCode)
+	if c := code(jsonReq(t, "GET", srv.URL+"/api/snapshot.jpg", "", cookie, nil)); c != http.StatusBadGateway {
+		t.Errorf("snapshot without prudynt: %d, want 502", c)
 	}
 	// sign out ends it
-	if resp := jsonReq(t, "POST", srv.URL+"/api/logout", `{}`, cookie, nil); resp.StatusCode != http.StatusOK {
-		t.Errorf("logout: %d", resp.StatusCode)
+	if c := code(jsonReq(t, "POST", srv.URL+"/api/logout", `{}`, cookie, nil)); c != http.StatusOK {
+		t.Errorf("logout: %d", c)
 	}
-	if resp := jsonReq(t, "GET", srv.URL+"/api/status", "", cookie, nil); resp.StatusCode != http.StatusUnauthorized {
-		t.Errorf("after logout: %d, want 401", resp.StatusCode)
+	if c := code(jsonReq(t, "GET", srv.URL+"/api/status", "", cookie, nil)); c != http.StatusUnauthorized {
+		t.Errorf("after logout: %d, want 401", c)
 	}
 }
 

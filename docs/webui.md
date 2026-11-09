@@ -55,6 +55,9 @@ AP になっている間は Camera 画面の上に黄色い帯が出る。自動
 - Thingino 既定の 5 秒長押しは「Wi-Fi 設定を消して再起動」(その後は Thingino の設定ポータル) で、保存した
   ネットワークが消える。インストーラはこの行を `wifi-ap` に差し替える (元の行はコメントで残す。20 秒の初期化はそのまま)
 - AP にパスワードは無い (ユーザーの決定: リカバリ時にしか使わない)。その間は電波の届く範囲の誰でもつなげて通信も見える
+- SD の `uenv.txt` に Thingino 標準の `wlan_ssid=` / `wlan_pass=` があると、Wi-Fi の起動処理がそれで設定を上書きして AP が
+  立たないので、`wifi-ap` はその場合は何もせず音 ("portal is down") とログで知らせる。保存済みの設定を戻せなかった時も同じ
+  (再起動すると AP のままになるので、`/etc/wpa_supplicant.conf.station` を手で戻す)
 - 配信は AP の間は当然止まる (インターネットが無い)。再起動で戻る
 - ログ: `logread | grep wifi-ap`。AP が上がらなかった時は "configuration portal is down" の音声が鳴る
 
