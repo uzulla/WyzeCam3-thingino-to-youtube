@@ -18,7 +18,7 @@ import (
 // Message - one beacon, as JSON. Fields that could not be read are left out
 // (or null), never guessed.
 type Message struct {
-	Type      string  `json:"type"` // always "thingino-beacon"
+	Type      string  `json:"type"` // always "lapcam-beacon"
 	Version   int     `json:"v"`
 	Seq       uint64  `json:"seq"` // +1 per round, the same on every interface
 	Host      string  `json:"host"`
@@ -34,7 +34,7 @@ type Message struct {
 }
 
 const (
-	msgType    = "thingino-beacon"
+	msgType    = "lapcam-beacon"
 	msgVersion = 1
 )
 

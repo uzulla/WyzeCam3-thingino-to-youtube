@@ -15,7 +15,7 @@ func TestBuild(t *testing.T) {
 	}
 	c.ID = "x"
 	b, _ := json.Marshal(c)
-	want := `{"type":"thingino-command","v":1,"id":"x","host":"cam","cmd":"image","args":{"hflip":false,"vflip":"toggle"}}`
+	want := `{"type":"lapcam-command","v":1,"id":"x","host":"cam","cmd":"image","args":{"hflip":false,"vflip":"toggle"}}`
 	if string(b) != want {
 		t.Errorf("got  %s\nwant %s", b, want)
 	}
@@ -23,7 +23,7 @@ func TestBuild(t *testing.T) {
 	c, _ = build([]string{"ping"}, "")
 	c.ID = "x"
 	b, _ = json.Marshal(c)
-	if string(b) != `{"type":"thingino-command","v":1,"id":"x","cmd":"ping"}` {
+	if string(b) != `{"type":"lapcam-command","v":1,"id":"x","cmd":"ping"}` {
 		t.Errorf("ping: %s", b)
 	}
 

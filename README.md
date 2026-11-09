@@ -176,9 +176,10 @@ device/    カメラ側の常設運用一式 (ファイルの一覧は device/RE
              lapcam/ / S97lapcam / install-lapcam.sh
                                                 スマホ向けの Web UI (Go、SD カードから実行、ポート 80。Thingino の Web UI を置き換える)
              wifi-ap / install-wifi-ap.sh       任意: 本体ボタン 5 秒長押しで、再起動までカメラが Wi-Fi (AP) を出す (リカバリ用)
+             set-camera-name.sh                 任意: ホスト名・mDNS のサービス名・録画フォルダをプロジェクト名 (lapcam) に揃える
              common.sh                          対応ファームの判定 (違えば何も変更せず中止)
 tools/     PC で使う道具
-             find-camera/                       LAN 内の Thingino カメラと IP を mDNS で探す (Go、`go -C tools/find-camera run .`)
+             find-camera/                       LAN 内の lapcam のカメラと IP を mDNS で探す (Go、`go -C tools/find-camera run .`)
              beacon-listen/                     カメラの beacon を受け取って表示する (Go、`go -C tools/beacon-listen run .`)
              beacon-send/                       カメラの beacon に指令 (映像の反転など) を送る (Go、`go -C tools/beacon-send run . ping`)
              concat-recordings.sh               SD の 1 分ごとの録画ファイルを再エンコードなしで 1 本の MP4 につなぐ (ffmpeg)

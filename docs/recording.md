@@ -50,7 +50,7 @@ Video Recorder ページの主な項目:
 | 項目 | 内容 |
 |---|---|
 | Storage mount | `/mnt/mmcblk0p1` (SD カード) |
-| Device-specific path | SD の中のフォルダ。既定 `%hostname` (ホスト名のフォルダ) |
+| Device-specific path | SD の中のフォルダ。既定 `%hostname` (ホスト名のフォルダ)。`device/set-camera-name.sh` を入れた機体は固定の `recordings` ([lapcam.md](lapcam.md)) |
 | File name template | 既定 `%Y/%m/%d/%H-%M-%S`。日付のフォルダの下に時刻のファイル名 |
 | Clip duration | 1 ファイルの秒数。既定 60。長くしても継ぎ目で欠けないので、ファイル数を減らしたければ 600 など |
 | Storage manager | オンにすると古いファイルから消して SD を回し続ける。上限 (GB) と最低空き容量 (MB) で決める |

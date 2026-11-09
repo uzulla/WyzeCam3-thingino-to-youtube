@@ -36,6 +36,23 @@ device/install-lapcam.sh root@<camera-ip>   # SD カードにバイナリ、over
 | Stream タブ | ストリームキーを名前付きで複数保存し、使うものを選ぶ。Save で `youtube-relay.json` に書き、配信中なら再起動 (数秒切れる)。起動時に配信を始めるか (`service enable/disable youtube-relay`)。**Video quality**: 解像度 (1920×1080 / 1280×720 / 960×540 / 640×360)、fps (5〜30)、ビットレート、CBR/VBR を選んで Apply (2 回タップ)。`/etc/prudynt.json` の `stream0.*` に `jct` で書き (gop = fps×2)、prudynt を再起動する (osd-config / 旧 CGI と同じ `/run/prudynt-restart.lock` の手順。配信と録画が 10〜20 秒止まる)。配信側の最近のログ (ストリームキーは伏せる) |
 | Wi-Fi タブ | 今の接続 (SSID、dBm、IP)、保存済みのネットワーク一覧 (優先度順。▲ で先頭へ、Remove)、Scan で見つかった SSID をタップしてパスワードを入れて追加、または手で入力 (スキャンの間は配信が一瞬途切れることがある)。Save and apply で `/etc/wpa_supplicant.conf` を書き直し (ヘッダ行と、network ブロックの他の行 (`key_mgmt=SAE`、`bssid` など) は残す。パスワードは既存のものを引き継ぐ。16 進表記の SSID や引用符を含む名前は 16 進のまま)、SD に `wpa_supplicant.conf` があればそれも同じ内容にし (wifi-from-sd が次の起動で適用するのと一致させる)、`wpa_cli reconfigure` で即時反映。**保存前につながっていたのに 30 秒たっても再接続しなければ、直前の設定に自動で戻す** (打ち間違いで操作不能にならない)。初回だけ元のファイルを `.before-lapcam` に残す。パスワードはブラウザに送らない。今つながっているネットワークを消す保存は 2 回タップで警告 |
 
+## カメラの名前 (`set-camera-name.sh`)
+
+```sh
+device/set-camera-name.sh root@<camera-ip>          # 名前は lapcam。別名なら第 2 引数
+```
+
+Thingino が機体の名前から決めている 3 つを lapcam に揃える。/etc (overlay) への変更で、工場出荷状態に戻すと消える。
+
+- **ホスト名**: 既定の `ing-wyze-cam3-xxxx` を `lapcam` に (`hostname`、`/etc/hostname`、`/etc/hosts`。Thingino の
+  `S04hostname` は自分で付けた名前を起動時に残す)。LAN では `lapcam.local` で引ける (Android は引けない機種がある)
+- **mDNS のサービス**: `/etc/mdns.d/lapcam.service` を置いて `_lapcam._tcp` を出す (Thingino 標準の `_thingino._tcp` は
+  そのまま)。`tools/find-camera` はこれを探す ([find-camera.md](find-camera.md))
+- **録画フォルダ**: 録画の保存先は既定で `%hostname` (ホスト名のフォルダ) なので、名前を lapcam にすると SD 直下の
+  バイナリ `lapcam` とぶつかる。保存先を固定の `recordings` フォルダにし (`recorder.device_path`)、旧フォルダ
+  (`ing-wyze-cam3-xxxx/`) の中身を `recordings/` へ移す (録画中なら移さずに知らせる)
+- beacon と lapcam を再起動して新しい名前を読ませる。AP モードの SSID も `lapcam` (`wifi-ap`)
+
 ## つながらない時: 本体ボタン 5 秒長押しでカメラが Wi-Fi (AP) を出す (`wifi-ap`)
 
 ```sh
@@ -43,7 +60,7 @@ device/install-wifi-ap.sh root@<camera-ip>   # /usr/sbin/wifi-ap を置き、ボ
 ```
 
 サーキットで保存済みの Wi-Fi が無い時のリカバリ用。本体のボタンを **5 秒押し続け (チャイムが鳴る) て離す**と、
-カメラが**パスワード無しのアクセスポイント `Wyze-cam`** になる。スマホをそれにつなぎ、`http://100.64.1.1/` を
+カメラが**パスワード無しのアクセスポイント `lapcam`** になる。スマホをそれにつなぎ、`http://100.64.1.1/` を
 開いて Wi-Fi タブで設定を直し (AP の間は保存だけで、適用は再起動時)、Camera 画面一番下の **Reboot camera** で再起動すると、
 保存済みの Wi-Fi に戻る。
 AP になっている間は Camera 画面の上に黄色い帯が出る。自動では AP にならず、AP から自動で戻ることもしない (ユーザーの決定)。
