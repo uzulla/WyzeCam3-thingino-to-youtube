@@ -238,6 +238,9 @@ func runCmdTimeout(timeout time.Duration, name string, args ...string) (string, 
 	if ctx.Err() != nil {
 		return strings.TrimSpace(string(b)), fmt.Errorf("%s: no answer in %v", name, timeout)
 	}
+	if errors.Is(err, exec.ErrWaitDelay) {
+		err = nil // the command ended fine; a child it left behind kept our pipes
+	}
 	return strings.TrimSpace(string(b)), err
 }
 

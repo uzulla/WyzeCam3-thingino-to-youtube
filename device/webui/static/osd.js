@@ -235,7 +235,7 @@
     if (name.startsWith("imagefile")) {
       const step = 8;
       const resize = (dir) => {
-        const w = Math.max(16, Math.min(data.stream.width, e.width + dir * step));
+        let w = Math.max(16, Math.min(data.stream.width, e.width + dir * step)); w += w & 1; // prudynt wants even sizes
         let h = Math.round(e.height * w / e.width); h += h & 1; h = Math.max(16, Math.min(data.stream.height, h));
         change(name, { width: w, height: h });
       };

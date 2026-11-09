@@ -31,6 +31,16 @@ fi
 [ -x "$INIT" ] || { logger -p daemon.err -t wifi-ap "no $INIT"; exit 1; }
 
 log "switching to access point '$SSID' (open) until the next reboot"
+if grep -q '^[[:space:]]*mode=2' "$CONF" 2>/dev/null; then
+	# a previous run was cut off before it put the saved networks back
+	if [ -f "$KEEP" ]; then
+		log "found the access point config in $CONF from an earlier run; restoring $KEEP first"
+		cp "$KEEP" "$CONF.tmp" && mv "$CONF.tmp" "$CONF" && sync
+	else
+		logger -p daemon.err -t wifi-ap "$CONF already holds an access point config and there is no $KEEP to restore; not touching it"
+		exit 1
+	fi
+fi
 cp "$CONF" "$KEEP" || exit 1
 
 # stop while the config still says "client", so the client-mode teardown runs

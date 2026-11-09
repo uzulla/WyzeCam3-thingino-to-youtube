@@ -17,7 +17,11 @@
     const r = await fetch(path, opt);
     let data = null;
     try { data = await r.json(); } catch (_) { data = null; }
-    if (r.status === 401) { showLogin(); throw new Error("sign in first"); }
+    if (r.status === 401) {
+      if (path === "/api/login") throw new Error((data && data.error) || "wrong password");
+      showLogin();
+      throw new Error("sign in first");
+    }
     if (!r.ok) throw new Error((data && data.error) || `HTTP ${r.status}`);
     return data;
   }

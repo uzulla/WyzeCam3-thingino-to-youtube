@@ -84,32 +84,63 @@ func recordingsRoot() (string, error) {
 	return filepath.Join(mount, dev), nil
 }
 
-func listRecordings(root string) ([]recFile, error) {
-	files := []recFile{} // never nil: the page expects a list, even an empty one
-	err := filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
+// listRecordings - the newest recordingsMax clips. The recorder names
+// folders YYYY/MM/DD and files HH-MM-SS, so reading each level in reverse
+// order and stopping at the limit sees only the newest days, not the whole
+// card (weeks of one-minute clips are tens of thousands of files).
+// truncated says whether older clips exist beyond the list.
+func listRecordings(root string) (files []recFile, truncated bool, err error) {
+	files = []recFile{}       // never nil: the page expects a list, even an empty one
+	want := recordingsMax + 1 // one more, to know whether there is more
+	var walk func(dir string, depth int) error
+	walk = func(dir string, depth int) error {
+		entries, err := os.ReadDir(dir)
 		if err != nil {
-			return nil // a vanished file: skip
+			if errors.Is(err, os.ErrNotExist) {
+				return nil
+			}
+			return err
 		}
-		if info.IsDir() || !strings.HasSuffix(strings.ToLower(info.Name()), ".mp4") {
-			return nil
+		sort.Slice(entries, func(i, j int) bool { return entries[i].Name() > entries[j].Name() })
+		for _, e := range entries {
+			if len(files) >= want {
+				return nil
+			}
+			path := filepath.Join(dir, e.Name())
+			if e.IsDir() {
+				if depth < 3 { // year / month / day; anything deeper is not the recorder's
+					if err := walk(path, depth+1); err != nil {
+						return err
+					}
+				}
+				continue
+			}
+			if !strings.HasSuffix(strings.ToLower(e.Name()), ".mp4") {
+				continue
+			}
+			info, err := e.Info()
+			if err != nil {
+				continue // vanished meanwhile
+			}
+			rel, err := filepath.Rel(root, path)
+			if err != nil {
+				continue
+			}
+			files = append(files, recFile{Path: filepath.ToSlash(rel), Size: info.Size(), MTime: info.ModTime().Unix()})
 		}
-		rel, err := filepath.Rel(root, path)
-		if err != nil {
-			return nil
-		}
-		files = append(files, recFile{Path: filepath.ToSlash(rel), Size: info.Size(), MTime: info.ModTime().Unix()})
 		return nil
-	})
-	if err != nil && !errors.Is(err, os.ErrNotExist) {
-		return nil, err
 	}
-	// newest first (by name: the recorder names files by time, so the order
-	// does not depend on the clock the file was written with)
+	if err := walk(root, 0); err != nil {
+		return nil, false, err
+	}
+	// the per-folder order is right already; one sort settles clips that
+	// sit directly in the root next to folders
 	sort.Slice(files, func(i, j int) bool { return files[i].Path > files[j].Path })
 	if len(files) > recordingsMax {
 		files = files[:recordingsMax]
+		truncated = true
 	}
-	return files, nil
+	return files, truncated, nil
 }
 
 func readRecSettings() recSettings {
@@ -150,7 +181,7 @@ func (s *server) handleRecordingsList(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, resp)
 		return
 	}
-	files, err := listRecordings(root)
+	files, truncated, err := listRecordings(root)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]any{"error": err.Error()})
 		return
@@ -167,7 +198,7 @@ func (s *server) handleRecordingsList(w http.ResponseWriter, r *http.Request) {
 	}
 	resp["root"] = root
 	resp["files"] = files
-	resp["truncated"] = len(files) == recordingsMax
+	resp["truncated"] = truncated
 	resp["free_mb"] = free
 	resp["total_mb"] = total
 	resp["listed_mb"] = used >> 20

@@ -183,9 +183,9 @@
     pendingDelete = null;
     setMsg("Deleting…");
     try {
-      await api("/api/recordings/delete", { path: f.path });
-      setMsg("Deleted " + f.path);
-      dropLocal([f.path]);
+      const r = await api("/api/recordings/delete", { path: f.path });
+      if (r.deleted === 1) { setMsg("Deleted " + f.path); dropLocal([f.path]); }
+      else setMsg("Not deleted: " + ((r.skipped && r.skipped[0]) || "unknown reason"), true);
     } catch (err) { setMsg(err.message, true); }
     await load();
   }

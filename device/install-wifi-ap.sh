@@ -26,8 +26,11 @@ fi
 . "$HERE/common.sh"
 check_camera "$CAM"
 
-if ! ssh "$CAM" "[ -f $CONF ] && [ -x /etc/init.d/S38wpa_supplicant ] && grep -q '^KEY_ENTER TIMED 5 ' $CONF"; then
-	echo "No 5-second button mapping (or no S38wpa_supplicant) on the camera - nothing was changed" >&2
+# only the line Thingino ships (or ours from an earlier run) may be there:
+# another 5-second mapping would be left alone by the sed below and then the
+# final check would fail after the files were already changed
+if ! ssh "$CAM" "[ -f $CONF ] && [ -x /etc/init.d/S38wpa_supplicant ] && grep -q -E '^KEY_ENTER TIMED 5 (/sbin/wlan reset;reboot|/usr/sbin/wifi-ap)\$' $CONF && ! grep -E '^KEY_ENTER TIMED 5 ' $CONF | grep -v -q -E '(/sbin/wlan reset;reboot|/usr/sbin/wifi-ap)\$'"; then
+	echo "The camera's 5-second button mapping is not the one this installer knows (Thingino's 'wlan reset;reboot'); look at $CONF first - nothing was changed" >&2
 	exit 1
 fi
 

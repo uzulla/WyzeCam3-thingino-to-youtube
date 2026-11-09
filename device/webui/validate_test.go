@@ -143,3 +143,89 @@ func TestParseStat(t *testing.T) {
 		t.Fatal("missing file accepted")
 	}
 }
+
+func TestListRecordingsNewestFirstAndTruncated(t *testing.T) {
+	root := t.TempDir()
+	mk := func(rel string) {
+		p := filepath.Join(root, rel)
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte("x"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// two days, one older year, a stray non-mp4 and a file too deep
+	for i := 0; i < recordingsMax+5; i++ {
+		mk(filepath.Join("2026", "11", "09", strings.ReplaceAll(strings.Repeat("0", 0)+time2(i), ":", "-")+".mp4"))
+	}
+	mk("2026/11/10/00-00-00.mp4")
+	mk("2025/12/31/23-59-00.mp4")
+	mk("2026/11/10/notes.txt")
+	mk("2026/11/10/deep/er/00-00-01.mp4")
+	files, truncated, err := listRecordings(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !truncated || len(files) != recordingsMax {
+		t.Fatalf("%d files, truncated=%v", len(files), truncated)
+	}
+	if files[0].Path != "2026/11/10/00-00-00.mp4" {
+		t.Fatalf("newest first, got %s", files[0].Path)
+	}
+	for _, f := range files {
+		if strings.HasPrefix(f.Path, "2025/") || strings.Contains(f.Path, "deep") || strings.HasSuffix(f.Path, ".txt") {
+			t.Fatalf("unexpected entry %s", f.Path)
+		}
+	}
+	// a small tree is complete and not truncated; a missing root is empty, not an error
+	files, truncated, err = listRecordings(filepath.Join(root, "2025"))
+	if err != nil || truncated || len(files) != 1 {
+		t.Fatalf("small tree: %d %v %v", len(files), truncated, err)
+	}
+	files, truncated, err = listRecordings(filepath.Join(root, "nothing"))
+	if err != nil || truncated || len(files) != 0 {
+		t.Fatalf("missing root: %v %v %v", files, truncated, err)
+	}
+}
+
+// time2 - "HH-MM-SS" for the i-th minute of a day
+func time2(i int) string {
+	return fmtTime(i/60, i%60)
+}
+
+func fmtTime(h, m int) string {
+	return strings.Join([]string{pad2(h), pad2(m), "00"}, ":")
+}
+
+func pad2(n int) string {
+	if n < 10 {
+		return "0" + string(rune('0'+n))
+	}
+	return string(rune('0'+n/10)) + string(rune('0'+n%10))
+}
+
+func TestWifiSaveNeedsOnePSKNetwork(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "wpa.conf")
+	if err := os.WriteFile(path, []byte("ctrl_interface=/run/wpa_supplicant\nupdate_config=1\n\nnetwork={\n\tssid=\"Home\"\n\tpsk=\"home-pass\"\n}\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	old := wpaConf
+	wpaConf = path
+	t.Cleanup(func() { wpaConf = old })
+	s := &server{sd: t.TempDir(), relay: newRelay(t.TempDir())}
+	if _, err := s.wifiSave([]wifiNet{{SSID: "Cafe", Open: true}}); err == nil || !strings.Contains(err.Error(), "WPA2 password") {
+		t.Fatalf("open-only list accepted: %v", err)
+	}
+	if _, err := s.wifiSave([]wifiNet{{SSID: "Home"}, {SSID: "Bad\nName", PSK: "12345678"}}); err == nil {
+		t.Fatal("line break in a name accepted")
+	}
+	if _, err := s.wifiSave([]wifiNet{{SSID: "New", PSK: "short"}}); err == nil {
+		t.Fatal("7-character password accepted")
+	}
+	// the file was not touched by the refused saves
+	b, _ := os.ReadFile(path)
+	if !strings.Contains(string(b), `psk="home-pass"`) || strings.Contains(string(b), "Cafe") {
+		t.Fatalf("file changed by a refused save:\n%s", b)
+	}
+}

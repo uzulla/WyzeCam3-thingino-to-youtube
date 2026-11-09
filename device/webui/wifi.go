@@ -26,10 +26,12 @@ import (
 )
 
 const (
-	wpaConf   = "/etc/wpa_supplicant.conf"
 	wpaSDName = "wpa_supplicant.conf"
 	wlanIface = "wlan0"
 )
+
+// wpaConf - the config wpa_supplicant runs with (a variable: tests use a temp file)
+var wpaConf = "/etc/wpa_supplicant.conf"
 
 type wifiNet struct {
 	SSID     string   `json:"ssid"`
@@ -388,6 +390,18 @@ func (s *server) wifiSave(nets []wifiNet) (applied bool, err error) {
 		if !n.Open && psks[n.SSID] == "" && !hasKey(n.extra, "key_mgmt") && !hasKey(n.extra, "sae_password") {
 			return false, fmt.Errorf("%s: a password is needed", n.SSID)
 		}
+	}
+	// Thingino's S38wpa_supplicant (and wifi-from-sd) take a file without a
+	// psk= line for "not set up" and start the setup portal at boot: a list
+	// of only open or SAE networks would lose the camera at the next reboot
+	hasPSK := false
+	for _, n := range nets {
+		if !n.Open && psks[n.SSID] != "" {
+			hasPSK = true
+		}
+	}
+	if !hasPSK {
+		return false, errors.New("at least one network with a WPA2 password must stay: the camera's Wi-Fi start-up treats a list without one as unset and opens the setup portal")
 	}
 	w.nets = nets
 	text, err := w.render(psks)
