@@ -157,3 +157,57 @@ func (s *server) handleSnapshot(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Length", strconv.Itoa(len(frame)))
 	_, _ = w.Write(frame)
 }
+
+// handlePreviewMP4 - the main stream as fragmented MP4 (prudynt's /ch0.mp4),
+// relayed byte for byte: the page feeds it to a <video> through MediaSource
+// for a smooth picture where the browser can (Android, PC). Same viewer
+// limit and per-write deadline as the MJPEG.
+func (s *server) handlePreviewMP4(w http.ResponseWriter, r *http.Request) {
+	select {
+	case previewSlots <- struct{}{}:
+		defer func() { <-previewSlots }()
+	default:
+		http.Error(w, "too many viewers", http.StatusServiceUnavailable)
+		return
+	}
+	req, err := http.NewRequestWithContext(r.Context(), http.MethodGet, s.prudynt+"/ch0.mp4", nil)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	resp, err := http.DefaultTransport.RoundTrip(req)
+	if err != nil {
+		log.Printf("preview.mp4: %v", err)
+		http.Error(w, "no video from the camera's encoder", http.StatusBadGateway)
+		return
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		http.Error(w, "no video from the camera's encoder", http.StatusBadGateway)
+		return
+	}
+	w.Header().Set("Content-Type", "video/mp4")
+	w.Header().Set("Pragma", "no-cache")
+	w.WriteHeader(http.StatusOK)
+	flusher, _ := w.(http.Flusher)
+	rc := http.NewResponseController(w)
+	buf := make([]byte, 32<<10)
+	for {
+		n, rerr := resp.Body.Read(buf)
+		if n > 0 {
+			_ = rc.SetWriteDeadline(time.Now().Add(frameWriteLimit))
+			if _, werr := w.Write(buf[:n]); werr != nil {
+				return
+			}
+			if flusher != nil {
+				flusher.Flush()
+			}
+		}
+		if rerr != nil {
+			if rerr != io.EOF && r.Context().Err() == nil {
+				log.Printf("preview.mp4: upstream ended: %v", rerr)
+			}
+			return
+		}
+	}
+}

@@ -35,6 +35,7 @@ type sessions struct {
 	mu   sync.Mutex
 	ttl  time.Duration
 	live map[string]time.Time // token -> expiry
+	file string               // where the tokens are kept across a restart of webui ("" = memory only)
 	// one password check at a time (the hash is slow on this CPU), and a
 	// count of recent failures per address: after loginMaxFails in
 	// loginFailWindow the address gets 429 at once, whatever it sends in
@@ -94,7 +95,51 @@ func (s *sessions) create() string {
 		}
 	}
 	s.live[tok] = now.Add(s.ttl)
+	s.saveLocked()
 	return tok
+}
+
+// persistTo - keep the sessions in file (tmpfs: an update or restart of webui
+// does not sign everyone out; a reboot does) and load the ones already there
+func (s *sessions) persistTo(file string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.file = file
+	b, err := os.ReadFile(file)
+	if err != nil {
+		return
+	}
+	var saved map[string]int64
+	if json.Unmarshal(b, &saved) != nil {
+		return
+	}
+	now := time.Now()
+	for tok, exp := range saved {
+		if t := time.Unix(exp, 0); t.After(now) && len(tok) == 64 {
+			s.live[tok] = t
+		}
+	}
+}
+
+// saveLocked - write the live tokens (caller holds s.mu)
+func (s *sessions) saveLocked() {
+	if s.file == "" {
+		return
+	}
+	out := map[string]int64{}
+	for tok, exp := range s.live {
+		out[tok] = exp.Unix()
+	}
+	b, err := json.Marshal(out)
+	if err != nil {
+		return
+	}
+	tmp := s.file + ".new"
+	if err := os.WriteFile(tmp, b, 0o600); err != nil {
+		os.Remove(tmp)
+		return
+	}
+	_ = os.Rename(tmp, s.file)
 }
 
 func (s *sessions) valid(tok string) bool {
@@ -120,6 +165,7 @@ func (s *sessions) drop(tok string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	delete(s.live, tok)
+	s.saveLocked()
 }
 
 // shadowHash - the password hash of user from /etc/shadow

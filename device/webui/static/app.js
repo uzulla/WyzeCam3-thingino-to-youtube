@@ -31,7 +31,7 @@
   // --- screens -------------------------------------------------------------
   function showLogin() {
     stopPolling();
-    $("preview").src = "";
+    stopPreview();
     $("app").classList.add("hidden");
     $("tabs").classList.add("hidden");
     showTab("home");
@@ -68,16 +68,66 @@
   });
 
   // --- preview -------------------------------------------------------------
+  // Two ways to show the picture: "video" (fragmented MP4 through
+  // MediaSource: smooth, with the stream's own frame rate; Android, PC,
+  // newer iPhones) and "mjpeg" (4 still pictures a second; works everywhere).
+  // The choice is kept on the phone; video falls back to mjpeg by itself.
   let previewRetry = null;
-  function startPreview() {
-    const img = $("preview");
-    $("preview-off").classList.add("hidden");
-    img.src = `/api/preview.mjpeg?fps=4&t=${Date.now()}`;
+  let previewMode = (() => {
+    try {
+      const saved = localStorage.getItem("previewMode");
+      if (saved === "video" || saved === "mjpeg") return saved;
+    } catch (_) {}
+    return window.livePlayer && window.livePlayer.supported() ? "video" : "mjpeg";
+  })();
+  let videoFailedOnce = false;
+
+  function renderPreviewMode() {
+    const b = $("btn-preview-mode");
+    b.textContent = previewMode === "video" ? "Video" : "Pictures";
+    b.title = previewMode === "video" ? "Smooth video. Tap for still pictures (lighter)" : "Still pictures, 4 a second. Tap for smooth video";
+    b.classList.toggle("hidden", !(window.livePlayer && window.livePlayer.supported()));
   }
+
+  function startPreview() {
+    stopPreview();
+    $("preview-off").classList.add("hidden");
+    renderPreviewMode();
+    if (previewMode === "video" && window.livePlayer && window.livePlayer.supported()) {
+      $("preview").classList.add("hidden");
+      $("preview-video").classList.remove("hidden");
+      window.livePlayer.start($("preview-video"), "/api/preview.mp4", (why) => {
+        if (why === "HTTP 401") { showLogin(); return; } // the session is gone (webui restarted): sign in again
+        // this browser or network cannot do the video: pictures instead
+        console.warn("video preview failed:", why);
+        if (!videoFailedOnce) setMsg("action-msg", "Smooth video is not working here (" + why + "); showing pictures.");
+        videoFailedOnce = true;
+        previewMode = "mjpeg";
+        if (currentTab === "home" && document.visibilityState === "visible") startPreview();
+      });
+      return;
+    }
+    $("preview-video").classList.add("hidden");
+    $("preview").classList.remove("hidden");
+    $("preview").src = `/api/preview.mjpeg?fps=4&t=${Date.now()}`;
+  }
+  function stopPreview() {
+    clearTimeout(previewRetry);
+    if (window.livePlayer) window.livePlayer.stop();
+    // not src = "": an empty src makes the browser load the page URL as an
+    // image, fire "error", and that handler would restart the preview
+    $("preview").removeAttribute("src");
+  }
+  $("btn-preview-mode").addEventListener("click", () => {
+    previewMode = previewMode === "video" ? "mjpeg" : "video";
+    try { localStorage.setItem("previewMode", previewMode); } catch (_) {}
+    startPreview();
+  });
   $("preview").addEventListener("error", () => {
+    if (!$("preview").getAttribute("src") || previewMode !== "mjpeg") return; // cleared on purpose, or not in use
     $("preview-off").classList.remove("hidden");
     clearTimeout(previewRetry);
-    if (!$("app").classList.contains("hidden")) previewRetry = setTimeout(startPreview, 3000);
+    if (!$("app").classList.contains("hidden")) previewRetry = setTimeout(() => { if (currentTab === "home") refresh().then(startPreview); }, 3000);
   });
   // a phone that comes back from the background has a dead stream: restart it
   document.addEventListener("visibilitychange", () => {
@@ -87,7 +137,7 @@
       refresh();
     } else {
       // in the background the pictures would only use the camera's Wi-Fi
-      $("preview").src = "";
+      stopPreview();
       if (window.osdTab && window.osdTab.isOpen()) $("osd-preview").src = "";
     }
   });
@@ -243,7 +293,7 @@
   function showTab(name) {
     currentTab = name;
     // one preview at a time: the Camera screen's picture stops behind other tabs
-    if (name === "home") { if (!$("preview").src) startPreview(); } else $("preview").src = "";
+    if (name === "home") startPreview(); else stopPreview();
     $("sheet-stream").classList.toggle("hidden", name !== "stream");
     $("sheet-osd").classList.toggle("hidden", name !== "osd");
     $("sheet-rec").classList.toggle("hidden", name !== "rec");

@@ -37,7 +37,7 @@ button.icon { background: none; border: none; color: var(--text); font-size: 22p
 
 /* preview */
 #preview-box { position: relative; width: 100%; aspect-ratio: 16 / 9; background: #000; overflow: hidden; margin-top: env(safe-area-inset-top); }
-#preview { width: 100%; height: 100%; object-fit: contain; display: block; }
+#preview, #preview-video { width: 100%; height: 100%; object-fit: contain; display: block; background: #000; }
 .overlay-msg { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: var(--muted); }
 .badges { display: flex; gap: 8px; padding: 10px 12px 0; min-height: 36px; }
 .badge { padding: 4px 12px; border-radius: 6px; font-weight: 700; font-size: 14px; letter-spacing: .5px; background: var(--panel); color: var(--muted); }
@@ -176,3 +176,5 @@ a { color: var(--accent); }
 
 .keyrow { display: flex; gap: 6px; }
 .keyrow input { flex: 1; }
+
+.badges .modebtn { margin-left: auto; }

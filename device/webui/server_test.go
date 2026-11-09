@@ -66,7 +66,7 @@ func jsonReq(t *testing.T, method, url, body string, cookie *http.Cookie, hdr ma
 func TestRoutesNeedASession(t *testing.T) {
 	srv, _ := testServer(t)
 	routes := []struct{ method, path string }{
-		{"GET", "/api/status"}, {"GET", "/api/preview.mjpeg"}, {"GET", "/api/snapshot.jpg"},
+		{"GET", "/api/status"}, {"GET", "/api/preview.mjpeg"}, {"GET", "/api/preview.mp4"}, {"GET", "/api/snapshot.jpg"},
 		{"POST", "/api/relay"}, {"GET", "/api/relay/config"}, {"POST", "/api/relay/config"},
 		{"POST", "/api/record"}, {"POST", "/api/image"}, {"POST", "/api/reboot"}, {"GET", "/api/log"},
 		{"GET", "/api/osd"}, {"POST", "/api/osd/element"}, {"POST", "/api/osd/feed"},

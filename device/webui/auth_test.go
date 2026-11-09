@@ -87,3 +87,30 @@ func TestSessions(t *testing.T) {
 		t.Fatalf("tokens not random/64 hex: %q %q", a, b)
 	}
 }
+
+func TestSessionsPersist(t *testing.T) {
+	file := filepath.Join(t.TempDir(), "sessions.json")
+	a := newSessions(time.Hour)
+	a.persistTo(file)
+	tok := a.create()
+	gone := a.create()
+	a.drop(gone)
+	b := newSessions(time.Hour)
+	b.persistTo(file)
+	if !b.valid(tok) {
+		t.Fatal("a saved session was not loaded")
+	}
+	if b.valid(gone) {
+		t.Fatal("a dropped session came back")
+	}
+	// an expired one is not loaded
+	c := newSessions(time.Millisecond)
+	c.persistTo(filepath.Join(t.TempDir(), "s.json"))
+	old := c.create()
+	time.Sleep(5 * time.Millisecond)
+	d := newSessions(time.Hour)
+	d.persistTo(c.file)
+	if d.valid(old) {
+		t.Fatal("an expired session was loaded")
+	}
+}
