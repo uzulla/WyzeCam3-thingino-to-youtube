@@ -92,7 +92,8 @@ Thingino に入っている英語の音声 ("video recording started" / "stopped
 - Thingino のボタンデーモン (`thingino-button`、設定 `/etc/thingino-button.conf`) は押した・離した・
   長押しにコマンドを割り当てられるだけでダブルクリックが無いので、押す・離すのたびに `/usr/sbin/rec-button`
   を呼び、`/run/rec-button/` の時刻で判定する。離してから 0.7 秒以内にもう一度離したらダブルクリック、
-  1 秒以上の長押しは無視 (5 秒 = 再起動、20 秒 = 初期化、という Thingino の長押しはそのまま)
+  1 秒以上の長押しは無視 (Thingino の長押し: 5 秒 = Wi-Fi を消して再起動、20 秒 = 初期化。5 秒の方は
+  `install-wifi-ap.sh` を入れると「カメラが AP になる」に変わる: [webui.md](webui.md))
 - Thingino 既定の「短く押すと IP を読み上げる」(`tell %ip`) は設定ファイル側ではコメントアウトし、
   `rec-button` がシングルクリックとして 0.7 秒待ってから実行する (ダブルクリックで 2 回読み上げないため)。
   短く押すたびに鳴るチャイムは Thingino のまま
