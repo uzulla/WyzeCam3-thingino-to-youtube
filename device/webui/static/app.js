@@ -31,7 +31,7 @@
   // --- screens -------------------------------------------------------------
   function showLogin() {
     stopPolling();
-    $("preview").src = "";
+    stopPreview();
     $("app").classList.add("hidden");
     $("tabs").classList.add("hidden");
     showTab("home");
@@ -68,16 +68,82 @@
   });
 
   // --- preview -------------------------------------------------------------
+  // Two ways to show the picture: "video" (fragmented MP4 through
+  // MediaSource: smooth, with the stream's own frame rate; Android, PC,
+  // newer iPhones) and "mjpeg" (4 still pictures a second; works everywhere).
+  // The choice is kept on the phone; video falls back to mjpeg by itself.
   let previewRetry = null;
-  function startPreview() {
-    const img = $("preview");
-    $("preview-off").classList.add("hidden");
-    img.src = `/api/preview.mjpeg?fps=4&t=${Date.now()}`;
+  let previewMode = (() => {
+    try {
+      const saved = localStorage.getItem("previewMode");
+      if (saved === "video" || saved === "mjpeg") return saved;
+    } catch (_) {}
+    return window.livePlayer && window.livePlayer.supported() ? "video" : "mjpeg";
+  })();
+  let videoFailedOnce = false;
+  let videoRetries = 0; // transient failures retried before falling back to pictures
+  const VIDEO_RETRIES = 2;
+  // reasons that mean "this browser cannot", as opposed to a hiccup of the camera or the Wi-Fi
+  const PERMANENT = /no MediaSource|codec not supported|video element error|not a video stream/;
+
+  function renderPreviewMode() {
+    const b = $("btn-preview-mode");
+    b.textContent = previewMode === "video" ? "Video" : "Pictures";
+    b.title = previewMode === "video" ? "Smooth video. Tap for still pictures (lighter)" : "Still pictures, 4 a second. Tap for smooth video";
+    b.classList.toggle("hidden", !(window.livePlayer && window.livePlayer.supported()));
   }
+
+  function startPreview() {
+    stopPreview();
+    // only on the Camera screen of a signed-in, visible page: the login
+    // screen or another tab must not pull pictures (a 401 there used to
+    // bounce between "sign in" and "start" without end)
+    if ($("app").classList.contains("hidden") || currentTab !== "home" || document.visibilityState !== "visible") return;
+    $("preview-off").classList.add("hidden");
+    renderPreviewMode();
+    if (previewMode === "video" && window.livePlayer && window.livePlayer.supported()) {
+      $("preview").classList.add("hidden");
+      $("preview-video").classList.remove("hidden");
+      window.livePlayer.start($("preview-video"), "/api/preview.mp4", (why) => {
+        if (why === "HTTP 401") { showLogin(); return; } // the session is gone (webui restarted): sign in again
+        console.warn("video preview failed:", why);
+        if (!PERMANENT.test(why) && videoRetries < VIDEO_RETRIES) {
+          // a hiccup (encoder restart, Wi-Fi, a slot taken): try the video again shortly
+          videoRetries++;
+          clearTimeout(previewRetry);
+          previewRetry = setTimeout(startPreview, 3000);
+          return;
+        }
+        // this browser cannot do the video, or it keeps failing: pictures for this page load
+        if (!videoFailedOnce) setMsg("action-msg", "Smooth video is not working here (" + why + "); showing pictures.");
+        videoFailedOnce = true;
+        previewMode = "mjpeg";
+        startPreview();
+      });
+      return;
+    }
+    $("preview-video").classList.add("hidden");
+    $("preview").classList.remove("hidden");
+    $("preview").src = `/api/preview.mjpeg?fps=4&t=${Date.now()}`;
+  }
+  function stopPreview() {
+    clearTimeout(previewRetry);
+    if (window.livePlayer) window.livePlayer.stop();
+    // not src = "": an empty src makes the browser load the page URL as an
+    // image, fire "error", and that handler would restart the preview
+    $("preview").removeAttribute("src");
+  }
+  $("btn-preview-mode").addEventListener("click", () => {
+    previewMode = previewMode === "video" ? "mjpeg" : "video";
+    videoRetries = 0;
+    try { localStorage.setItem("previewMode", previewMode); } catch (_) {}
+    startPreview();
+  });
   $("preview").addEventListener("error", () => {
+    if (!$("preview").getAttribute("src") || previewMode !== "mjpeg") return; // cleared on purpose, or not in use
     $("preview-off").classList.remove("hidden");
     clearTimeout(previewRetry);
-    if (!$("app").classList.contains("hidden")) previewRetry = setTimeout(startPreview, 3000);
+    previewRetry = setTimeout(() => refresh().then(startPreview), 3000); // startPreview checks the screen itself
   });
   // a phone that comes back from the background has a dead stream: restart it
   document.addEventListener("visibilitychange", () => {
@@ -87,8 +153,8 @@
       refresh();
     } else {
       // in the background the pictures would only use the camera's Wi-Fi
-      $("preview").src = "";
-      if (window.osdTab && window.osdTab.isOpen()) $("osd-preview").src = "";
+      stopPreview();
+      if (window.osdTab && window.osdTab.isOpen()) $("osd-preview").removeAttribute("src");
     }
   });
   let currentTab = "home";
@@ -243,7 +309,7 @@
   function showTab(name) {
     currentTab = name;
     // one preview at a time: the Camera screen's picture stops behind other tabs
-    if (name === "home") { if (!$("preview").src) startPreview(); } else $("preview").src = "";
+    if (name === "home") { videoRetries = 0; startPreview(); } else stopPreview();
     $("sheet-stream").classList.toggle("hidden", name !== "stream");
     $("sheet-osd").classList.toggle("hidden", name !== "osd");
     $("sheet-rec").classList.toggle("hidden", name !== "rec");

@@ -7,6 +7,7 @@ package main
 import (
 	"bufio"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -32,9 +33,11 @@ const (
 var loginDelay = 1500 * time.Millisecond
 
 type sessions struct {
-	mu   sync.Mutex
-	ttl  time.Duration
-	live map[string]time.Time // token -> expiry
+	mu     sync.Mutex
+	ttl    time.Duration
+	live   map[string]time.Time // sha256(token) -> expiry: the token itself is only in the phone's cookie
+	file   string               // where the sessions are kept across a restart of webui ("" = memory only)
+	fileMu sync.Mutex           // one writer of that file at a time
 	// one password check at a time (the hash is slow on this CPU), and a
 	// count of recent failures per address: after loginMaxFails in
 	// loginFailWindow the address gets 429 at once, whatever it sends in
@@ -86,40 +89,144 @@ func (s *sessions) create() string {
 	}
 	tok := hex.EncodeToString(b)
 	s.mu.Lock()
-	defer s.mu.Unlock()
 	now := time.Now()
 	for t, exp := range s.live {
 		if exp.Before(now) {
 			delete(s.live, t)
 		}
 	}
-	s.live[tok] = now.Add(s.ttl)
+	s.live[tokenKey(tok)] = now.Add(s.ttl)
+	snap := s.snapshotLocked()
+	s.mu.Unlock()
+	s.write(snap) // outside the lock: valid() must not wait for the card
 	return tok
+}
+
+// tokenKey - what a token is stored under (memory and file): its SHA-256,
+// so a copy of the file is not a set of usable cookies
+func tokenKey(tok string) string {
+	sum := sha256.Sum256([]byte(tok))
+	return hex.EncodeToString(sum[:])
+}
+
+// sessionFile - the saved form: the sessions and a digest of the root
+// password hash they were made under (a changed password drops them all)
+type sessionFile struct {
+	Shadow   string           `json:"shadow"`
+	Sessions map[string]int64 `json:"sessions"`
+}
+
+// shadowDigest - identifies the current root password (not the hash itself)
+func shadowDigest() string {
+	h, err := shadowHash(loginUser)
+	if err != nil {
+		return ""
+	}
+	sum := sha256.Sum256([]byte("webui-shadow:" + h))
+	return hex.EncodeToString(sum[:8])
+}
+
+// persistTo - keep the sessions in file (tmpfs: an update or restart of webui
+// does not sign everyone out; a reboot does) and load the ones already there
+func (s *sessions) persistTo(file string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.file = file
+	fi, err := os.Stat(file)
+	if err != nil || fi.Size() > 1<<20 {
+		return
+	}
+	b, err := os.ReadFile(file)
+	if err != nil {
+		return
+	}
+	var saved sessionFile
+	if json.Unmarshal(b, &saved) != nil {
+		log.Printf("sessions: %s is not valid JSON, starting without saved sessions", file)
+		return
+	}
+	if saved.Shadow != shadowDigest() {
+		log.Printf("sessions: the root password changed, saved sessions dropped")
+		return
+	}
+	now := time.Now()
+	for key, exp := range saved.Sessions {
+		if _, err := hex.DecodeString(key); err != nil || len(key) != 64 {
+			continue
+		}
+		if t := time.Unix(exp, 0); t.After(now) {
+			s.live[key] = t
+		}
+	}
+}
+
+// snapshotLocked - the live sessions as they go into the file (caller holds
+// s.mu); nil when nothing is persisted
+func (s *sessions) snapshotLocked() *sessionFile {
+	if s.file == "" {
+		return nil
+	}
+	out := &sessionFile{Shadow: shadowDigest(), Sessions: map[string]int64{}}
+	for key, exp := range s.live {
+		out.Sessions[key] = exp.Unix()
+	}
+	return out
+}
+
+// write - the snapshot to the file, tmp + rename, outside s.mu (a slow card
+// must not hold every request's valid() check). Written on create and drop
+// only: the sliding expiry of valid() is not saved, so after a restart a
+// session is as old as its last create (at most ttl behind). Writers are
+// serialized by fileMu so two snapshots cannot land out of order.
+func (s *sessions) write(snap *sessionFile) {
+	if snap == nil {
+		return
+	}
+	s.fileMu.Lock()
+	defer s.fileMu.Unlock()
+	b, err := json.Marshal(snap)
+	if err != nil {
+		log.Printf("sessions: cannot encode: %v", err)
+		return
+	}
+	tmp := s.file + ".new"
+	if err := os.WriteFile(tmp, b, 0o600); err != nil {
+		_ = os.Remove(tmp)
+		log.Printf("sessions: cannot write %s: %v", tmp, err)
+		return
+	}
+	if err := os.Rename(tmp, s.file); err != nil {
+		_ = os.Remove(tmp)
+		log.Printf("sessions: cannot replace %s: %v", s.file, err)
+	}
 }
 
 func (s *sessions) valid(tok string) bool {
 	if tok == "" {
 		return false
 	}
+	key := tokenKey(tok)
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	exp, ok := s.live[tok]
+	exp, ok := s.live[key]
 	if !ok {
 		return false
 	}
 	if exp.Before(time.Now()) {
-		delete(s.live, tok)
+		delete(s.live, key)
 		return false
 	}
 	// sliding expiry: a phone that keeps using the app stays signed in
-	s.live[tok] = time.Now().Add(s.ttl)
+	s.live[key] = time.Now().Add(s.ttl)
 	return true
 }
 
 func (s *sessions) drop(tok string) {
 	s.mu.Lock()
-	defer s.mu.Unlock()
-	delete(s.live, tok)
+	delete(s.live, tokenKey(tok))
+	snap := s.snapshotLocked()
+	s.mu.Unlock()
+	s.write(snap)
 }
 
 // shadowHash - the password hash of user from /etc/shadow

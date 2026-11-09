@@ -74,6 +74,9 @@ func main() {
 		rec:      newRecorder(),
 	}
 	s.status = newStatusPoller(s.relay, s.rec, 2*time.Second)
+	if !*check {
+		s.sessions.persistTo("/run/webui-sessions.json")
+	}
 
 	if *check {
 		st := s.status.collect()
@@ -126,6 +129,7 @@ func (s *server) routes() http.Handler {
 	// everything else needs a session
 	mux.Handle("GET /api/status", s.auth(http.HandlerFunc(s.handleStatus)))
 	mux.Handle("GET /api/preview.mjpeg", s.auth(http.HandlerFunc(s.handlePreview)))
+	mux.Handle("GET /api/preview.mp4", s.auth(http.HandlerFunc(s.handlePreviewMP4)))
 	mux.Handle("GET /api/snapshot.jpg", s.auth(http.HandlerFunc(s.handleSnapshot)))
 	mux.Handle("POST /api/relay", s.auth(http.HandlerFunc(s.handleRelayOp)))
 	mux.Handle("GET /api/relay/config", s.auth(http.HandlerFunc(s.handleRelayConfigGet)))

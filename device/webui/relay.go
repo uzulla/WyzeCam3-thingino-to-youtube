@@ -100,15 +100,15 @@ func writeJSONFile(path string, v any, mode os.FileMode) error {
 	b = append(b, '\n')
 	tmp := path + ".new"
 	if err := os.WriteFile(tmp, b, mode); err != nil {
-		os.Remove(tmp)
+		_ = os.Remove(tmp)
 		return err
 	}
 	if err := os.Chmod(tmp, mode); err != nil {
-		os.Remove(tmp)
+		_ = os.Remove(tmp)
 		return err
 	}
 	if err := os.Rename(tmp, path); err != nil {
-		os.Remove(tmp)
+		_ = os.Remove(tmp)
 		return err
 	}
 	return nil

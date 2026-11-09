@@ -23,6 +23,7 @@
 <section id="app" class="screen hidden">
   <div id="preview-box">
     <img id="preview" alt="preview">
+    <video id="preview-video" class="hidden" muted playsinline autoplay></video>
     <div id="preview-off" class="overlay-msg hidden">No preview</div>
   </div>
   <div class="side">
@@ -30,6 +31,7 @@
     <span id="badge-live" class="badge live hidden">LIVE <span class="t">0:00</span></span>
     <span id="badge-rec" class="badge rec hidden">REC <span class="t">0:00</span></span>
     <span id="badge-idle" class="badge idle">Off air</span>
+    <button id="btn-preview-mode" class="small modebtn" title="Switch between smooth video and still pictures">Video</button>
   </div>
 
   <div class="actions">
@@ -175,6 +177,7 @@
   </div>
 </template>
 
+<script src="video.js"></script>
 <script src="app.js"></script>
 <script src="osd.js"></script>
 <script src="recordings.js"></script>

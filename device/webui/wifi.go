@@ -486,15 +486,15 @@ func backupOnce(path string) {
 func writeText(path, text string, mode os.FileMode) error {
 	tmp := path + ".new"
 	if err := os.WriteFile(tmp, []byte(text), mode); err != nil {
-		os.Remove(tmp)
+		_ = os.Remove(tmp)
 		return err
 	}
 	if err := os.Chmod(tmp, mode); err != nil {
-		os.Remove(tmp)
+		_ = os.Remove(tmp)
 		return err
 	}
 	if err := os.Rename(tmp, path); err != nil {
-		os.Remove(tmp)
+		_ = os.Remove(tmp)
 		return err
 	}
 	return nil
