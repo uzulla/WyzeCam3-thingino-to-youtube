@@ -1,0 +1,183 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#111">
+<title>Camera</title>
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+
+<section id="login" class="screen hidden">
+  <form id="login-form" autocomplete="on">
+    <h1>Camera</h1>
+    <p>Sign in with the camera password.</p>
+    <input id="password" type="password" name="password" placeholder="Password" autocomplete="current-password" autofocus>
+    <button type="submit" class="big">Sign in</button>
+    <p id="login-error" class="error"></p>
+  </form>
+</section>
+
+<section id="app" class="screen hidden">
+  <div id="preview-box">
+    <img id="preview" alt="preview">
+    <div id="preview-off" class="overlay-msg hidden">No preview</div>
+  </div>
+  <div class="side">
+  <div class="badges">
+    <span id="badge-live" class="badge live hidden">LIVE <span class="t">0:00</span></span>
+    <span id="badge-rec" class="badge rec hidden">REC <span class="t">0:00</span></span>
+    <span id="badge-idle" class="badge idle">Off air</span>
+  </div>
+
+  <div class="actions">
+    <button id="btn-live" class="big">Go live</button>
+    <button id="btn-rec" class="big">Record</button>
+  </div>
+  <p id="action-msg" class="msg"></p>
+  <p id="status-errors" class="msg"></p>
+
+  <div class="cards">
+    <div class="card">
+      <div class="label">Stream</div>
+      <div class="value"><span id="st-fps">-</span> fps · <span id="st-kbps">-</span> kb/s</div>
+      <div class="sub">sent <span id="st-tx">-</span> kb/s · restarts <span id="st-restarts">-</span></div>
+    </div>
+    <div class="card">
+      <div class="label">Profile</div>
+      <div class="value" id="st-profile">-</div>
+      <div class="sub">auto start <span id="st-autostart">-</span></div>
+    </div>
+    <div class="card">
+      <div class="label">Picture</div>
+      <div class="toggles">
+        <button id="btn-hflip" class="toggle">Flip left/right</button>
+        <button id="btn-vflip" class="toggle">Flip up/down</button>
+      </div>
+    </div>
+    <div class="card wide">
+      <div class="label">Camera</div>
+      <div class="value"><span id="hostname">camera</span> <span class="dim" id="st-ip">-</span></div>
+      <div class="sub">Wi-Fi: <span id="st-wifi">-</span></div>
+      <div class="sub">SD card: <span id="st-sd">-</span></div>
+      <div class="sub">up <span id="st-uptime">-</span> · load <span id="st-load">-</span> · free memory <span id="st-mem">-</span> MB</div>
+    </div>
+  </div>
+  <p id="ap-banner" class="banner hidden">Access point mode: the camera is on its own Wi-Fi "Wyze-cam". Fix the Wi-Fi settings in the Wi-Fi tab, then reboot to join them.</p>
+  <p class="foot"><button id="btn-reboot" class="small">Reboot camera</button> <button id="btn-logout" class="small">Sign out</button></p>
+  </div><!-- /side -->
+</section>
+
+<section id="sheet-stream" class="sheet hidden">
+  <header><div class="title">Stream</div></header>
+  <div class="sheet-body">
+    <h2>Stream keys</h2>
+    <p class="help">One profile is active. Changing the active one or its key restarts the stream (a few seconds off air).</p>
+    <div id="profiles"></div>
+    <div class="row">
+      <button id="btn-add-profile">Add profile</button>
+      <button id="btn-save-profiles" class="primary">Save</button>
+    </div>
+    <p id="profiles-msg" class="msg"></p>
+
+    <h2>Start at boot</h2>
+    <div class="row">
+      <button id="btn-autostart" class="toggle">Start streaming when the camera boots</button>
+    </div>
+
+    <h2>Video quality</h2>
+    <p class="help">Applying restarts the camera's encoder: the stream and the recording stop for about 10 seconds and come back by themselves.</p>
+    <div id="quality" class="panel"></div>
+    <p id="quality-msg" class="msg"></p>
+
+    <h2>Stream log</h2>
+    <pre id="log">-</pre>
+  </div>
+</section>
+
+<section id="sheet-osd" class="sheet hidden">
+  <div id="osd-preview-box">
+    <img id="osd-preview" alt="preview">
+    <div id="osd-layer"></div>
+  </div>
+  <div class="sheet-body">
+    <p class="help">Drag an element to move it. It snaps to the edges. Tap one to change its size or what it shows. Every change is saved at once.</p>
+    <div id="osd-chips" class="chips"></div>
+    <div id="osd-panel" class="panel hidden"></div>
+    <p id="osd-msg" class="msg"></p>
+  </div>
+</section>
+
+<section id="sheet-rec" class="sheet hidden">
+  <header><div class="title">Recordings</div></header>
+  <div class="sheet-body">
+    <div id="rec-player-box" class="hidden">
+      <video id="rec-player" controls playsinline preload="metadata"></video>
+      <div class="row"><span id="rec-player-title" class="help"></span><button id="rec-player-close" class="small">Close</button></div>
+    </div>
+    <h2>Recorder</h2>
+    <p class="help">Each tap is saved at once. The clip length applies to the next recording you start.</p>
+    <div id="rec-settings" class="panel"></div>
+    <p id="rec-msg" class="msg"></p>
+    <h2>Clips on the SD card</h2>
+    <p id="rec-info" class="help">-</p>
+    <div id="rec-bulk" class="bulk hidden">
+      <span id="rec-bulk-info"></span>
+      <button id="rec-bulk-zip">Download as zip</button>
+      <button id="rec-bulk-delete" class="danger">Delete</button>
+      <button id="rec-bulk-clear" class="small">Clear</button>
+    </div>
+    <div id="rec-list"></div>
+  </div>
+</section>
+
+<section id="sheet-wifi" class="sheet hidden">
+  <header><div class="title">Wi-Fi</div></header>
+  <div class="sheet-body">
+    <h2>Now</h2>
+    <div class="card"><div class="value" id="wifi-current">-</div></div>
+    <h2>Saved networks</h2>
+    <p class="help">The camera joins the first one it finds, from the top. ▲ moves a network to the top.</p>
+    <div id="wifi-list"></div>
+    <div class="row"><button id="wifi-save" class="primary" disabled>No changes</button></div>
+    <p id="wifi-sdnote" class="help"></p>
+    <p id="wifi-msg" class="msg"></p>
+    <h2>Add a network</h2>
+    <p class="help">A scan pauses the camera's own Wi-Fi for a moment: the stream may stutter for a second.</p>
+    <div class="row"><button id="wifi-scan">Scan</button></div>
+    <div id="wifi-scan-list" class="chips"></div>
+    <div class="panel">
+      <input id="wifi-ssid" placeholder="Network name (SSID)" maxlength="32" autocapitalize="off" autocorrect="off">
+      <input id="wifi-psk" type="password" placeholder="Password" autocomplete="off">
+      <label class="active-row"><input type="checkbox" id="wifi-open"> <span>no password (open network)</span></label>
+      <button id="wifi-add" class="primary">Add to the list</button>
+    </div>
+  </div>
+</section>
+
+<nav id="tabs" class="hidden">
+  <button data-tab="home" class="on"><span class="ico">&#9673;</span>Camera</button>
+  <button data-tab="osd"><span class="ico">&#9638;</span>OSD</button>
+  <button data-tab="stream"><span class="ico">&#9654;</span>Stream</button>
+  <button data-tab="rec"><span class="ico">&#9679;</span>Recordings</button>
+  <button data-tab="wifi"><span class="ico">&#8776;</span>Wi-Fi</button>
+</nav>
+
+<template id="tpl-profile">
+  <div class="profile">
+    <label class="active-row"><input type="radio" name="active"> <span>active</span></label>
+    <input class="p-name" placeholder="Name" maxlength="40">
+    <input class="p-url" placeholder="rtmps://a.rtmps.youtube.com:443/live2">
+    <div class="keyrow"><input class="p-key" type="password" placeholder="Stream key" autocomplete="off"><button class="p-show small" type="button">Show</button></div>
+    <button class="p-remove small">Remove</button>
+  </div>
+</template>
+
+<script src="app.js"></script>
+<script src="osd.js"></script>
+<script src="recordings.js"></script>
+<script src="wifi.js"></script>
+</body>
+</html>

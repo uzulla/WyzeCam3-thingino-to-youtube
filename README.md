@@ -21,7 +21,8 @@ minimal FFmpeg バイナリと、カメラだけで常設運用するための�
 |---|---|---|
 | YouTube Live へ直接配信 | H.264/AAC を再エンコードせず RTMPS で送信。中継 PC 不要 | [まず配信を試す](#まず配信を試す) |
 | 常設・自動復帰 | `youtube-relay` が ffmpeg を監視し、終了後に再起動。ネットワーク復帰を待って再開 | [配信 supervisor](docs/relay.md) |
-| ブラウザから配信を管理 | ストリームキー・URL の設定、開始・停止・再起動、自動起動の切り替え、状態とログの表示 | [YouTube Live Web UI](docs/relay.md#web-ui) |
+| スマホから操作する Web UI | プレビュー、配信・録画の開始と停止、ストリームキーと画質、OSD の配置をプレビュー上で編集、録画ファイルの再生・zip ダウンロード、Wi-Fi、AP モード。Thingino の Web UI を置き換える | [webui](docs/webui.md) |
+| (旧) Thingino の Web UI に足すページ | YouTube Live ページ (キーの設定、開始・停止、自動起動、ログ) と OSD Settings ページ。webui に置き換えたので uhttpd を止めた機体では使わない | [YouTube Live Web UI](docs/relay.md#web-ui)、[OSD](docs/osd.md#web-ui-から編集する) |
 | SD カードで設定を持ち運ぶ | 配信キー・OSD 設定を SD に保存。複数の Wi-Fi 設定を起動時に適用する機能も用意 | [配信設定](docs/relay.md)、[Wi-Fi 設定](docs/wifi-from-sd.md) |
 | テキスト・画像 OSD | 独立したテキスト 3 か所と透過画像 1 か所を映像に合成。Web UI で配置や大きさを設定 | [OSD](docs/osd.md) |
 | 表示内容の自動更新 | `osd-feed` がメモリ量・時刻・カウンタ・HTTP / UDP の JSON をテンプレートに反映し、PNG を画像 OSD に変換。RaceBox の G ボール・速度・走行図も出せる | [osd-feed](docs/osd-feed.md) |
@@ -172,6 +173,9 @@ device/    カメラ側の常設運用一式 (ファイルの一覧は device/RE
                                                 任意: Web UI の「Rec ch0」ボタンを直す (ファームに録画バックエンドが入っていない)
              rec-button / install-rec-button.sh
                                                 任意: 本体のボタンのダブルクリックで SD 録画を開始・停止する
+             webui/ / S97webui / install-webui.sh
+                                                スマホ向けの Web UI (Go、SD カードから実行、ポート 80。Thingino の Web UI を置き換える)
+             wifi-ap / install-wifi-ap.sh       任意: 本体ボタン 5 秒長押しで、再起動までカメラが Wi-Fi (AP) を出す (リカバリ用)
              common.sh                          対応ファームの判定 (違えば何も変更せず中止)
 tools/     PC で使う道具
              find-camera/                       LAN 内の Thingino カメラと IP を mDNS で探す (Go、`go -C tools/find-camera run .`)
@@ -205,6 +209,7 @@ git 管理外です。必要な変更はすべて `patches/` に分離してあ�
 | [docs/beacon.md](docs/beacon.md) | `beacon`: カメラの IP・配信の状態などを LAN に UDP ブロードキャストし続ける、`tools/beacon-listen` での受け取り、`tools/beacon-send` での指令 (映像の反転)、JSON の形式 |
 | [docs/setup-button.md](docs/setup-button.md) | 本体の Setup ボタン: 押す長さごとの動作 (IP の読み上げ、Wi-Fi のリセット、工場出荷状態に戻す)、割り当ての変え方 |
 | [docs/front-led.md](docs/front-led.md) | 正面の LED (赤・青) と赤外線 LED の操作: `led` / `blink` / sysfs、起動時の点灯 |
+| [docs/webui.md](docs/webui.md) | スマホ向けの Web UI: プレビュー、配信・録画、OSD の配置をプレビュー上で編集、ストリームキーと画質、録画ファイルの再生・zip ダウンロード・削除、Wi-Fi、ボタン長押しの AP モード。Go の単体バイナリで、Thingino の Web UI (uhttpd) を止めてポート 80 を引き受ける |
 | [docs/recording.md](docs/recording.md) | SD カードへの録画: prudynt 内蔵レコーダーの始め方 (Rec ボタン、本体ボタンのダブルクリック、自動開始、`record`)、Rec ボタンが失敗する原因と直し方、サイズの実測、録画中の赤 LED (`rec-led`)、PC への取り出しと 1 本への結合 |
 | [docs/speaker.md](docs/speaker.md) | スピーカー: `tell` の読み上げの仕組み (thingino.com の音声合成)、`play` のオプション、音声ファイルを先に作ってオフラインで鳴らす方法 |
 | [docs/troubleshooting.md](docs/troubleshooting.md) | 症状別の対処 |

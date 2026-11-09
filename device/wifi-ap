@@ -1,0 +1,98 @@
+#!/bin/sh
+# wifi-ap - turn the camera into an open Wi-Fi access point until the next
+# reboot (docs/webui.md). Install to /usr/sbin/wifi-ap (chmod +x); run by the
+# button (hold 5 s, see install-wifi-ap.sh) or by hand.
+#
+# For the track, when the saved Wi-Fi is not there: the phone joins "Wyze-cam"
+# (no password: the user's choice, recovery only; whoever is in range can join
+# and see the traffic, so do not type the password near others for long) and
+# opens http://100.64.1.1/ (the app's port, read from webui.args) to fix the
+# Wi-Fi settings. Thingino's S38wpa_supplicant already knows how to run an
+# access point (a config with mode=2: 100.64.1.1/24, DHCP, DNS), so this only
+# swaps the config file for the moment it starts, then puts the saved networks
+# back so a reboot returns to normal. The swap touches /etc (flash) twice; the
+# saved file is kept next to it meanwhile, so a power cut in between still
+# leaves it there (wpa_supplicant.conf.station) to copy back by hand.
+
+SSID="${WIFI_AP_SSID:-Wyze-cam}"
+CONF=/etc/wpa_supplicant.conf
+KEEP=/etc/wpa_supplicant.conf.station
+INIT=/etc/init.d/S38wpa_supplicant
+AP_IP=100.64.1.1 # WLANAP_IP of S38wpa_supplicant
+port=$(sed -n 's/.*-listen *[^:]*:\([0-9]*\).*/\1/p' /mnt/mmcblk0p1/webui.args 2>/dev/null | head -n 1)
+case "$port" in "" | 80) URL="http://$AP_IP/" ;; *) URL="http://$AP_IP:$port/" ;; esac
+
+log() { logger -p daemon.info -t wifi-ap "$1"; }
+
+if [ -f /run/wlan_ap_mode ] || [ -f /run/portal_mode ]; then
+	log "already an access point, nothing to do"
+	exit 0
+fi
+[ -x "$INIT" ] || { logger -p daemon.err -t wifi-ap "no $INIT"; exit 1; }
+
+fail() {
+	logger -p daemon.err -t wifi-ap "$1"
+	play /usr/share/sounds/configurationportalisdown.opus >/dev/null 2>&1
+	exit 1
+}
+
+# Thingino's S38wpa_supplicant start runs "wlan configure" from the SD card's
+# uenv.txt when it holds wlan_ssid= / wlan_pass=: that would replace the
+# access point config written below with a client one, and no AP would come up
+if grep -q -E '^wlan_(ssid|pass)=' /mnt/mmcblk0p1/uenv.txt 2>/dev/null; then
+	fail "/mnt/mmcblk0p1/uenv.txt has wlan_ssid=/wlan_pass=: the Wi-Fi start-up would overwrite the access point config; remove those lines (the saved networks live in $CONF) and try again"
+fi
+
+log "switching to access point '$SSID' (open) until the next reboot"
+if grep -q '^[[:space:]]*mode=2' "$CONF" 2>/dev/null; then
+	# a previous run was cut off before it put the saved networks back
+	[ -f "$KEEP" ] || fail "$CONF already holds an access point config and there is no $KEEP to restore; not touching it"
+	log "found the access point config in $CONF from an earlier run; restoring $KEEP first"
+	{ cp "$KEEP" "$CONF.tmp" && mv "$CONF.tmp" "$CONF" && sync; } || fail "could not restore $CONF from $KEEP (card or overlay full?); nothing changed"
+fi
+cp "$CONF" "$KEEP" || fail "could not save the current config to $KEEP; not switching"
+
+# stop while the config still says "client", so the client-mode teardown runs
+sh "$INIT" stop >/dev/null 2>&1
+
+# S38wpa_supplicant picks the mode from the file: ssid= and psk= present (the
+# psk= here is a comment: an open network has none, but without the word it
+# would start the setup portal instead), mode=2 -> access point
+cat >"$CONF" <<EOF
+# temporary access point written by wifi-ap; the saved networks are restored right after start
+ctrl_interface=/run/wpa_supplicant
+ap_scan=2
+# psk= none: open network
+network={
+	ssid="$SSID"
+	mode=2
+	frequency=2412
+	key_mgmt=NONE
+}
+EOF
+sh "$INIT" start >/dev/null 2>&1
+# the running wpa_supplicant has its config; the file goes back to the saved
+# networks (atomically), so the next boot is normal. If that fails, say so:
+# the camera would come back as an access point after a reboot
+restored=1
+{ cp "$KEEP" "$CONF.tmp" && mv "$CONF.tmp" "$CONF" && sync; } || {
+	restored=0
+	logger -p daemon.err -t wifi-ap "could not put the saved networks back into $CONF; copy $KEEP over it by hand before rebooting"
+}
+
+i=0
+while [ $i -lt 20 ]; do
+	if wpa_cli -i wlan0 status 2>/dev/null | grep -q '^wpa_state=COMPLETED'; then
+		if [ "$restored" = 1 ]; then
+			log "access point '$SSID' is up: $URL (reboot to return to the saved Wi-Fi)"
+			play /usr/share/sounds/configurationportalisup.opus >/dev/null 2>&1
+			exit 0
+		fi
+		fail "access point '$SSID' is up ($URL), but the saved networks are not back in $CONF: restore $KEEP by hand before rebooting"
+	fi
+	sleep 1
+	i=$((i + 1))
+done
+logger -p daemon.err -t wifi-ap "access point did not come up (see logread); reboot to get the saved Wi-Fi back"
+play /usr/share/sounds/configurationportalisdown.opus >/dev/null 2>&1
+exit 1
