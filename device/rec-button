@@ -1,0 +1,92 @@
+#!/bin/sh
+# rec-button - double-click the camera's button to start/stop SD recording
+# (docs/recording.md). Install to /usr/sbin/rec-button (chmod +x).
+#
+# Thingino's button daemon (thingino-button, /etc/thingino-button.conf) runs
+# a command on every press and release but has no double-click of its own, so
+# this is called with "press" and "release" and keeps the timing in /run:
+#   - two releases within $DOUBLE_WINDOW_CS (centiseconds) -> toggle recording
+#   - one short click, nothing else within the window   -> $SINGLE_CMD
+#     (Thingino's own short-press action, "tell %ip", moved here so a double
+#     click does not also announce the IP twice)
+#   - a press held $LONG_PRESS_CS or more is left to thingino-button's TIMED
+#     lines (5 s = reboot, 20 s = factory reset) and ignored here
+# Recording is started the same way as the Web UI Rec button (record -c 0
+# start: loop mode with the Video Recorder page's settings) and stopped with
+# record stop; the state comes from prudynt's /run/prudynt/mp4ctl-ch*.active.
+
+DOUBLE_WINDOW_CS=70 # max gap between the two releases
+LONG_PRESS_CS=100   # releases after a hold this long are not clicks
+SINGLE_CMD="tell %ip"
+SOUND=1 # play Thingino's "video recording started/stopped" voice on toggle
+
+STATE=/run/rec-button
+TOGGLE_CMD="${REC_BUTTON_TOGGLE:-}" # test hook: run this instead of toggling
+
+now_cs() {
+	read -r up _ </proc/uptime
+	printf '%s%s' "${up%.*}" "${up#*.}" # 11902.19 -> 1190219
+}
+
+toggle_recording() {
+	if [ -n "$TOGGLE_CMD" ]; then
+		sh -c "$TOGGLE_CMD"
+		return
+	fi
+	active=""
+	for f in /run/prudynt/mp4ctl-ch*.active; do
+		[ -f "$f" ] && active=1 && break
+	done
+	if [ -n "$active" ]; then
+		logger -p daemon.info -t rec-button "double click: stop recording"
+		record stop
+		[ "$SOUND" = 1 ] && play /usr/share/sounds/videorecordingstopped.opus >/dev/null 2>&1
+	else
+		logger -p daemon.info -t rec-button "double click: start recording"
+		if record -c 0 start; then
+			[ "$SOUND" = 1 ] && play /usr/share/sounds/videorecordingstarted.opus >/dev/null 2>&1
+		else
+			logger -p daemon.err -t rec-button "record start failed"
+		fi
+	fi
+}
+
+mkdir -p "$STATE"
+now=$(now_cs)
+
+case "$1" in
+press)
+	printf '%s\n' "$now" >"$STATE/press"
+	;;
+release)
+	# (2>/dev/null goes first: the shell reports a missing file before later redirections apply)
+	read -r pressed 2>/dev/null <"$STATE/press" || pressed=$now
+	rm -f "$STATE/press"
+	if [ $((now - pressed)) -ge "$LONG_PRESS_CS" ]; then
+		rm -f "$STATE/first" # a long hold ends any pending click
+		exit 0
+	fi
+	if read -r first 2>/dev/null <"$STATE/first" && [ $((now - first)) -lt "$DOUBLE_WINDOW_CS" ]; then
+		rm -f "$STATE/first"
+		read -r pid 2>/dev/null <"$STATE/single.pid" && kill "$pid" 2>/dev/null
+		rm -f "$STATE/single.pid"
+		toggle_recording
+	else
+		printf '%s\n' "$now" >"$STATE/first"
+		# wait for a second click; if none, this was a single click
+		(
+			sleep "$(printf '0.%02d' "$DOUBLE_WINDOW_CS")"
+			if read -r first 2>/dev/null <"$STATE/first" && [ "$first" = "$now" ]; then
+				rm -f "$STATE/first" "$STATE/single.pid"
+				[ -n "$SINGLE_CMD" ] && sh -c "$SINGLE_CMD"
+			fi
+		) &
+		printf '%s\n' "$!" >"$STATE/single.pid"
+	fi
+	;;
+*)
+	echo "Usage: $0 press|release (called from /etc/thingino-button.conf)" >&2
+	exit 1
+	;;
+esac
+exit 0

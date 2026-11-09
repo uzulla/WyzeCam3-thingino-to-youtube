@@ -1,0 +1,11 @@
+--- a/package/prudynt-t/files/agent-adapter
++++ b/package/prudynt-t/files/agent-adapter
+@@ -2282,7 +2282,7 @@
+ 			}
+ 			# Prefer the record helper when present (looping storage path).
+ 			if command -v record >/dev/null 2>&1; then
+-				record start -c "$channel" >/dev/null 2>&1 || {
++				record -c "$channel" start >/dev/null 2>&1 || {
+ 					echo "failed to start continuous recording" >&2
+ 					return 1
+ 				}

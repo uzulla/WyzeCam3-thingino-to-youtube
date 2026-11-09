@@ -1,0 +1,56 @@
+#!/bin/sh
+# rec-led - light the red LED while prudynt records video to the SD card
+# (docs/recording.md). Install to /usr/sbin/rec-led (chmod +x); started by
+# /etc/init.d/S96rec-led.
+#
+# prudynt's recorder keeps /run/prudynt/mp4ctl-ch<N>.active for as long as it
+# writes a file, whichever way it was started (web UI Rec button, the `record`
+# command, autostart at boot). This polls that once a second and drives one
+# kernel LED channel: on while any channel records, off otherwise, off on exit.
+# Only the red channel is touched, so Thingino's own `led` command and other
+# users of the blue LED are left alone. No prudynt change, nothing when the
+# recorder is idle.
+
+FLAGS="/run/prudynt/mp4ctl-ch*.active"
+LED="${REC_LED:-/sys/class/leds/led_r}"
+INTERVAL="${REC_LED_INTERVAL:-1}"
+
+if [ ! -d "$LED" ]; then
+	logger -p daemon.err -t rec-led "no LED channel at $LED, exiting"
+	exit 1
+fi
+MAX=$(cat "$LED/max_brightness" 2>/dev/null)
+case "$MAX" in
+	'' | *[!0-9]*) MAX=1 ;;
+esac
+
+set_led() {
+	# A kernel trigger (timer, mmc0, ...) would override brightness: take it off
+	[ -w "$LED/trigger" ] && printf 'none\n' >"$LED/trigger"
+	printf '%s\n' "$1" >"$LED/brightness"
+}
+
+state=""
+cleanup() {
+	[ "$state" = "on" ] && set_led 0
+	exit 0
+}
+trap cleanup TERM INT
+
+logger -p daemon.info -t rec-led "watching $FLAGS -> $LED"
+while :; do
+	want=off
+	# shellcheck disable=SC2086 # the glob must expand
+	for f in $FLAGS; do
+		[ -f "$f" ] && want=on && break
+	done
+	if [ "$want" != "$state" ]; then
+		if [ "$want" = "on" ]; then set_led "$MAX"; else set_led 0; fi
+		# the first pass only makes sure the LED is off; no "recording off" for that
+		if [ -n "$state" ] || [ "$want" = "on" ]; then
+			logger -p daemon.info -t rec-led "recording $want"
+		fi
+		state=$want
+	fi
+	sleep "$INTERVAL"
+done

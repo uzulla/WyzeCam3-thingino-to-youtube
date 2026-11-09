@@ -27,6 +27,7 @@ minimal FFmpeg バイナリと、カメラだけで常設運用するための�
 | 表示内容の自動更新 | `osd-feed` がメモリ量・時刻・カウンタ・HTTP / UDP の JSON をテンプレートに反映し、PNG を画像 OSD に変換。RaceBox の G ボール・速度・走行図も出せる | [osd-feed](docs/osd-feed.md) |
 | 状態を LAN に知らせる・指令を受ける | `beacon` が IP・配信の状態・Wi-Fi の電波などを数秒ごとに UDP ブロードキャストし、PC の `beacon-listen` で表示。`beacon-send` で映像の反転などの指令も送れる | [beacon](docs/beacon.md) |
 | セルラー回線での運用 | RTMP チャンクサイズの調整で RTMPS の送信量を削減。切断・復帰の実測も記録 | [セルラー配信](docs/cellular.md) |
+| SD カードへ同時録画 | prudynt 内蔵の録画で配信と同じ映像 (OSD 込み) を 1 分ごとの MP4 に保存。Web UI の Rec ボタンを直す `install-agent-adapter.sh`、本体ボタンのダブルクリックで開始・停止する `rec-button`、録画中は正面の赤 LED を点ける `rec-led`、PC で 1 本につなぐ `concat-recordings.sh` | [録画](docs/recording.md) |
 
 OSD はカメラのストリーマ `prudynt` 側で合成するため、OSD を使っても ffmpeg は stream copy のままです。
 直接配信だけなら ffmpeg 単体で試せます。常設運用や OSD は必要なものを追加してください。
@@ -146,6 +147,7 @@ patches/   Thingino / FFmpeg / prudynt に当てる差分
              thingino-ffmpeg-rtmp-chunk-size.diff  FFmpeg 本体: RTMP の送信チャンクサイズを rtmp_chunk_size オプション (既定 4096、128〜65536) で指定できるようにする。素の FFmpeg は 128 固定で、RTMPS の送信量が映像の 1.7 倍になる (4096 で 1.08 倍)
              prudynt-osd-textfile.diff          任意: prudynt にテキスト 3 枠・画像 1 枠の OSD を足す
              prudynt-msgchannel-warning.diff    任意: prudynt が 5 秒ごとに出す誤報の警告 (msgChannel sink clogged) を止める
+             thingino-agent-adapter-record-args.diff  任意: Thingino の agent の prudynt 用バックエンドで `record` の引数順を直す (device/agent-adapter に適用済み)
 device/    カメラ側の常設運用一式 (ファイルの一覧は device/README.md、使い方は docs/)
              youtube-relay / S93youtube-relay   supervisor と起動スクリプト
              www/youtube.html / www/x/json-youtube.cgi
@@ -164,11 +166,18 @@ device/    カメラ側の常設運用一式 (ファイルの一覧は device/RE
                                                 任意: OSD テキストの自動更新と PNG の変換 (Go、SD カードから実行)
              beacon/ / S95beacon / install-beacon.sh
                                                 任意: IP と配信の状態を LAN に UDP ブロードキャストし続け、指令を受ける (Go、SD カードから実行)
+             rec-led / S96rec-led / install-rec-led.sh
+                                                任意: prudynt が SD に録画している間、正面の赤 LED を点ける
+             agent-adapter / install-agent-adapter.sh
+                                                任意: Web UI の「Rec ch0」ボタンを直す (ファームに録画バックエンドが入っていない)
+             rec-button / install-rec-button.sh
+                                                任意: 本体のボタンのダブルクリックで SD 録画を開始・停止する
              common.sh                          対応ファームの判定 (違えば何も変更せず中止)
 tools/     PC で使う道具
              find-camera/                       LAN 内の Thingino カメラと IP を mDNS で探す (Go、`go -C tools/find-camera run .`)
              beacon-listen/                     カメラの beacon を受け取って表示する (Go、`go -C tools/beacon-listen run .`)
              beacon-send/                       カメラの beacon に指令 (映像の反転など) を送る (Go、`go -C tools/beacon-send run . ping`)
+             concat-recordings.sh               SD の 1 分ごとの録画ファイルを再エンコードなしで 1 本の MP4 につなぐ (ffmpeg)
 docs/      使い方と設定の文書 (下の「ドキュメント」参照)
 NOTES.md   実装の詳細・設計判断・ハマりどころ・実測値の記録 (手順は書かない)
 dist/      ビルド成果物 (git 管理外)。配布は GitHub Releases (ffmpeg バイナリ単体) で行う
@@ -196,6 +205,7 @@ git 管理外です。必要な変更はすべて `patches/` に分離してあ�
 | [docs/beacon.md](docs/beacon.md) | `beacon`: カメラの IP・配信の状態などを LAN に UDP ブロードキャストし続ける、`tools/beacon-listen` での受け取り、`tools/beacon-send` での指令 (映像の反転)、JSON の形式 |
 | [docs/setup-button.md](docs/setup-button.md) | 本体の Setup ボタン: 押す長さごとの動作 (IP の読み上げ、Wi-Fi のリセット、工場出荷状態に戻す)、割り当ての変え方 |
 | [docs/front-led.md](docs/front-led.md) | 正面の LED (赤・青) と赤外線 LED の操作: `led` / `blink` / sysfs、起動時の点灯 |
+| [docs/recording.md](docs/recording.md) | SD カードへの録画: prudynt 内蔵レコーダーの始め方 (Rec ボタン、本体ボタンのダブルクリック、自動開始、`record`)、Rec ボタンが失敗する原因と直し方、サイズの実測、録画中の赤 LED (`rec-led`)、PC への取り出しと 1 本への結合 |
 | [docs/speaker.md](docs/speaker.md) | スピーカー: `tell` の読み上げの仕組み (thingino.com の音声合成)、`play` のオプション、音声ファイルを先に作ってオフラインで鳴らす方法 |
 | [docs/troubleshooting.md](docs/troubleshooting.md) | 症状別の対処 |
 | [docs/build.md](docs/build.md) | ffmpeg / prudynt のビルド手順 |
