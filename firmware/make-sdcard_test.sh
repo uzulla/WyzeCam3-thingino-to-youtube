@@ -43,7 +43,7 @@ no_tmp() { [ -z "$(ls "$1" | grep 'lapcam-tmp$')" ] || fail "$2: *.lapcam-tmp le
 echo "1. stock install card"
 C=$(card stock)
 sh "$M" "$C" >/dev/null
-[ "$(listing "$C")" = "README.txt VERSION.txt beacon factory_t31_ZMC6tiIDQN ffmpeg lapcam lapcam.args osd-feed osd-feed.json prudynt-osd.json thingino-wyze_cam3_t31x_gc2053_atbm6031.bin " ] || fail "stock listing: $(listing "$C")"
+[ "$(listing "$C")" = "README.txt VERSION.txt beacon factory_t31_ZMC6tiIDQN ffmpeg lapcam lapcam.args logo.png osd-feed osd-feed.json prudynt-osd.json thingino-wyze_cam3_t31x_gc2053_atbm6031.bin " ] || fail "stock listing: $(listing "$C")"
 [ "$(cat "$C/lapcam.args")" = "-listen :80" ] || fail "lapcam.args"
 grep -q "^lapcam: v9.9.9$" "$C/VERSION.txt" && grep -q "^firmware .*: v9.9.9$" "$C/VERSION.txt" || fail "VERSION.txt: $(cat "$C/VERSION.txt")"
 no_tmp "$C" stock
@@ -98,11 +98,13 @@ no_tmp "$C" wifi
 echo "6. a second run keeps the settings and replaces the programs"
 echo "my args" >"$C/lapcam.args"
 echo '{"mine":1}' >"$C/prudynt-osd.json"
+echo mylogo >"$C/logo.png"
 echo newer >"$REPO/dist/lapcam"
 before=$(cat "$C/wpa_supplicant.conf" "$C/youtube-relay.json" | cksum)
 sh "$M" -u "$C" >/dev/null
 [ "$(cat "$C/lapcam.args")" = "my args" ] || fail "lapcam.args not kept"
 [ "$(cat "$C/prudynt-osd.json")" = '{"mine":1}' ] || fail "prudynt-osd.json not kept"
+[ "$(cat "$C/logo.png")" = mylogo ] || fail "logo.png not kept"
 [ "$(cat "$C/wpa_supplicant.conf" "$C/youtube-relay.json" | cksum)" = "$before" ] || fail "wifi/key not kept"
 [ "$(cat "$C/lapcam")" = newer ] || fail "program not replaced"
 

@@ -36,5 +36,5 @@ FILES
   youtube-relay.json          stream key etc. (lapcam's Stream tab writes it)
   prudynt-osd.json            OSD layout (lapcam's OSD tab writes it)
   osd-feed.json               what the OSD shows (logo, G-ball, track, text)
-  logo.png                    the logo (upload from lapcam's OSD tab)
+  logo.png                    the logo shown by the OSD (the team's by default; replace it from lapcam's OSD tab)
   recordings/                 SD recordings, one folder per day
