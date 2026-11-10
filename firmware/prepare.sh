@@ -11,8 +11,8 @@
 #     hand: RTMPS in ffmpeg (patches/thingino-ffmpeg-rtmps.diff on the .mk and
 #     the RTMP chunk-size patch), the text/image OSD and the msgChannel warning
 #     fix in prudynt, the record-argument fix of the agent adapter - and one
-#     more for the image: the setup portal's Wi-Fi network is lapcam-xxxx, not
-#     THINGINO-xxxx (patches/thingino-wifi-portal-ssid.diff).
+#     more for the image: the setup portal's Wi-Fi network is named like the
+#     camera (lapcam-xxxx), not THINGINO-xxxx (patches/thingino-wifi-portal-ssid.diff).
 #
 #  2. user/<camera>/ is written - Thingino's "user layer", baked into the image
 #     by its Makefile (see docs/build/local-build-settings.md in the tree):
@@ -33,8 +33,9 @@
 #                       S93youtube-relay S94osd-feed S95beacon S96rec-led
 #                       S97lapcam), the helper scripts in /usr/sbin, the button
 #                       config (double click = record, 5 s = Wi-Fi AP), the
-#                       agent adapter with the record fix, hostname lapcam, the
-#                       _lapcam._tcp mDNS service, timezone
+#                       agent adapter with the record fix, hostname lapcam-xxxx
+#                       (Thingino's S04hostname with "lapcam" as the default
+#                       name), the _lapcam._tcp mDNS service, timezone
 #     overlay/ is wiped and regenerated. The other files are overwritten; a
 #     local.mk or opt/ of your own in user/<camera>/ is left alone.
 #
@@ -80,13 +81,25 @@ TREE=$(cd "$TREE" && pwd)
 # an incremental build: the package is noted in user/<camera>/.rebuild for
 # build.sh (make rebuild-<package>).
 apply_diff() {
+	if git -C "$TREE" apply --check -R "$1" 2>/dev/null; then
+		echo "  already applied: $(basename "$1")"
+		return
+	fi
+	if ! git -C "$TREE" apply --check "$1" 2>/dev/null; then
+		# an earlier version of this patch may be in the tree: the files it
+		# touches are ours to restore (they are tracked, so nothing is lost)
+		for f in $(sed -n 's|^+++ b/||p' "$1"); do
+			if ! git -C "$TREE" diff --quiet -- "$f" 2>/dev/null; then
+				echo "  restoring $f (an older version of $(basename "$1") was in it)"
+				git -C "$TREE" checkout -q -- "$f"
+			fi
+		done
+	fi
 	if git -C "$TREE" apply --check "$1" 2>/dev/null; then
 		git -C "$TREE" apply "$1"
 		echo "  applied: $(basename "$1") (rebuilds $2)"
 		mkdir -p "$TREE/user/$CAMERA"
 		echo "$2" >>"$TREE/user/$CAMERA/.rebuild"
-	elif git -C "$TREE" apply --check -R "$1" 2>/dev/null; then
-		echo "  already applied: $(basename "$1")"
 	else
 		echo "patch does not apply (tree changed?): $1" >&2
 		git -C "$TREE" apply --check "$1" || true
@@ -116,8 +129,8 @@ put_patch "$REPO/patches/prudynt-osd-textfile.diff" package/prudynt-t/0001-osd-t
 put_patch "$REPO/patches/prudynt-msgchannel-warning.diff" package/prudynt-t/0002-msgchannel-warning.patch prudynt-t
 apply_diff "$REPO/patches/thingino-agent-adapter-record-args.diff" prudynt-t
 # the setup portal's access point (a camera without Wi-Fi settings opens one
-# at boot) is named after the project: lapcam-<4 hex of the MAC> instead of
-# THINGINO-<4 hex>
+# at boot) is named like the camera (its hostname, lapcam-xxxx) instead of
+# THINGINO-<4 hex of the MAC>
 apply_diff "$REPO/patches/thingino-wifi-portal-ssid.diff" wifi
 
 # The image's BUILD_ID is "<branch>+<hash>" (e.g. ciao+da40db6); device/common.sh
@@ -244,15 +257,38 @@ if ! grep -q '^#KEY_ENTER TIMED 0\.1 tell %ip' "$dst" || ! grep -q '^KEY_ENTER T
 fi
 chmod 644 "$dst"
 
-# hostname (inittab runs "hostname -F /etc/hostname"; S04hostname keeps a
-# custom name) and /etc/hosts (the tree's, with the 127.0.1.1 line renamed)
+# hostname: lapcam-<4 hex>, the 4 hex being the end of the base MAC address
+# the camera derives from its SoC (two cameras on one network then have
+# different names; the Wi-Fi MAC itself is that address plus one, so the 4
+# hex are not the Wi-Fi MAC's). The setup portal's and wifi-ap's networks
+# take the hostname as their name, so the phone sees the same lapcam-xxxx.
+# Thingino's S04hostname does exactly this ("<default>-<suffix>" when the
+# name is the default or an earlier auto-generated one, a custom name kept),
+# with the default taken from /etc/os-release, which the build sets to
+# ing-wyze-cam3. The overlay carries Thingino's script with that one function
+# answering "lapcam" instead; a name set by hand (device/set-camera-name.sh)
+# is kept as before. /etc/hostname starts as the default name itself (the
+# rootfs has ing-wyze-cam3 there, which the script would take for a custom
+# name and keep); /etc/hosts is left to it.
 echo "$NAME" >"$O/etc/hostname"
-awk -v n="$NAME" '$1 == "127.0.1.1" { print "127.0.1.1\t" n; next } { print }' "$TREE/overlay/etc/hosts" >"$O/etc/hosts"
-if ! grep -q "^127.0.1.1[[:space:]]$NAME\$" "$O/etc/hosts"; then
-	echo "Thingino's overlay/etc/hosts has no 127.0.1.1 line to rename: $TREE/overlay/etc/hosts" >&2
+chmod 644 "$O/etc/hostname"
+src=$TREE/overlay/etc/init.d/S04hostname
+dst=$O/etc/init.d/S04hostname
+if ! grep -q 'sed -n .s/^HOSTNAME=//p. \$OS_RELEASE_FILE' "$src"; then
+	echo "Thingino's S04hostname no longer reads the default name the way this script expects: $src" >&2
 	exit 1
 fi
-chmod 644 "$O/etc/hostname" "$O/etc/hosts"
+{
+	echo "#!/bin/sh"
+	echo "# lapcam (firmware/prepare.sh): Thingino's S04hostname with the default name"
+	echo "# \"$NAME\" instead of the one in /etc/os-release, so cameras are named $NAME-<4 hex>"
+	sed -e '1{/^#!/d;}' -e "s|echo \"\$(sed -n 's/^HOSTNAME=//p' \$OS_RELEASE_FILE)\"|echo $NAME|" "$src"
+} >"$dst"
+chmod 755 "$dst"
+if ! grep -q "echo $NAME\$" "$dst"; then
+	echo "could not put the default name into $dst" >&2
+	exit 1
+fi
 
 # the release this image belongs to (docs/release.md): lapcam reads it and
 # compares it with its own version; tools/find-camera sees it in mDNS

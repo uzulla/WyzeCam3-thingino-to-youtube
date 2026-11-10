@@ -5,7 +5,7 @@ Web UI (`http://<camera-ip>/`) や SSH で入るにはカメラの IP が要る�
 **同じ Wi-Fi / LAN に繋いだ PC やスマホから探す**。
 
 どの方法も、カメラが流している mDNS (Bonjour) の案内を拾っている。カメラは起動すると `mdnsd` が自分のホスト名
-(`device/set-camera-name.sh` で `lapcam` にしてある。Thingino の既定は `ing-wyze-cam3-9793` のような名前) と、
+(ファームウェアなら `lapcam-xxxx`、手で入れた個体は `device/set-camera-name.sh` で `lapcam`。Thingino の既定は `ing-wyze-cam3-9793` のような名前) と、
 次のサービスを LAN に知らせる:
 
 | サービス | 中身 |

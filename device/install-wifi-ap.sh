@@ -1,6 +1,7 @@
 #!/bin/sh
 # install-wifi-ap.sh - hold the camera's button for 5 seconds to turn it into
-# an open Wi-Fi access point "lapcam" until the next reboot (docs/lapcam.md).
+# an open Wi-Fi access point named like the camera (its hostname, lapcam-xxxx
+# or lapcam) until the next reboot (docs/lapcam.md).
 # Run on the PC:
 #   device/install-wifi-ap.sh root@<camera-ip>
 #

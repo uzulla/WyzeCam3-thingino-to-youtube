@@ -41,11 +41,12 @@ Thingino のビルドには `user/<camera>/` という「ユーザー層」が�
 | `prudynt.json` | `/etc/prudynt.json` の既定への上書き: stream0 を 1280x720 / 10 fps / gop 20 / 1 Mbps ([recording.md](recording.md) の実測条件)、`osd_pool_size` 2048、録画先 SD の `recordings`、JPEG チャンネル 5 fps 品質 60 |
 | `thingino.json` | `netwatch.enabled=false` ([netwatch.md](netwatch.md))、`daynight.enabled=false` + `force_mode=day` (昼夜の自動切り替えを止めて昼に固定。車内では IR LED はガラスに反射するだけで、トンネルや日陰で白黒に切り替わると配信の見た目が途中で変わる。daynightd 自体は眠ったまま残す: 起動スクリプト S10daynightd が prudynt / agent の API キーを初回起動で作るので止めない。無効時の CPU は 0%) |
 | `local.uenv.txt` | U-Boot 環境変数 `gpio_user=38o`: U-Boot が動いている間は正面の赤 LED を点ける (カーネルが起動すると消える)。通常起動なら 2 秒、SD からの書き換え中は 1〜2 分点き続けるので、焼いている最中だと分かる |
-| `overlay/` | データ領域 (jffs2、起動後の `/overlay`) の初期内容。`/etc/lapcam-release` (版: [release.md](release.md))、起動スクリプト S37wifi-from-sd / S37keys-from-sd / S93osd-config / S93youtube-relay / S94osd-feed / S95beacon / S96rec-led / S97lapcam、`/usr/sbin` の osd-config / youtube-relay / rec-led / rec-button / wifi-ap、ボタン設定 (ダブルクリックで録画、5 秒で AP)、agent adapter (録画引数の修正入り)、ホスト名 `lapcam` と `/etc/hosts`、mDNS の `_lapcam._tcp`、タイムゾーン (既定 Asia/Tokyo、`LAPCAM_TIMEZONE` / `LAPCAM_TZ` で変更) |
+| `overlay/` | データ領域 (jffs2、起動後の `/overlay`) の初期内容。`/etc/lapcam-release` (版: [release.md](release.md))、起動スクリプト S37wifi-from-sd / S37keys-from-sd / S93osd-config / S93youtube-relay / S94osd-feed / S95beacon / S96rec-led / S97lapcam、`/usr/sbin` の osd-config / youtube-relay / rec-led / rec-button / wifi-ap、ボタン設定 (ダブルクリックで録画、5 秒で AP)、agent adapter (録画引数の修正入り)、ホスト名 `lapcam-xxxx` (Thingino の `S04hostname` を既定名 `lapcam` に差し替えたもの。xxxx は SoC から作る基準 MAC の末尾 4 桁。Wi-Fi の MAC はそれに 1 を足した値なので一致しない。手で付けた名前は残す。設定用 AP と 5 秒長押しの AP はホスト名をそのまま名前にする)、mDNS の `_lapcam._tcp`、タイムゾーン (既定 Asia/Tokyo、`LAPCAM_TIMEZONE` / `LAPCAM_TZ` で変更) |
 
 パッチは [build.md](build.md) で手で当てていたもの (ffmpeg の RTMPS と chunk size、prudynt の OSD と警告抑止、
 agent adapter の引数順) に、イメージ用の 1 本 (`patches/thingino-wifi-portal-ssid.diff`: Wi-Fi 未設定時に開く
-設定用 AP の名前を `THINGINO-xxxx` から `lapcam-xxxx` に) を足して prepare.sh が当てる。新たに当たった (または中身が変わった)
+設定用 AP の名前を `THINGINO-xxxx` からホスト名 `lapcam-xxxx` に) を足して prepare.sh が当てる。パッチの内容が変わった時は、
+当たっていた古い版を `git checkout` で戻してから当て直す (対象ファイルはこのリポジトリのパッチしか触らない前提)。新たに当たった (または中身が変わった)
 パッチのパッケージと、`prudynt.json` が変わったときの prudynt-t は `user/<camera>/.rebuild` に記録され、build.sh が
 `make rebuild-<pkg>` する (Buildroot はパッケージディレクトリのファイル変更を見ないし、`prudynt.json` は prudynt-t の
 インストール時にしか混ぜられないため)。ソース木は `da40db6` にあることを前提にし、違えば警告する。ブランチ `ciao` が
@@ -128,7 +129,7 @@ diskutil eject /Volumes/LAPCAM
 ### 3. カメラに挿す
 
 - **素の個体**: 電源を切ってカードを挿し、電源を入れる。LED が赤・青・紫に回っている間に純正ファームの退避と書き込み
-  (数分)。勝手に再起動する。初回起動は 1 分ほど。`http://lapcam.local/` を開き、root / Thingino 既定のパスワード
+  (数分)。勝手に再起動する。初回起動は 1 分ほど。`http://lapcam-xxxx.local/` (xxxx は MAC アドレス末尾の 4 桁。`tools/find-camera` やルーターの一覧で分かる) を開き、root / Thingino 既定のパスワード
   `root` でサインインして、パスワードを変える。
 - **Thingino 導入済み**: 同じく電源オフ → カード → オン。U-Boot が `autoupdate-full.bin` を焼いて再起動する (2 分ほど)。
   **設定は全部消える** (ホスト名や Wi-Fi はイメージと SD の内容になる。root のパスワードも `root` に戻る)。
@@ -147,7 +148,7 @@ backup 領域が残り、`cfg-autorestore` が以前のパスワードと SSH �
 | root のパスワード | Thingino 既定の `root` に戻る (上記のとおり旧 U-Boot で焼いた初回だけは例外)。lapcam に `root` でサインインするとパスワード変更のフォームが自動で出る |
 | SSH の鍵 | `/root/.ssh/authorized_keys` は消える → カードの `authorized_keys` があれば起動時に戻る。ホスト鍵は作り直される (PC で known_hosts の警告) |
 | Wi-Fi | 消える → カードの `wpa_supplicant.conf` があれば起動時に戻る |
-| ホスト名、ボタン設定、タイムゾーン、prudynt の既定、netwatch オフ、昼夜切り替えオフ | ファームウェアに焼き込んであるので同じ値 |
+| ホスト名 (`lapcam-xxxx`)、ボタン設定、タイムゾーン、prudynt の既定、netwatch オフ、昼夜切り替えオフ | ファームウェアに焼き込んであるので同じ値 |
 | ストリームキー、OSD の設定、ロゴ、録画、lapcam のプロファイル | カード上なので残る |
 
 ## 注意

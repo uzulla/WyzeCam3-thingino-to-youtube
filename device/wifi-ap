@@ -3,7 +3,8 @@
 # reboot (docs/lapcam.md). Install to /usr/sbin/wifi-ap (chmod +x); run by the
 # button (hold 5 s, see install-wifi-ap.sh) or by hand.
 #
-# For the track, when the saved Wi-Fi is not there: the phone joins "lapcam"
+# For the track, when the saved Wi-Fi is not there: the phone joins the
+# network named like the camera (lapcam-xxxx; "lapcam" on a camera set up by hand)
 # (no password: the user's choice, recovery only; whoever is in range can join
 # and see the traffic, so do not type the password near others for long) and
 # opens http://100.64.1.1/ (the app's port, read from lapcam.args) to fix the
@@ -14,7 +15,7 @@
 # saved file is kept next to it meanwhile, so a power cut in between still
 # leaves it there (wpa_supplicant.conf.station) to copy back by hand.
 
-SSID="${WIFI_AP_SSID:-lapcam}"
+SSID="${WIFI_AP_SSID:-$(hostname)}" # lapcam-xxxx: the camera's name, so two cameras are told apart
 CONF=/etc/wpa_supplicant.conf
 KEEP=/etc/wpa_supplicant.conf.station
 INIT=/etc/init.d/S38wpa_supplicant
