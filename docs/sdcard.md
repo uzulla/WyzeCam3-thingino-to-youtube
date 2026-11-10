@@ -41,11 +41,12 @@ Thingino のビルドには `user/<camera>/` という「ユーザー層」が�
 | `prudynt.json` | `/etc/prudynt.json` の既定への上書き: stream0 を 1280x720 / 10 fps / gop 20 / 1 Mbps ([recording.md](recording.md) の実測条件)、`osd_pool_size` 2048、録画先 SD の `recordings`、JPEG チャンネル 5 fps 品質 60 |
 | `thingino.json` | `netwatch.enabled=false` ([netwatch.md](netwatch.md))、`daynight.enabled=false` + `force_mode=day` (昼夜の自動切り替えを止めて昼に固定。車内では IR LED はガラスに反射するだけで、トンネルや日陰で白黒に切り替わると配信の見た目が途中で変わる。daynightd 自体は眠ったまま残す: 起動スクリプト S10daynightd が prudynt / agent の API キーを初回起動で作るので止めない。無効時の CPU は 0%) |
 | `local.uenv.txt` | U-Boot 環境変数 `gpio_user=38o`: U-Boot が動いている間は正面の赤 LED を点ける (カーネルが起動すると消える)。通常起動なら 2 秒、SD からの書き換え中は 1〜2 分点き続けるので、焼いている最中だと分かる |
-| `overlay/` | データ領域 (jffs2、起動後の `/overlay`) の初期内容。`/etc/lapcam-release` (版: [release.md](release.md))、起動スクリプト S37wifi-from-sd / S37keys-from-sd / S93osd-config / S93youtube-relay / S94osd-feed / S95beacon / S96rec-led / S97lapcam、`/usr/sbin` の osd-config / youtube-relay / rec-led / rec-button / wifi-ap、ボタン設定 (ダブルクリックで録画、5 秒で AP)、agent adapter (録画引数の修正入り)、ホスト名 `lapcam-xxxx` (Thingino の `S04hostname` を既定名 `lapcam` に差し替えたもの。xxxx は SoC から作る MAC の末尾 4 桁で、設定用 AP の `lapcam-xxxx` と同じ値。手で付けた名前は残す)、mDNS の `_lapcam._tcp`、タイムゾーン (既定 Asia/Tokyo、`LAPCAM_TIMEZONE` / `LAPCAM_TZ` で変更) |
+| `overlay/` | データ領域 (jffs2、起動後の `/overlay`) の初期内容。`/etc/lapcam-release` (版: [release.md](release.md))、起動スクリプト S37wifi-from-sd / S37keys-from-sd / S93osd-config / S93youtube-relay / S94osd-feed / S95beacon / S96rec-led / S97lapcam、`/usr/sbin` の osd-config / youtube-relay / rec-led / rec-button / wifi-ap、ボタン設定 (ダブルクリックで録画、5 秒で AP)、agent adapter (録画引数の修正入り)、ホスト名 `lapcam-xxxx` (Thingino の `S04hostname` を既定名 `lapcam` に差し替えたもの。xxxx は SoC から作る基準 MAC の末尾 4 桁。Wi-Fi の MAC はそれに 1 を足した値なので一致しない。手で付けた名前は残す。設定用 AP と 5 秒長押しの AP はホスト名をそのまま名前にする)、mDNS の `_lapcam._tcp`、タイムゾーン (既定 Asia/Tokyo、`LAPCAM_TIMEZONE` / `LAPCAM_TZ` で変更) |
 
 パッチは [build.md](build.md) で手で当てていたもの (ffmpeg の RTMPS と chunk size、prudynt の OSD と警告抑止、
 agent adapter の引数順) に、イメージ用の 1 本 (`patches/thingino-wifi-portal-ssid.diff`: Wi-Fi 未設定時に開く
-設定用 AP の名前を `THINGINO-xxxx` から `lapcam-xxxx` に) を足して prepare.sh が当てる。新たに当たった (または中身が変わった)
+設定用 AP の名前を `THINGINO-xxxx` からホスト名 `lapcam-xxxx` に) を足して prepare.sh が当てる。パッチの内容が変わった時は、
+当たっていた古い版を `git checkout` で戻してから当て直す (対象ファイルはこのリポジトリのパッチしか触らない前提)。新たに当たった (または中身が変わった)
 パッチのパッケージと、`prudynt.json` が変わったときの prudynt-t は `user/<camera>/.rebuild` に記録され、build.sh が
 `make rebuild-<pkg>` する (Buildroot はパッケージディレクトリのファイル変更を見ないし、`prudynt.json` は prudynt-t の
 インストール時にしか混ぜられないため)。ソース木は `da40db6` にあることを前提にし、違えば警告する。ブランチ `ciao` が

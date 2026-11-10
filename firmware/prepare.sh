@@ -11,8 +11,8 @@
 #     hand: RTMPS in ffmpeg (patches/thingino-ffmpeg-rtmps.diff on the .mk and
 #     the RTMP chunk-size patch), the text/image OSD and the msgChannel warning
 #     fix in prudynt, the record-argument fix of the agent adapter - and one
-#     more for the image: the setup portal's Wi-Fi network is lapcam-xxxx, not
-#     THINGINO-xxxx (patches/thingino-wifi-portal-ssid.diff).
+#     more for the image: the setup portal's Wi-Fi network is named like the
+#     camera (lapcam-xxxx), not THINGINO-xxxx (patches/thingino-wifi-portal-ssid.diff).
 #
 #  2. user/<camera>/ is written - Thingino's "user layer", baked into the image
 #     by its Makefile (see docs/build/local-build-settings.md in the tree):
@@ -81,13 +81,25 @@ TREE=$(cd "$TREE" && pwd)
 # an incremental build: the package is noted in user/<camera>/.rebuild for
 # build.sh (make rebuild-<package>).
 apply_diff() {
+	if git -C "$TREE" apply --check -R "$1" 2>/dev/null; then
+		echo "  already applied: $(basename "$1")"
+		return
+	fi
+	if ! git -C "$TREE" apply --check "$1" 2>/dev/null; then
+		# an earlier version of this patch may be in the tree: the files it
+		# touches are ours to restore (they are tracked, so nothing is lost)
+		for f in $(sed -n 's|^+++ b/||p' "$1"); do
+			if ! git -C "$TREE" diff --quiet -- "$f" 2>/dev/null; then
+				echo "  restoring $f (an older version of $(basename "$1") was in it)"
+				git -C "$TREE" checkout -q -- "$f"
+			fi
+		done
+	fi
 	if git -C "$TREE" apply --check "$1" 2>/dev/null; then
 		git -C "$TREE" apply "$1"
 		echo "  applied: $(basename "$1") (rebuilds $2)"
 		mkdir -p "$TREE/user/$CAMERA"
 		echo "$2" >>"$TREE/user/$CAMERA/.rebuild"
-	elif git -C "$TREE" apply --check -R "$1" 2>/dev/null; then
-		echo "  already applied: $(basename "$1")"
 	else
 		echo "patch does not apply (tree changed?): $1" >&2
 		git -C "$TREE" apply --check "$1" || true
@@ -117,8 +129,8 @@ put_patch "$REPO/patches/prudynt-osd-textfile.diff" package/prudynt-t/0001-osd-t
 put_patch "$REPO/patches/prudynt-msgchannel-warning.diff" package/prudynt-t/0002-msgchannel-warning.patch prudynt-t
 apply_diff "$REPO/patches/thingino-agent-adapter-record-args.diff" prudynt-t
 # the setup portal's access point (a camera without Wi-Fi settings opens one
-# at boot) is named after the project: lapcam-<4 hex of the MAC> instead of
-# THINGINO-<4 hex>
+# at boot) is named like the camera (its hostname, lapcam-xxxx) instead of
+# THINGINO-<4 hex of the MAC>
 apply_diff "$REPO/patches/thingino-wifi-portal-ssid.diff" wifi
 
 # The image's BUILD_ID is "<branch>+<hash>" (e.g. ciao+da40db6); device/common.sh
@@ -245,9 +257,11 @@ if ! grep -q '^#KEY_ENTER TIMED 0\.1 tell %ip' "$dst" || ! grep -q '^KEY_ENTER T
 fi
 chmod 644 "$dst"
 
-# hostname: lapcam-<4 hex>, the 4 hex being the end of the MAC address the
-# camera derives from its SoC (two cameras on one network then have
-# different names, and the same 4 hex as the setup portal's lapcam-xxxx).
+# hostname: lapcam-<4 hex>, the 4 hex being the end of the base MAC address
+# the camera derives from its SoC (two cameras on one network then have
+# different names; the Wi-Fi MAC itself is that address plus one, so the 4
+# hex are not the Wi-Fi MAC's). The setup portal's and wifi-ap's networks
+# take the hostname as their name, so the phone sees the same lapcam-xxxx.
 # Thingino's S04hostname does exactly this ("<default>-<suffix>" when the
 # name is the default or an earlier auto-generated one, a custom name kept),
 # with the default taken from /etc/os-release, which the build sets to
