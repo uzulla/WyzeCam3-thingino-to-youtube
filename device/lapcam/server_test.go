@@ -332,3 +332,70 @@ func TestRelayConfigured(t *testing.T) {
 		t.Errorf("not configured with a stream key")
 	}
 }
+
+func TestChangePassword(t *testing.T) {
+	srv, _ := testServer(t)
+	withShadow(t, "root:"+sha512Crypt("secret", "salty", 5000, false)+":1::::::\nnobody:*:1::::::\n")
+	// sign in; the password is not the default
+	resp := jsonReq(t, "POST", srv.URL+"/api/login", `{"password":"secret"}`, nil, nil)
+	var login struct {
+		SignedIn        bool `json:"signed_in"`
+		DefaultPassword bool `json:"default_password"`
+	}
+	_ = json.NewDecoder(resp.Body).Decode(&login)
+	resp.Body.Close()
+	if !login.SignedIn || login.DefaultPassword {
+		t.Fatalf("login: %+v", login)
+	}
+	var cookie *http.Cookie
+	for _, c := range resp.Cookies() {
+		if c.Name == sessionCookie {
+			cookie = c
+		}
+	}
+	post := func(body string) int {
+		return code(jsonReq(t, "POST", srv.URL+"/api/password", body, cookie, nil))
+	}
+	if c := post(`{"current":"wrong","new":"longenough"}`); c != http.StatusUnauthorized {
+		t.Errorf("wrong current password: %d", c)
+	}
+	if c := post(`{"current":"secret","new":"short"}`); c != http.StatusBadRequest {
+		t.Errorf("short new password: %d", c)
+	}
+	if c := post(`{"current":"secret","new":"with:colon1"}`); c != http.StatusBadRequest {
+		t.Errorf("colon in password: %d", c)
+	}
+	if c := post(`{"current":"secret","new":"new-password-1"}`); c != http.StatusOK {
+		t.Fatalf("change: %d", c)
+	}
+	// the file: root's hash changed and verifies, the other line is untouched
+	b, _ := os.ReadFile(shadowFile)
+	if !strings.Contains(string(b), "\nnobody:*:1::::::\n") {
+		t.Errorf("other lines changed: %q", b)
+	}
+	if ok, err := checkPassword("new-password-1"); err != nil || !ok {
+		t.Errorf("new password does not verify: %v %v", ok, err)
+	}
+	if ok, _ := checkPassword("secret"); ok {
+		t.Errorf("old password still verifies")
+	}
+	// the session that made the change is still good
+	if c := code(jsonReq(t, "GET", srv.URL+"/api/status", "", cookie, nil)); c != http.StatusOK {
+		t.Errorf("session after the change: %d", c)
+	}
+	// signing in with the default password is flagged
+	withShadow(t, "root:"+sha512Crypt("root", "salty", 5000, false)+":1::::::\n")
+	resp = jsonReq(t, "POST", srv.URL+"/api/login", `{"password":"root"}`, nil, nil)
+	_ = json.NewDecoder(resp.Body).Decode(&login)
+	resp.Body.Close()
+	if !login.SignedIn || !login.DefaultPassword {
+		t.Errorf("default password not flagged: %+v", login)
+	}
+	// without a session the endpoint is closed
+	if c := post(``); c == http.StatusOK {
+		t.Errorf("empty body accepted")
+	}
+	if c := code(jsonReq(t, "POST", srv.URL+"/api/password", `{"current":"root","new":"new-password-2"}`, nil, nil)); c != http.StatusUnauthorized {
+		t.Errorf("password change without a session: %d", c)
+	}
+}

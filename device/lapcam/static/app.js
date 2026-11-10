@@ -52,9 +52,12 @@
     const btn = e.target.querySelector("button");
     btn.disabled = true;
     try {
-      await api("/api/login", { password: $("password").value });
+      const r = await api("/api/login", { password: $("password").value });
       $("password").value = "";
       showApp();
+      // Thingino's default password (a fresh camera, or one just flashed
+      // from the card): offer to change it right away
+      if (r.default_password) showPasswordForm("This camera still has the default password (root). Set your own: it is the password for this app, ssh and Thingino's pages, and anyone on the Wi-Fi can try it.");
     } catch (err) {
       $("login-error").textContent = err.message;
     } finally {
@@ -65,6 +68,42 @@
   $("btn-logout").addEventListener("click", async () => {
     try { await api("/api/logout", {}); } catch (_) {}
     showLogin();
+  });
+
+  // --- password ---------------------------------------------------------------
+  function showPasswordForm(why) {
+    const f = $("password-form");
+    if (why) $("password-why").textContent = why;
+    f.classList.remove("hidden");
+    setMsg("password-msg", "");
+    f.scrollIntoView({ block: "nearest" });
+    $("pw-current").focus();
+  }
+  function hidePasswordForm() {
+    const f = $("password-form");
+    f.reset();
+    f.classList.add("hidden");
+  }
+  $("btn-password").addEventListener("click", () => showPasswordForm());
+  $("pw-cancel").addEventListener("click", hidePasswordForm);
+  $("password-form").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const cur = $("pw-current").value, nw = $("pw-new").value, again = $("pw-again").value;
+    if (nw.length < 8) { setMsg("password-msg", "The new password needs at least 8 characters.", true); return; }
+    if (nw !== again) { setMsg("password-msg", "The two new passwords differ.", true); return; }
+    if (nw === cur) { setMsg("password-msg", "That is the current password.", true); return; }
+    const btn = e.target.querySelector("button[type=submit]");
+    btn.disabled = true;
+    setMsg("password-msg", "Saving…");
+    try {
+      await api("/api/password", { current: cur, new: nw });
+      hidePasswordForm();
+      setMsg("action-msg", "Password changed. Use the new one for ssh and the next sign-in.");
+    } catch (err) {
+      setMsg("password-msg", err.message, true);
+    } finally {
+      btn.disabled = false;
+    }
   });
 
   // --- preview -------------------------------------------------------------

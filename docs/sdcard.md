@@ -144,7 +144,7 @@ backup 領域が残り、`cfg-autorestore` が以前のパスワードと SSH �
 
 | | 焼いた後 |
 |---|---|
-| root のパスワード | Thingino 既定の `root` に戻る (上記のとおり旧 U-Boot で焼いた初回だけは例外) |
+| root のパスワード | Thingino 既定の `root` に戻る (上記のとおり旧 U-Boot で焼いた初回だけは例外)。lapcam に `root` でサインインするとパスワード変更のフォームが自動で出る |
 | SSH の鍵 | `/root/.ssh/authorized_keys` は消える → カードの `authorized_keys` があれば起動時に戻る。ホスト鍵は作り直される (PC で known_hosts の警告) |
 | Wi-Fi | 消える → カードの `wpa_supplicant.conf` があれば起動時に戻る |
 | ホスト名、ボタン設定、タイムゾーン、prudynt の既定、netwatch オフ、昼夜切り替えオフ | ファームウェアに焼き込んであるので同じ値 |
