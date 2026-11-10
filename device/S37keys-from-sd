@@ -1,0 +1,82 @@
+#!/bin/sh
+# Apply the SSH public keys carried on the SD card, right before Thingino's
+# dropbear (S50dropbear) starts: /mnt/mmcblk0p1/authorized_keys becomes
+# /root/.ssh/authorized_keys. Optional add-on; install with
+# install-keys-from-sd.sh, or have it in the firmware (firmware/prepare.sh).
+#
+# Why: flashing the firmware from the card (docs/sdcard.md) wipes /root, so
+# the keys would have to be put back by hand with the default password
+# every time. The card survives a flash, so it carries them, like the Wi-Fi
+# settings (S37wifi-from-sd).
+#
+# The card's file is in the usual authorized_keys form, one public key per
+# line (what ssh-keygen prints into ~/.ssh/id_*.pub; comments with # are
+# fine; Windows line ends are tolerated). It REPLACES the camera's file
+# whenever the two differ: the card is the source of truth. Pulling the card
+# does not restore the previous keys; those are kept once as
+# authorized_keys.before-sd. A file that does not look like keys is ignored
+# with a message in logread, and the camera's keys stay as they were.
+
+SRC="${KEYS_SD_SRC:-/mnt/mmcblk0p1/authorized_keys}"
+DST="${KEYS_SD_DST:-/root/.ssh/authorized_keys}"
+TAG="keys-from-sd"
+
+log() {
+	echo "$TAG: $1"
+	logger -p daemon.info -t $TAG "$1" 2>/dev/null
+}
+
+[ "$1" = "start" ] || exit 0
+
+# The card is mounted asynchronously by mdev; give it a moment if one is present
+i=0
+while [ ! -f "$SRC" ] && [ -b /dev/mmcblk0p1 ] && ! grep -q ' /mnt/mmcblk0p1 ' /proc/mounts && [ $i -lt 10 ]; do
+	i=$((i + 1))
+	sleep 1
+done
+[ -f "$SRC" ] || exit 0
+
+tmp=$(mktemp) || exit 0
+trap 'rm -f "$tmp"' EXIT
+tr -d '\r' <"$SRC" | grep -v '^[[:space:]]*$' >"$tmp" # files edited on Windows, blank lines
+
+# every line must be a key (or a comment): "<type> <base64> [comment]". A
+# stray file would otherwise lock everyone out of ssh
+if [ ! -s "$tmp" ]; then
+	log "ignored $SRC: empty"
+	exit 0
+fi
+if grep -v '^[[:space:]]*#' "$tmp" | grep -v -E '^(ssh-ed25519|ssh-rsa|ecdsa-sha2-nistp(256|384|521)|sk-ssh-ed25519@openssh\.com|sk-ecdsa-sha2-nistp256@openssh\.com) [A-Za-z0-9+/]+=*( |$)' >/dev/null; then
+	log "ignored $SRC: a line is not an SSH public key (type, base64, optional comment)"
+	exit 0
+fi
+n=$(grep -c -v '^[[:space:]]*#' "$tmp")
+[ "$n" -gt 0 ] || { log "ignored $SRC: no key, only comments"; exit 0; }
+
+# (no cmp in Thingino's busybox: compare by checksum)
+sum() { md5sum <"$1" | cut -d' ' -f1; }
+if [ -f "$DST" ] && [ "$(sum "$tmp")" = "$(sum "$DST")" ]; then
+	exit 0 # already in place
+fi
+
+# write beside, verify, rename: a truncated authorized_keys would lock
+# the key out of a camera that is only reachable over Wi-Fi
+dir=$(dirname "$DST")
+mkdir -p "$dir" && chmod 700 "$dir"
+new="$DST.new"
+if ! { cat "$tmp" >"$new" && chmod 600 "$new" && [ "$(sum "$tmp")" = "$(sum "$new")" ]; }; then
+	rm -f "$new"
+	log "FAILED to write $new (overlay full?) - keeping the current keys"
+	exit 0
+fi
+if [ -f "$DST" ] && [ ! -f "$DST.before-sd" ]; then
+	cp -p "$DST" "$DST.before-sd" || log "could not keep a copy of the previous keys (continuing)"
+fi
+sync
+if ! mv "$new" "$DST"; then
+	rm -f "$new"
+	log "FAILED to replace $DST - keeping the current keys"
+	exit 0
+fi
+sync
+log "applied $SRC ($n key(s))"

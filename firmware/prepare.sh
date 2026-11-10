@@ -28,7 +28,7 @@
 #                       flash from the SD card (1-2 minutes) is visible
 #       overlay/        the data partition's first content, i.e. what the
 #                       device/install-*.sh scripts put on a camera by hand:
-#                       init scripts (S37wifi-from-sd S93osd-config
+#                       init scripts (S37wifi-from-sd S37keys-from-sd S93osd-config
 #                       S93youtube-relay S94osd-feed S95beacon S96rec-led
 #                       S97lapcam), the helper scripts in /usr/sbin, the button
 #                       config (double click = record, 5 s = Wi-Fi AP), the
@@ -204,7 +204,7 @@ cat >"$U/thingino.json" <<'EOF'
 }
 EOF
 
-for s in S37wifi-from-sd S93osd-config S93youtube-relay S94osd-feed S95beacon S96rec-led S97lapcam; do
+for s in S37wifi-from-sd S37keys-from-sd S93osd-config S93youtube-relay S94osd-feed S95beacon S96rec-led S97lapcam; do
 	put "$REPO/device/$s" /etc/init.d/$s 755
 done
 for s in osd-config youtube-relay rec-led rec-button wifi-ap; do

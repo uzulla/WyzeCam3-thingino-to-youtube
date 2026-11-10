@@ -23,7 +23,7 @@ minimal FFmpeg バイナリと、カメラだけで常設運用するための�
 | 常設・自動復帰 | `youtube-relay` が ffmpeg を監視し、終了後に再起動。ネットワーク復帰を待って再開 | [配信 supervisor](docs/relay.md) |
 | スマホから操作する Web UI | プレビュー、配信・録画の開始と停止、ストリームキーと画質、OSD の配置をプレビュー上で編集、録画ファイルの再生・zip ダウンロード、Wi-Fi、AP モード。Thingino の Web UI を置き換える | [lapcam](docs/lapcam.md) |
 | (旧) Thingino の Web UI に足すページ | YouTube Live ページ (キーの設定、開始・停止、自動起動、ログ) と OSD Settings ページ。lapcam に置き換えたので uhttpd を止めた機体では使わない | [YouTube Live Web UI](docs/relay.md#web-ui)、[OSD](docs/osd.md#web-ui-から編集する) |
-| SD カードで設定を持ち運ぶ | 配信キー・OSD 設定を SD に保存。複数の Wi-Fi 設定を起動時に適用する機能も用意 | [配信設定](docs/relay.md)、[Wi-Fi 設定](docs/wifi-from-sd.md) |
+| SD カードで設定を持ち運ぶ | 配信キー・OSD 設定を SD に保存。複数の Wi-Fi 設定と SSH の公開鍵を起動時に適用する機能も用意 | [配信設定](docs/relay.md)、[Wi-Fi 設定](docs/wifi-from-sd.md)、[SSH 鍵](docs/sdcard.md) |
 | テキスト・画像 OSD | 独立したテキスト 3 か所と透過画像 1 か所を映像に合成。Web UI で配置や大きさを設定 | [OSD](docs/osd.md) |
 | 表示内容の自動更新 | `osd-feed` がメモリ量・時刻・カウンタ・HTTP / UDP の JSON をテンプレートに反映し、PNG を画像 OSD に変換。RaceBox の G ボール・速度・走行図も出せる | [osd-feed](docs/osd-feed.md) |
 | 状態を LAN に知らせる・指令を受ける | `beacon` が IP・配信の状態・Wi-Fi の電波などを数秒ごとに UDP ブロードキャストし、PC の `beacon-listen` で表示。`beacon-send` で映像の反転などの指令も送れる | [beacon](docs/beacon.md) |

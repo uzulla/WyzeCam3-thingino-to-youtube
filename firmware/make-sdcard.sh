@@ -22,6 +22,11 @@
 #                    its own network at boot
 #     -k STREAMKEY   write youtube-relay.json with this YouTube stream key
 #                    (else lapcam's Stream tab does it later)
+#     -a KEYFILE     an SSH public key file (~/.ssh/id_ed25519.pub; may hold
+#                    several keys) for the card's authorized_keys: the camera
+#                    applies it at every boot, so ssh keeps working after a
+#                    flash. It REPLACES the card's file, so put every key that
+#                    should work in it. Without -a an existing file is kept
 #     -c CAMERA      Thingino camera name (default wyze_cam3_t31x_gc2053_atbm6031)
 #
 # Needs, in dist/: firmware/thingino-<camera>.bin (firmware/build.sh), lapcam,
@@ -49,6 +54,7 @@ SKIP_FLASH=
 WIFI=""
 NWIFI=0
 KEY=
+AUTHKEYS=
 # thingino-installers, pinned to the commit of the SD image read for
 # docs/sdcard.md (2026-08-14); the file taken out of it is checked by hash.
 # To follow a newer installer: change both, after reading its init script.
@@ -60,6 +66,7 @@ usage() {
 	sed -n '2,/^$/p' "$0" | sed 's/^# \{0,1\}//' >&2
 	exit "${1:-1}"
 }
+. "$REPO/device/common.sh" # check_pubkeys (the camera-side helpers in it are not used here)
 
 nl=$(printf '\nx')
 nl=${nl%x}
@@ -110,6 +117,13 @@ while [ $# -gt 0 ]; do
 	-c)
 		[ $# -ge 2 ] || usage
 		CAMERA=$2
+		shift
+		;;
+	-a)
+		[ $# -ge 2 ] || usage
+		AUTHKEYS=$2
+		[ -f "$AUTHKEYS" ] || { echo "-a: no such file: $AUTHKEYS" >&2; exit 1; }
+		NKEYS=$(check_pubkeys "$AUTHKEYS") # every line a key ssh-keygen can read (device/common.sh)
 		shift
 		;;
 	-h | --help) usage 0 ;;
@@ -317,6 +331,15 @@ elif [ -f "$CARD/youtube-relay.json" ]; then
 	echo "  youtube-relay.json (kept)"
 else
 	echo "  (no youtube-relay.json: set the stream key in lapcam's Stream tab, or -k STREAMKEY)"
+fi
+if [ -n "$AUTHKEYS" ]; then
+	tr -d '\r' <"$AUTHKEYS" >"$CARD/authorized_keys.lapcam-tmp"
+	mv -f "$CARD/authorized_keys.lapcam-tmp" "$CARD/authorized_keys"
+	echo "  authorized_keys ($NKEYS key(s), replacing what was on the card; applied at boot, ssh root@... then needs no password)"
+elif [ -f "$CARD/authorized_keys" ]; then
+	echo "  authorized_keys (kept)"
+else
+	echo "  (no authorized_keys: ssh asks for the password, root after a flash; -a ~/.ssh/id_ed25519.pub puts a key on the card)"
 fi
 
 # what is on the card, by version (each build script leaves one next to its

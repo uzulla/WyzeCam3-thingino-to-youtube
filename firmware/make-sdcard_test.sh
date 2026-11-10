@@ -16,6 +16,7 @@ trap 'rm -rf "$T"' EXIT
 REPO=$T/repo
 mkdir -p "$REPO/firmware/sdcard" "$REPO/dist/firmware" "$REPO/dist/installer"
 cp "$HERE/make-sdcard.sh" "$HERE/fatextract.py" "$REPO/firmware/"
+mkdir -p "$REPO/device" && cp "$HERE/../device/common.sh" "$REPO/device/"
 cp "$HERE/sdcard/"* "$REPO/firmware/sdcard/"
 # a fake image of the right size, fake programs, a fake (cached) installer
 head -c 16777216 /dev/zero >"$REPO/dist/firmware/thingino-wyze_cam3_t31x_gc2053_atbm6031.bin"
@@ -95,6 +96,20 @@ grep -q 'ssid="Home Net"' "$C/wpa_supplicant.conf" || fail "ssid with a space"
 grep -q '"stream_key": "abcd-1234-efgh"' "$C/youtube-relay.json" || fail "stream key"
 no_tmp "$C" wifi
 
+echo "5b. -a: an SSH public key file, and refusal of what is not one"
+ssh-keygen -q -t ed25519 -N "" -C me@pc -f "$T/k" >/dev/null
+{ printf '# a comment\r\n'; cat "$T/k.pub"; printf '\r\n\n'; } >"$T/key.pub"
+sh "$M" -u -a "$T/key.pub" "$C" >/dev/null
+[ "$(grep -c '^ssh-ed25519' "$C/authorized_keys")" = 1 ] || fail "authorized_keys not written"
+grep -q "$(printf '\r')" "$C/authorized_keys" && fail "CR left in authorized_keys"
+before=$(cksum <"$C/authorized_keys")
+printf -- '-----BEGIN OPENSSH PRIVATE KEY-----\nabc\n' >"$T/private"
+if sh "$M" -u -a "$T/private" "$C" >/dev/null 2>&1; then fail "accepted a private key file"; fi
+printf 'ssh-ed25519 A truncated\n' >"$T/truncated.pub"
+if sh "$M" -u -a "$T/truncated.pub" "$C" >/dev/null 2>&1; then fail "accepted a key ssh-keygen cannot read"; fi
+if sh "$M" -u -a "$T/k" "$C" >/dev/null 2>&1; then fail "accepted the private key"; fi
+[ "$(cksum <"$C/authorized_keys")" = "$before" ] || fail "authorized_keys changed by a refused -a"
+
 echo "6. a second run keeps the settings and replaces the programs"
 echo "my args" >"$C/lapcam.args"
 echo '{"mine":1}' >"$C/prudynt-osd.json"
@@ -106,6 +121,7 @@ sh "$M" -u "$C" >/dev/null
 [ "$(cat "$C/prudynt-osd.json")" = '{"mine":1}' ] || fail "prudynt-osd.json not kept"
 [ "$(cat "$C/logo.png")" = mylogo ] || fail "logo.png not kept"
 [ "$(cat "$C/wpa_supplicant.conf" "$C/youtube-relay.json" | cksum)" = "$before" ] || fail "wifi/key not kept"
+[ "$(grep -c '^ssh-ed25519' "$C/authorized_keys")" = 1 ] || fail "authorized_keys not kept"
 [ "$(cat "$C/lapcam")" = newer ] || fail "program not replaced"
 
 echo "7. bad options change nothing on a card"
