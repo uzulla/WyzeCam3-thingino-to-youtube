@@ -330,7 +330,7 @@ fi
 	for p in firmware/VERSION lapcam.version osd-feed.version beacon.version; do
 		v=$(cat "$REPO/dist/$p" 2>/dev/null || echo unknown)
 		case "$p" in
-		firmware/VERSION) n="image (thingino-$CAMERA.bin, $(cat "$REPO/dist/firmware/BUILD" 2>/dev/null || echo "build unknown"))" ;;
+		firmware/VERSION) n="firmware (thingino-$CAMERA.bin, Thingino $(cat "$REPO/dist/firmware/BUILD" 2>/dev/null || echo "build unknown"))" ;;
 		*) n=${p%.version} ;;
 		esac
 		echo "$n: $v"

@@ -1,8 +1,11 @@
 # バージョンとリリース
 
-lapcam は **1 つの番号**で管理する。イメージ (フラッシュ)、SD カードのプログラム 3 本 (lapcam / osd-feed / beacon)、
-ffmpeg、カードの中身は全部同じコミットから作るので、全部に同じ番号が付く。土台の Thingino の版
-(`BUILD_ID`、例 `ciao+da40db6`) は別物で、併記する。
+lapcam は **1 つの番号**で管理する。ファームウェア (フラッシュに焼くイメージ。Thingino にこのリポジトリのものを
+焼き込んだ、lapcam のファームウェア)、SD カードのプログラム 3 本 (lapcam / osd-feed / beacon)、ffmpeg、カードの中身は
+全部同じコミットから作るので、全部に同じ番号が付く。土台にした Thingino の版 (`BUILD_ID`、例 `ciao+da40db6`) は
+ファームウェアの版に含意されるので画面には出さず、`/etc/lapcam-release` と `/api/status` に記録だけする。
+
+呼び方: 画面やカードでは「firmware」= lapcam のファームウェア、「lapcam」= SD 上の Web UI のバイナリ。「Thingino」は土台のことだけ。
 
 ## 番号の源
 
@@ -23,13 +26,12 @@ g1a2b3c4            届くタグが無い
 |---|---|---|
 | イメージの `/etc/lapcam-release` | `firmware/prepare.sh` | `VERSION=`、`COMMIT=`、`BUILD_DATE=`、`THINGINO=ciao+da40db6`、`CAMERA=` |
 | mDNS `_lapcam._tcp` の TXT | 同上 | `version=` (lapcam の版)、`thingino=` |
-| `lapcam` / `osd-feed` / `beacon` | 各 `device/*/build.sh` (`-ldflags -X main.version=`) | `-version` で表示。lapcam は `/api/status` の `versions` (`lapcam`、`image`、`thingino`、`mismatch`) と Camera カードの一番下に出す。beacon の UDP には `lapcam` フィールド |
+| `lapcam` / `osd-feed` / `beacon` | 各 `device/*/build.sh` (`-ldflags -X main.version=`) | `-version` で表示。lapcam は `/api/status` の `versions` (`lapcam`、`firmware`、`thingino`、`mismatch`) と、Camera タブの一番下に `lapcam vX · firmware vX` を出す。beacon の UDP には `lapcam` フィールド |
 | `dist/` | 各ビルドスクリプト | `dist/firmware/VERSION`、`dist/lapcam.version` など、成果物の横に |
 | SD カードの `VERSION.txt` | `firmware/make-sdcard.sh` | カードに入れた各部品の版。食い違っていれば警告 |
 
-lapcam は自分の版と `/etc/lapcam-release` を比べ、違えば Camera カードに赤く出す
-(カードだけ更新した、イメージだけ古い、が分かる)。`/etc/lapcam-release` が無い個体 (手で入れた構成) は
-「no lapcam image」と出すだけ。
+lapcam は自分の版と `/etc/lapcam-release` を比べ、違えば赤く出す (カードだけ更新した、ファームウェアだけ古い、
+が分かる)。`/etc/lapcam-release` が無い個体 (手で入れた構成) は「firmware not lapcam's」と出すだけ。
 
 ## 番号の上げ方
 

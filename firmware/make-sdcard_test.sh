@@ -45,7 +45,7 @@ C=$(card stock)
 sh "$M" "$C" >/dev/null
 [ "$(listing "$C")" = "README.txt VERSION.txt beacon factory_t31_ZMC6tiIDQN ffmpeg lapcam lapcam.args osd-feed osd-feed.json prudynt-osd.json thingino-wyze_cam3_t31x_gc2053_atbm6031.bin " ] || fail "stock listing: $(listing "$C")"
 [ "$(cat "$C/lapcam.args")" = "-listen :80" ] || fail "lapcam.args"
-grep -q "^lapcam: v9.9.9$" "$C/VERSION.txt" && grep -q "^image .*: v9.9.9$" "$C/VERSION.txt" || fail "VERSION.txt: $(cat "$C/VERSION.txt")"
+grep -q "^lapcam: v9.9.9$" "$C/VERSION.txt" && grep -q "^firmware .*: v9.9.9$" "$C/VERSION.txt" || fail "VERSION.txt: $(cat "$C/VERSION.txt")"
 no_tmp "$C" stock
 
 echo "1b. programs from another build than the image are reported"

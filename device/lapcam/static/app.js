@@ -233,12 +233,11 @@
     } else { sd.textContent = "no card"; sd.className = "bad"; }
     $("st-uptime").textContent = uptimeText(st.uptime_s);
     const ver = $("st-version"), v = st.versions || {};
-    // the binary on the card and the firmware image are released together:
+    // the binary on the card and the flashed firmware are released together:
     // different numbers mean one of them was updated without the other
     let vt = `lapcam ${v.lapcam || "-"}`;
-    if (v.image) vt += v.mismatch ? ` · image ${v.image} (does not match: update the card or the firmware)` : ` · image ${v.image}`;
-    else vt += " · no lapcam image (installed by hand)";
-    if (v.thingino) vt += ` · Thingino ${v.thingino}`;
+    if (v.firmware) vt += v.mismatch ? ` · firmware ${v.firmware} (does not match: update the card or the firmware)` : ` · firmware ${v.firmware}`;
+    else vt += " · firmware not lapcam's (installed by hand)";
     ver.textContent = vt; ver.className = "foot version" + (v.mismatch ? " bad" : "");
     $("st-load").textContent = st.load1 || "-";
     $("st-mem").textContent = st.mem_free_mb;
