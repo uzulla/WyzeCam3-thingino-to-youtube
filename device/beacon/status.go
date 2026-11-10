@@ -25,7 +25,8 @@ type Message struct {
 	Iface     string  `json:"iface"`
 	IP        string  `json:"ip"`
 	MAC       string  `json:"mac,omitempty"`
-	Build     string  `json:"build,omitempty"`
+	Build     string  `json:"build,omitempty"`  // the Thingino firmware (BUILD_ID)
+	Lapcam    string  `json:"lapcam,omitempty"` // the lapcam release this beacon belongs to (tools/version.sh)
 	UptimeS   int64   `json:"uptime_s"`
 	Stream    Stream  `json:"stream"`
 	RSSI      *int    `json:"rssi_dbm,omitempty"`
@@ -37,6 +38,9 @@ const (
 	msgType    = "lapcam-beacon"
 	msgVersion = 1
 )
+
+// version - the lapcam release (set by build.sh; "dev" when built by hand)
+var version = "dev"
 
 // Stream - the YouTube relay (device/youtube-relay) as the web UI's status sees it
 type Stream struct {
@@ -207,6 +211,7 @@ func collect(host, build string, seq uint64) Message {
 		Seq:       seq,
 		Host:      host,
 		Build:     build,
+		Lapcam:    version,
 		UptimeS:   uptime,
 		Stream:    findStream("/proc", "/run/youtube-relay.pid", uptime),
 		MemFreeMB: parseMemFreeMB(readFile("/proc/meminfo")),

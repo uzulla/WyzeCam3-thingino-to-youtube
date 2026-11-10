@@ -244,13 +244,26 @@ if ! grep -q "^127.0.1.1[[:space:]]$NAME\$" "$O/etc/hosts"; then
 fi
 chmod 644 "$O/etc/hostname" "$O/etc/hosts"
 
+# the release this image belongs to (docs/release.md): lapcam reads it and
+# compares it with its own version; tools/find-camera sees it in mDNS
+VERSION=$(sh "$REPO/tools/version.sh")
+cat >"$O/etc/lapcam-release" <<EOF
+VERSION=$VERSION
+COMMIT=$(git -C "$REPO" rev-parse --short=7 HEAD 2>/dev/null || echo unknown)
+BUILD_DATE=$(date -u +%Y-%m-%dT%H:%MZ)
+THINGINO=$branch+$hash
+CAMERA=$CAMERA
+EOF
+chmod 644 "$O/etc/lapcam-release"
+
 # mDNS: _lapcam._tcp next to Thingino's own services (tools/find-camera looks for it)
 cat >"$O/etc/mdns.d/$NAME.service" <<EOF
 # lapcam (firmware/prepare.sh)
 type _${NAME}._tcp
 port 80
 txt product=$CAMERA
-txt version=$branch+$hash
+txt version=$VERSION
+txt thingino=$branch+$hash
 EOF
 
 # U-Boot: red LED on while the bootloader runs. Thingino's U-Boot applies the
@@ -270,5 +283,5 @@ echo "$TIMEZONE" >"$O/etc/timezone"
 echo "$TZ_POSIX" >"$O/etc/TZ"
 echo user >"$O/etc/timezone.source"
 
-echo "  $(find "$O" -type f | wc -l | tr -d ' ') overlay files, local.fragment, local.uenv.txt, prudynt.json, thingino.json"
+echo "  $(find "$O" -type f | wc -l | tr -d ' ') overlay files, local.fragment, local.uenv.txt, prudynt.json, thingino.json; lapcam version $VERSION"
 echo "Done. Build with: firmware/build.sh $TREE $CAMERA"

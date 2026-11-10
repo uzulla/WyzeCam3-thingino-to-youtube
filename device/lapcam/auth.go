@@ -285,7 +285,8 @@ func (s *server) auth(next http.Handler) http.Handler {
 }
 
 func (s *server) handleMe(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, map[string]any{"signed_in": s.sessions.valid(s.sessionToken(r))})
+	// the version is public (shown under the sign-in form), like Thingino's own UI shows its build
+	writeJSON(w, http.StatusOK, map[string]any{"signed_in": s.sessions.valid(s.sessionToken(r)), "version": version})
 }
 
 func (s *server) handleLogin(w http.ResponseWriter, r *http.Request) {

@@ -91,6 +91,8 @@ button.small { padding: 6px 12px; border-radius: 8px; border: 1px solid var(--li
 pre#log { background: var(--panel); border-radius: 10px; padding: 10px; font-size: 11px; white-space: pre-wrap; overflow-wrap: anywhere; max-height: 40vh; overflow: auto; color: var(--muted); }
 a { color: var(--accent); }
 .foot { text-align: center; margin: 4px 0 16px; }
+.version { color: var(--muted); font-size: 12px; text-align: center; }
+.version.bad { color: var(--red); }
 
 /* portrait phone: the preview is as wide as the screen (above). Landscape
    phone, tablet, PC: the preview takes the height of the screen on the left,

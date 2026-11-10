@@ -3,7 +3,7 @@
 // recording, flip the picture, see the state of the camera. One static Go
 // binary on the SD card, started by /etc/init.d/S97lapcam.
 //
-//	lapcam [-listen :8000] [-sd /mnt/mmcblk0p1] [-prudynt http://127.0.0.1:8080] [-syslog] [-check]
+//	lapcam [-listen :8000] [-sd /mnt/mmcblk0p1] [-prudynt http://127.0.0.1:8080] [-syslog] [-check] [-version]
 //
 // It changes nothing by itself: every action is what the existing scripts do
 // (record, /etc/init.d/S93youtube-relay, service, prudyntctl) and every
@@ -52,8 +52,13 @@ func main() {
 	toSyslog := flag.Bool("syslog", false, "log to the syslog (logread) instead of stderr; the init script sets this")
 	shadow := flag.String("shadow", shadowFile, "the shadow file holding root's password hash (for testing with another file)")
 	check := flag.Bool("check", false, "print what the status endpoint would answer and exit (the installer runs this)")
+	showVersion := flag.Bool("version", false, "print the version and exit")
 	flag.Parse()
 	log.SetFlags(0)
+	if *showVersion {
+		fmt.Println("lapcam " + version)
+		return
+	}
 	shadowFile = *shadow
 	if *toSyslog {
 		if w, err := syslog.New(syslog.LOG_DAEMON|syslog.LOG_INFO, "lapcam"); err == nil {

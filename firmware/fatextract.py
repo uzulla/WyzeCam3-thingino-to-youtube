@@ -55,8 +55,14 @@ class Volume:
         self.data_offset = self.base + data_sector * self.bytes_per_sector
         if total <= data_sector:
             fail("broken BPB: no data area")
-        # the highest cluster number that exists on this volume
+        # the highest cluster number that exists on this volume: bounded by
+        # the data area and by what the FAT has entries for
         self.last_cluster = 1 + (total - data_sector) // self.sectors_per_cluster
+        fat_entries = self.sectors_per_fat * self.bytes_per_sector // 4
+        if fat_entries - 1 < self.last_cluster:
+            self.last_cluster = fat_entries - 1
+        if self.last_cluster < 2:
+            fail("broken BPB: no clusters")
         if not 2 <= self.root_cluster <= self.last_cluster:
             fail("root directory cluster %d is out of range" % self.root_cluster)
 
@@ -124,33 +130,33 @@ def find_in_root(vol, want):
     last piece first (flagged 0x40); the pieces are kept only when they are
     complete and their checksum matches the 8.3 entry."""
     want = want.upper()
-    pieces = {}
-    expect_sum = None
+    pieces = {}  # seq -> raw UTF-16 bytes of a long name being assembled
+    expect_sum = None  # its checksum; None while not inside a long name
+    next_seq = 0  # the sequence number the next piece must have (descending)
     for c in vol.chain(vol.root_cluster):
         data = vol.read_at(vol.cluster_offset(c), vol.cluster_size)
         for i in range(0, vol.cluster_size, 32):
             e = data[i : i + 32]
             if e[0] == 0x00:
                 return None  # end of the directory: nothing valid follows
-            if e[0] == 0xE5:
-                pieces = {}
+            if e[0] == 0xE5:  # deleted: whatever long name was in progress is void
+                pieces, expect_sum, next_seq = {}, None, 0
                 continue
             if e[11] == 0x0F:
-                if e[0] & 0x40:  # the last piece starts a new long name
-                    pieces = {}
-                    expect_sum = e[13]
-                if e[13] != expect_sum:
-                    pieces = {}
-                    continue
                 seq = e[0] & 0x3F
+                if e[0] & 0x40:  # the last piece starts a new long name
+                    pieces, expect_sum, next_seq = {}, e[13], seq
+                if expect_sum is None or e[13] != expect_sum or seq != next_seq or seq == 0:
+                    pieces, expect_sum, next_seq = {}, None, 0  # stray or out-of-order piece
+                    continue
                 pieces[seq] = e[1:11] + e[14:26] + e[28:32]
+                next_seq = seq - 1
                 continue
             long_name = ""
-            if pieces and sorted(pieces) == list(range(1, len(pieces) + 1)) and expect_sum == short_checksum(e):
+            if pieces and next_seq == 0 and expect_sum == short_checksum(e):
                 raw = b"".join(pieces[k] for k in sorted(pieces))
-                long_name = raw.decode("utf-16-le", "replace").split("\x00", 1)[0].rstrip("￿")
-            pieces = {}
-            expect_sum = None
+                long_name = raw.decode("utf-16-le", "replace").split("\x00", 1)[0].rstrip("\uffff")
+            pieces, expect_sum, next_seq = {}, None, 0
             if e[11] & 0x08 or e[11] & 0x10:  # volume label, directory
                 continue
             if want in (short_name(e).upper(), long_name.upper()):

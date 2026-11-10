@@ -138,12 +138,18 @@ fi
 mkdir -p "$REPO/dist/firmware"
 cp "$BIN" "$REPO/dist/firmware/thingino-$CAMERA.bin"
 echo "$build_id" >"$REPO/dist/firmware/BUILD"
+# the version prepare.sh wrote into the image (not computed again: the tree
+# may have moved during a long build)
+sed -n 's/^VERSION=//p' "$OUT/data/overlay/etc/lapcam-release" >"$REPO/dist/firmware/VERSION"
+[ -s "$REPO/dist/firmware/VERSION" ] || { echo "no VERSION in $OUT/data/overlay/etc/lapcam-release" >&2; exit 1; }
 if [ -f "$FFMPEG" ]; then
 	cp "$FFMPEG" "$REPO/dist/ffmpeg"
+	# ffmpeg carries no version string of its own: the firmware's goes next to it
+	cp "$REPO/dist/firmware/VERSION" "$REPO/dist/ffmpeg.version"
 fi
 
 echo
-echo "Image:  dist/firmware/thingino-$CAMERA.bin ($(cat "$REPO/dist/firmware/BUILD"))"
+echo "Image:  dist/firmware/thingino-$CAMERA.bin (lapcam $(cat "$REPO/dist/firmware/VERSION"), $(cat "$REPO/dist/firmware/BUILD"))"
 echo "        kernel $(wc -c <"$OUT/images/uImage" | tr -d ' ') B, rootfs $(wc -c <"$OUT/images/rootfs.squashfs" | tr -d ' ') B, data $(wc -c <"$OUT/images/data.jffs2" | tr -d ' ') B"
 [ -f "$FFMPEG" ] && echo "ffmpeg: dist/ffmpeg ($(wc -c <"$REPO/dist/ffmpeg" | tr -d ' ') B)"
 echo "Next: firmware/make-sdcard.sh (on the PC with the SD card)"

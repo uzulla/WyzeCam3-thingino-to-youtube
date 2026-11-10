@@ -232,6 +232,13 @@
       sd.className = st.recording.free_mb < 1024 ? "warn" : "";
     } else { sd.textContent = "no card"; sd.className = "bad"; }
     $("st-uptime").textContent = uptimeText(st.uptime_s);
+    const ver = $("st-version"), v = st.versions || {};
+    // the binary on the card and the flashed firmware are released together:
+    // different numbers mean one of them was updated without the other
+    let vt = `lapcam ${v.lapcam || "-"}`;
+    if (v.firmware) vt += v.mismatch ? ` · firmware ${v.firmware} (does not match: update the card or the firmware)` : ` · firmware ${v.firmware}`;
+    else vt += " · firmware not lapcam's (installed by hand)";
+    ver.textContent = vt; ver.className = "foot version" + (v.mismatch ? " bad" : "");
     $("st-load").textContent = st.load1 || "-";
     $("st-mem").textContent = st.mem_free_mb;
     $("ap-banner").classList.toggle("hidden", !st.ap_mode);
@@ -485,5 +492,8 @@
   }
 
   // --- start -----------------------------------------------------------------
-  api("/api/me").then((r) => (r.signed_in ? showApp() : showLogin())).catch(showLogin);
+  api("/api/me").then((r) => {
+    if (r.version) $("login-version").textContent = `lapcam ${r.version}`;
+    r.signed_in ? showApp() : showLogin();
+  }).catch(showLogin);
 })();

@@ -9,5 +9,10 @@ cd "$(dirname "$0")"
 mkdir -p "$(dirname "$OUT")"
 go vet ./...
 go test ./...
-CGO_ENABLED=0 GOOS=linux GOARCH=mipsle GOMIPS=softfloat go build -trimpath -ldflags="-s -w" -o "$OUT" .
+# the release version (tools/version.sh), shown in the UI and checked against the image's
+VERSION=$(sh ../../tools/version.sh)
+CGO_ENABLED=0 GOOS=linux GOARCH=mipsle GOMIPS=softfloat go build -trimpath -ldflags="-s -w -X main.version=$VERSION" -o "$OUT" .
+echo "$VERSION" >"$OUT.version"
+[ "$VERSION" != unknown ] || echo "WARNING: no git history here, the binary says 'unknown' (fine for a try, not for a release)" >&2
 ls -l "$OUT"
+echo "version $VERSION"

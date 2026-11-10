@@ -68,8 +68,9 @@ class Image:
     """A FAT32 volume with one directory cluster (cluster 2) and files whose
     cluster chains are given explicitly, so odd chains can be made."""
 
-    def __init__(self, mbr=False):
+    def __init__(self, mbr=False, sectors_per_fat=32):
         self.mbr = mbr
+        self.sectors_per_fat = sectors_per_fat  # 32: 4096 entries, covers every data cluster
         self.base = 2048 * 512 if mbr else 0
         self.fat = {}  # cluster -> next value (raw 28-bit)
         self.data = {}  # cluster -> bytes
@@ -108,7 +109,7 @@ class Image:
         bpb[21] = 0xF8
         struct.pack_into("<H", bpb, 22, 0)  # FAT16 size = 0
         struct.pack_into("<I", bpb, 32, TOTAL_SECTORS)
-        sectors_per_fat = 16
+        sectors_per_fat = self.sectors_per_fat
         struct.pack_into("<I", bpb, 36, sectors_per_fat)
         struct.pack_into("<I", bpb, 44, 2)  # root cluster
         struct.pack_into("<H", bpb, 48, 1)  # FSInfo
@@ -244,6 +245,30 @@ class Case(unittest.TestCase):
         self.assertEqual(r.returncode, 1)
         self.assertIn("not found", r.stderr)
         r, out = self.run_extract(im.build(), "a.bin")
+        self.assertEqual(r.returncode, 0, r.stderr)
+
+    def test_fat_too_small_bounds_the_clusters(self):
+        # a FAT with entries for fewer clusters than the data area holds:
+        # a chain pointing beyond what the FAT describes is refused
+        im = Image(sectors_per_fat=4)  # 512 entries, for about 4000 data clusters
+        im.add_file(b"A       BIN", None, b"x" * 1000, [3])
+        im.link(3, 3000)  # in the data area, but the FAT has no entry for it
+        r, out = self.run_extract(im.build(), "a.bin")
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("not a data cluster", r.stderr)
+
+    def test_long_name_pieces_across_a_deleted_entry_are_void(self):
+        # last piece, a deleted entry, then the first piece and the 8.3 entry:
+        # the long name must not be assembled from the two halves
+        im = Image()
+        pieces = lfn_entries("a long enough file name.bin", b"ALONGE~1BIN")
+        last, first = pieces[:32], pieces[32:64]
+        im.add_raw_dir(last + b"\xe5" + b"\x00" * 31 + first)
+        im.add_file(b"ALONGE~1BIN", None, b"z" * 10, [3])
+        r, out = self.run_extract(im.build(), "a long enough file name.bin")
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("not found", r.stderr)
+        r, out = self.run_extract(im.build(), "alonge~1.bin")
         self.assertEqual(r.returncode, 0, r.stderr)
 
     def test_directory_entry_is_not_a_file(self):

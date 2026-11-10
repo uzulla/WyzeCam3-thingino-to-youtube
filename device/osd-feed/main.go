@@ -9,7 +9,7 @@
 // temp file on tmpfs, mv it over the slot's file; prudynt redraws within 100 ms
 // and skips unchanged content. Nothing is written to flash.
 //
-//	osd-feed [-config /mnt/mmcblk0p1/osd-feed.json] [-syslog] [-once]
+//	osd-feed [-config /mnt/mmcblk0p1/osd-feed.json] [-syslog] [-once] [-version]
 //
 // -once renders every slot once to stdout and exits (to try a template).
 // -syslog sends the log to logread instead of stderr (the init script does).
@@ -31,12 +31,20 @@ import (
 	"time"
 )
 
+// version - the lapcam release this was built for (tools/version.sh, set by build.sh)
+var version = "dev"
+
 func main() {
 	configPath := flag.String("config", "/mnt/mmcblk0p1/osd-feed.json", "configuration file")
 	once := flag.Bool("once", false, "render each slot once to stdout and exit")
 	toSyslog := flag.Bool("syslog", false, "log to the syslog (logread) instead of stderr; the init script sets this")
+	showVersion := flag.Bool("version", false, "print the version and exit")
 	flag.Parse()
 	log.SetFlags(0)
+	if *showVersion {
+		fmt.Println("osd-feed " + version)
+		return
+	}
 	if *toSyslog {
 		// busybox syslogd listens on /dev/log; logread shows the messages
 		if w, err := syslog.New(syslog.LOG_DAEMON|syslog.LOG_INFO, "osd-feed"); err == nil {
