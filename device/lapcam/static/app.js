@@ -235,11 +235,11 @@
     const ver = $("st-version"), v = st.versions || {};
     // the binary on the card and the firmware image are released together:
     // different numbers mean one of them was updated without the other
-    let vt = v.lapcam || "-";
+    let vt = `lapcam ${v.lapcam || "-"}`;
     if (v.image) vt += v.mismatch ? ` · image ${v.image} (does not match: update the card or the firmware)` : ` · image ${v.image}`;
     else vt += " · no lapcam image (installed by hand)";
     if (v.thingino) vt += ` · Thingino ${v.thingino}`;
-    ver.textContent = vt; ver.className = v.mismatch ? "bad" : "";
+    ver.textContent = vt; ver.className = "foot version" + (v.mismatch ? " bad" : "");
     $("st-load").textContent = st.load1 || "-";
     $("st-mem").textContent = st.mem_free_mb;
     $("ap-banner").classList.toggle("hidden", !st.ap_mode);
@@ -493,5 +493,8 @@
   }
 
   // --- start -----------------------------------------------------------------
-  api("/api/me").then((r) => (r.signed_in ? showApp() : showLogin())).catch(showLogin);
+  api("/api/me").then((r) => {
+    if (r.version) $("login-version").textContent = `lapcam ${r.version}`;
+    r.signed_in ? showApp() : showLogin();
+  }).catch(showLogin);
 })();
