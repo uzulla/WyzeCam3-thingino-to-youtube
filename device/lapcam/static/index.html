@@ -69,7 +69,16 @@
     </div>
   </div>
   <p id="ap-banner" class="banner hidden">Access point mode: the camera is on its own Wi-Fi "lapcam". Fix the Wi-Fi settings in the Wi-Fi tab, then reboot to join them.</p>
-  <p class="foot"><button id="btn-reboot" class="small">Reboot camera</button> <button id="btn-logout" class="small">Sign out</button></p>
+  <p class="foot"><button id="btn-reboot" class="small">Reboot camera</button> <button id="btn-password" class="small">Change password</button> <button id="btn-logout" class="small">Sign out</button></p>
+  <form id="password-form" class="card wide hidden" autocomplete="on">
+    <div class="label">Change the camera password</div>
+    <p class="sub" id="password-why">The same password serves this app, ssh and Thingino's own pages. A flash from the SD card sets it back to Thingino's default.</p>
+    <input id="pw-current" type="password" name="current" placeholder="Current password" aria-label="Current password" autocomplete="current-password">
+    <input id="pw-new" type="password" name="new" placeholder="New password" aria-label="New password" autocomplete="new-password">
+    <input id="pw-again" type="password" name="again" placeholder="New password again" aria-label="New password again" autocomplete="new-password">
+    <p class="foot"><button type="submit" class="small">Save</button> <button type="button" id="pw-cancel" class="small">Not now</button></p>
+    <p id="password-msg" class="msg"></p>
+  </form>
   <p class="foot version" id="st-version"></p>
   </div><!-- /side -->
 </section>

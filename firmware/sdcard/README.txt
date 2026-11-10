@@ -11,8 +11,8 @@ INSTALL ON A STOCK WYZE CAM V3 (card made without -u)
      (a few minutes). The camera restarts by itself.
   3. First boot takes about a minute. With a wpa_supplicant.conf on this card
      the camera joins that Wi-Fi; open http://lapcam.local/ (or the camera's
-     IP) and sign in as root with password "root". Change it (Thingino's
-     default). Without Wi-Fi settings the camera opens its own network
+     IP) and sign in as root with password "root". The app then asks you to
+     set your own (Camera tab, "Change password"). Without Wi-Fi settings the camera opens its own network
      "lapcam-xxxx" (setup page at http://172.16.0.1/); hold the button 5 s any
      time to get an open network "lapcam" and reach http://100.64.1.1/.
   The installer renames itself to factory_t31_ZMC6tiIDQN.old when done, so

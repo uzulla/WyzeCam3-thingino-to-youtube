@@ -341,7 +341,9 @@ func (s *server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		MaxAge:   int(s.sessions.ttl / time.Second),
 	})
 	log.Printf("signed in from %s", clientIP(r))
-	writeJSON(w, http.StatusOK, map[string]any{"signed_in": true})
+	// still Thingino's default (a fresh camera, or one just flashed from the
+	// card): the app offers the password form right away
+	writeJSON(w, http.StatusOK, map[string]any{"signed_in": true, "default_password": body.Password == defaultPassword})
 }
 
 func (s *server) handleLogout(w http.ResponseWriter, r *http.Request) {

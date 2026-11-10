@@ -93,6 +93,9 @@ pre#log { background: var(--panel); border-radius: 10px; padding: 10px; font-siz
 a { color: var(--accent); }
 .foot { text-align: center; margin: 4px 0 16px; }
 .version { color: var(--muted); font-size: 12px; text-align: center; }
+#password-form { display: flex; flex-direction: column; gap: 8px; }
+#password-form.hidden { display: none; }
+#password-form .foot { margin: 4px 0 0; }
 .version.bad { color: var(--red); }
 
 /* portrait phone: the preview is as wide as the screen (above). Landscape
