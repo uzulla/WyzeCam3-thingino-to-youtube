@@ -49,11 +49,14 @@ done
 [ -f dist/ffmpeg ] || { echo "  dist/ffmpeg missing" >&2; bad=1; }
 [ $bad = 0 ] || exit 1
 
+for c in zip shasum; do
+	command -v "$c" >/dev/null 2>&1 || { echo "$c is needed" >&2; exit 1; }
+done
 OUT=dist/release
 rm -rf "$OUT/lapcam-$TAG-sdcard" "$OUT/lapcam-$TAG-sdcard.zip" "$OUT/lapcam-$TAG-firmware.bin"
 mkdir -p "$OUT/lapcam-$TAG-sdcard"
 echo "Making the card"
-sh firmware/make-sdcard.sh "$OUT/lapcam-$TAG-sdcard" | sed 's/^/  /'
+sh firmware/make-sdcard.sh "$OUT/lapcam-$TAG-sdcard" # (not piped: its exit status must stop this script)
 cp "dist/firmware/thingino-$CAMERA.bin" "$OUT/lapcam-$TAG-firmware.bin"
 (cd "$OUT" && rm -f SHA256SUMS && zip -q -r "lapcam-$TAG-sdcard.zip" "lapcam-$TAG-sdcard" && shasum -a 256 "lapcam-$TAG-sdcard.zip" "lapcam-$TAG-firmware.bin" >SHA256SUMS)
 echo

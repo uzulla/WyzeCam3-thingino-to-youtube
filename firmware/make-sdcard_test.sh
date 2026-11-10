@@ -50,7 +50,8 @@ no_tmp "$C" stock
 
 echo "1b. programs from another build than the image are reported"
 echo v9.9.8 >"$REPO/dist/beacon.version"
-if ! sh "$M" "$C" 2>&1 | grep -q "different builds"; then fail "mixed versions not reported"; fi
+output=$(sh "$M" "$C" 2>&1) || fail "mixed versions: making the card failed: $output"
+printf '%s\n' "$output" | grep -q "different builds" || fail "mixed versions not reported"
 echo v9.9.9 >"$REPO/dist/beacon.version"
 
 echo "2. upgrade card (-u): no marker, no installer"

@@ -14,4 +14,10 @@ v*) ;;
 unknown) ;;
 *) v="g$v" ;; # a bare hash: no tag in sight
 esac
+# --dirty sees changed tracked files only; a new source file that is not
+# committed yet makes the build differ from the tag just as much
+case "$v" in
+*-dirty | unknown) ;;
+*) [ -z "$(git status --porcelain --untracked-files=normal 2>/dev/null)" ] || v="$v-dirty" ;;
+esac
 printf '%s\n' "$v"

@@ -61,9 +61,12 @@ fi
 port=\$(sed -n 's/.*-listen *[^:]*:\([0-9]*\).*/\1/p' $SD/lapcam.args 2>/dev/null | head -n 1)
 [ -n \"\$port\" ] || port=80
 # (not sourced: os-release has a NAME= of its own that would clobber ours)
+# version= is the lapcam release (/etc/lapcam-release, written into the firmware
+# by firmware/prepare.sh; a camera set up by hand has none), thingino= the base build
 product=\$(sed -n 's/^IMAGE_ID=//p' /etc/os-release | tr -d '\"'); [ -n \"\$product\" ] || product=unknown
-version=\$(sed -n 's/^BUILD_ID=//p' /etc/os-release | tr -d '\"' | cut -d, -f1)
-printf '# lapcam (device/set-camera-name.sh)\ntype _%s._tcp\nport %s\ntxt product=%s\ntxt version=%s\n' \"\$NAME\" \"\$port\" \"\$product\" \"\$version\" >/etc/mdns.d/\$NAME.service.tmp
+thingino=\$(sed -n 's/^BUILD_ID=//p' /etc/os-release | tr -d '\"' | cut -d, -f1)
+version=\$(sed -n 's/^VERSION=//p' /etc/lapcam-release 2>/dev/null); [ -n \"\$version\" ] || version=none
+printf '# lapcam (device/set-camera-name.sh)\ntype _%s._tcp\nport %s\ntxt product=%s\ntxt version=%s\ntxt thingino=%s\n' \"\$NAME\" \"\$port\" \"\$product\" \"\$version\" \"\$thingino\" >/etc/mdns.d/\$NAME.service.tmp
 mv /etc/mdns.d/\$NAME.service.tmp /etc/mdns.d/\$NAME.service
 sh /etc/init.d/S50mdnsd restart >/dev/null 2>&1 || true
 echo \"  mDNS: _\$NAME._tcp on port \$port, host \$NAME.local\"

@@ -48,8 +48,8 @@ device/lapcam/build.sh; device/osd-feed/build.sh; device/beacon/build.sh
 # ビルドホストで (docs/sdcard.md):
 #   firmware/build.sh thingino-firmware   -> dist/firmware/ と dist/ffmpeg を手元の dist/ へ
 tools/release.sh v2.0.0                  # dist/ の版が全部タグと一致するか確かめ、カード一式と zip を作る
+git push origin v2.0.0                   # 先にタグを push (無いと gh release create がデフォルトブランチの先頭に勝手にタグを打つ)
 # 表示された gh release create を、ノート (dist/release/notes-v2.0.0.md) を書いてから実行
-git push origin v2.0.0
 ```
 
 `tools/release.sh` が作るもの: `dist/release/lapcam-v2.0.0-sdcard/` (素の個体用のカード一式。FAT32 のカードに展開するだけ)、
