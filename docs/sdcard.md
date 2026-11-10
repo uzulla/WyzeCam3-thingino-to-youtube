@@ -78,6 +78,7 @@ Go のプログラム (lapcam 9 MB、osd-feed 9.5 MB、beacon 4 MB) と ffmpeg (
 | `authorized_keys` | SSH の公開鍵 (1 行 1 鍵)。`-a ~/.ssh/id_ed25519.pub` で置く (**カードのファイルを丸ごと置き換える**ので、使いたい鍵は全部そのファイルに入れておく。各行は `ssh-keygen` が読める鍵であることを検査する)。起動時に `S37keys-from-sd` が `/root/.ssh/authorized_keys` に写す (違う時だけ。カードが正)。焼くと `/root` は消えるので、これが無いと焼くたびに root / `root` で入って鍵を入れ直すことになる。手で入れた個体に後から足すのは `device/install-keys-from-sd.sh root@<ip> key.pub` (こちらはカードの鍵に追加する) |
 | `youtube-relay.json` | 配信設定。`-k ストリームキー` で生成、または lapcam の Stream タブで後から |
 | `prudynt-osd.json` / `osd-feed.json` | OSD の配置と内容 (レース用の雛形: ロゴ・G ボール・コース図・MEM/CPU・速度) |
+| `logo.png` | OSD に出すロゴの既定 (`firmware/sdcard/logo.png`、160×160 の URS ロゴ)。lapcam の OSD タブからの差し替えで上書きされ、以後は保持 |
 | `README.txt` | カードの説明 (英語) |
 | `VERSION.txt` | カードに入れた各部品の版 ([release.md](release.md))。イメージとプログラムの版が違えば make-sdcard.sh が警告する |
 

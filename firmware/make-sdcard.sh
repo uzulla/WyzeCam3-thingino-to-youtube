@@ -296,6 +296,7 @@ else
 fi
 keep_or_put "$HERE/sdcard/prudynt-osd.json" prudynt-osd.json
 keep_or_put "$HERE/sdcard/osd-feed.json" osd-feed.json
+keep_or_put "$HERE/sdcard/logo.png" logo.png # the team's logo; lapcam's OSD tab replaces it
 put "$HERE/sdcard/README.txt" README.txt
 
 if [ "$NWIFI" -gt 0 ]; then
@@ -331,7 +332,6 @@ elif [ -f "$CARD/youtube-relay.json" ]; then
 else
 	echo "  (no youtube-relay.json: set the stream key in lapcam's Stream tab, or -k STREAMKEY)"
 fi
-[ -f "$CARD/logo.png" ] && echo "  logo.png (kept)" || echo "  (no logo.png: upload one from lapcam's OSD tab)"
 if [ -n "$AUTHKEYS" ]; then
 	tr -d '\r' <"$AUTHKEYS" >"$CARD/authorized_keys.lapcam-tmp"
 	mv -f "$CARD/authorized_keys.lapcam-tmp" "$CARD/authorized_keys"
