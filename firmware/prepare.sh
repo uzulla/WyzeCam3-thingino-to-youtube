@@ -23,7 +23,8 @@
 #                       card in "recordings", JPEG channel 5 fps
 #       thingino.json   merged into /etc/thingino.json: netwatch off (it
 #                       reboots the OS when the gateway stops answering ping,
-#                       which is worse than the outage for a stream; docs/netwatch.md)
+#                       which is worse than the outage for a stream; docs/netwatch.md),
+#                       day/night switching off, held at day
 #       local.uenv.txt  U-Boot env: red LED on while the bootloader runs, so a
 #                       flash from the SD card (1-2 minutes) is visible
 #       overlay/        the data partition's first content, i.e. what the
@@ -196,8 +197,17 @@ else
 	mv -f "$U/prudynt.json.new" "$U/prudynt.json"
 fi
 
+# daynight: Thingino's day/night switching (IR cut filter, IR LEDs, black and
+# white at night) is for surveillance; in a car the IR only lights up the
+# windscreen and the switch changes the picture mid-stream in tunnels and
+# shade. Disabled and held at day; daynightd itself keeps running idle (its
+# init script also creates the API key prudynt and the agent need)
 cat >"$U/thingino.json" <<'EOF'
 {
+  "daynight": {
+    "enabled": false,
+    "force_mode": "day"
+  },
   "netwatch": {
     "enabled": false
   }
