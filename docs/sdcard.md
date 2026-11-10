@@ -41,7 +41,7 @@ Thingino のビルドには `user/<camera>/` という「ユーザー層」が�
 | `prudynt.json` | `/etc/prudynt.json` の既定への上書き: stream0 を 1280x720 / 10 fps / gop 20 / 1 Mbps ([recording.md](recording.md) の実測条件)、`osd_pool_size` 2048、録画先 SD の `recordings`、JPEG チャンネル 5 fps 品質 60 |
 | `thingino.json` | `netwatch.enabled=false` ([netwatch.md](netwatch.md)) |
 | `local.uenv.txt` | U-Boot 環境変数 `gpio_user=38o`: U-Boot が動いている間は正面の赤 LED を点ける (カーネルが起動すると消える)。通常起動なら 2 秒、SD からの書き換え中は 1〜2 分点き続けるので、焼いている最中だと分かる |
-| `overlay/` | データ領域 (jffs2、起動後の `/overlay`) の初期内容。起動スクリプト S37wifi-from-sd / S93osd-config / S93youtube-relay / S94osd-feed / S95beacon / S96rec-led / S97lapcam、`/usr/sbin` の osd-config / youtube-relay / rec-led / rec-button / wifi-ap、ボタン設定 (ダブルクリックで録画、5 秒で AP)、agent adapter (録画引数の修正入り)、ホスト名 `lapcam` と `/etc/hosts`、mDNS の `_lapcam._tcp`、タイムゾーン (既定 Asia/Tokyo、`LAPCAM_TIMEZONE` / `LAPCAM_TZ` で変更) |
+| `overlay/` | データ領域 (jffs2、起動後の `/overlay`) の初期内容。`/etc/lapcam-release` (版: [release.md](release.md))、起動スクリプト S37wifi-from-sd / S93osd-config / S93youtube-relay / S94osd-feed / S95beacon / S96rec-led / S97lapcam、`/usr/sbin` の osd-config / youtube-relay / rec-led / rec-button / wifi-ap、ボタン設定 (ダブルクリックで録画、5 秒で AP)、agent adapter (録画引数の修正入り)、ホスト名 `lapcam` と `/etc/hosts`、mDNS の `_lapcam._tcp`、タイムゾーン (既定 Asia/Tokyo、`LAPCAM_TIMEZONE` / `LAPCAM_TZ` で変更) |
 
 パッチは [build.md](build.md) で手で当てていたもの (ffmpeg の RTMPS と chunk size、prudynt の OSD と警告抑止、
 agent adapter の引数順) に、イメージ用の 1 本 (`patches/thingino-wifi-portal-ssid.diff`: Wi-Fi 未設定時に開く
@@ -78,6 +78,7 @@ Go のプログラム (lapcam 9 MB、osd-feed 9.5 MB、beacon 4 MB) と ffmpeg (
 | `youtube-relay.json` | 配信設定。`-k ストリームキー` で生成、または lapcam の Stream タブで後から |
 | `prudynt-osd.json` / `osd-feed.json` | OSD の配置と内容 (レース用の雛形: ロゴ・G ボール・コース図・MEM/CPU・速度) |
 | `README.txt` | カードの説明 (英語) |
+| `VERSION.txt` | カードに入れた各部品の版 ([release.md](release.md))。イメージとプログラムの版が違えば make-sdcard.sh が警告する |
 
 既にカードにある設定ファイル (`wpa_supplicant.conf`、`youtube-relay.json`、`prudynt-osd.json`、`osd-feed.json`、
 `lapcam.args`、`logo.png`) はオプションで指示しない限り残す。プログラムとイメージは毎回上書き。オプションは

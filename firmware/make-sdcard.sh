@@ -320,6 +320,33 @@ else
 fi
 [ -f "$CARD/logo.png" ] && echo "  logo.png (kept)" || echo "  (no logo.png: upload one from lapcam's OSD tab)"
 
+# what is on the card, by version (each build script leaves one next to its
+# output); a release has the same number everywhere (docs/release.md)
+{
+	echo "lapcam SD card, made $(date -u +%Y-%m-%dT%H:%MZ) by firmware/make-sdcard.sh"
+	echo
+	first=""
+	mixed=""
+	for p in firmware/VERSION lapcam.version osd-feed.version beacon.version; do
+		v=$(cat "$REPO/dist/$p" 2>/dev/null || echo unknown)
+		case "$p" in
+		firmware/VERSION) n="image (thingino-$CAMERA.bin, $(cat "$REPO/dist/firmware/BUILD" 2>/dev/null || echo "build unknown"))" ;;
+		*) n=${p%.version} ;;
+		esac
+		echo "$n: $v"
+		[ -n "$first" ] || first=$v
+		[ "$v" = "$first" ] || mixed=1
+	done
+	echo "ffmpeg: built with the image"
+} >"$CARD/VERSION.txt.lapcam-tmp"
+mv -f "$CARD/VERSION.txt.lapcam-tmp" "$CARD/VERSION.txt"
+if [ -n "$mixed" ]; then
+	echo "  VERSION.txt - WARNING: the image and the programs are from different builds:" >&2
+	sed 's/^/    /' "$CARD/VERSION.txt" >&2
+else
+	echo "  VERSION.txt ($first)"
+fi
+
 # only now, with everything in place, may the bootloader act on the card
 if [ -n "$UPGRADE" ] && [ -z "$SKIP_FLASH" ]; then
 	rm -f "$CARD/autoupdate-full.done" "$CARD/uenv.done"

@@ -35,6 +35,7 @@ type status struct {
 	Recording recState `json:"recording"`
 	Image     image    `json:"image"`
 	APMode    bool     `json:"ap_mode"` // the camera is an access point (wifi-ap / Thingino portal) until reboot
+	Versions  versions `json:"versions"`
 	Errors    []string `json:"errors,omitempty"`
 }
 
@@ -148,6 +149,7 @@ func (p *statusPoller) collect() status {
 	st.Time = now.Format(time.RFC3339)
 	st.UptimeS = int64(uptime())
 	st.Hostname, _ = os.Hostname()
+	st.Versions = collectVersions()
 	st.IP = ipOf("wlan0")
 	st.Load1 = load1()
 	st.MemFreeMB = memAvailableMB()

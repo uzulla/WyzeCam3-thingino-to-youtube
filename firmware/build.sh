@@ -138,12 +138,13 @@ fi
 mkdir -p "$REPO/dist/firmware"
 cp "$BIN" "$REPO/dist/firmware/thingino-$CAMERA.bin"
 echo "$build_id" >"$REPO/dist/firmware/BUILD"
+sh "$REPO/tools/version.sh" >"$REPO/dist/firmware/VERSION" # the same value prepare.sh wrote into the image
 if [ -f "$FFMPEG" ]; then
 	cp "$FFMPEG" "$REPO/dist/ffmpeg"
 fi
 
 echo
-echo "Image:  dist/firmware/thingino-$CAMERA.bin ($(cat "$REPO/dist/firmware/BUILD"))"
+echo "Image:  dist/firmware/thingino-$CAMERA.bin (lapcam $(cat "$REPO/dist/firmware/VERSION"), $(cat "$REPO/dist/firmware/BUILD"))"
 echo "        kernel $(wc -c <"$OUT/images/uImage" | tr -d ' ') B, rootfs $(wc -c <"$OUT/images/rootfs.squashfs" | tr -d ' ') B, data $(wc -c <"$OUT/images/data.jffs2" | tr -d ' ') B"
 [ -f "$FFMPEG" ] && echo "ffmpeg: dist/ffmpeg ($(wc -c <"$REPO/dist/ffmpeg" | tr -d ' ') B)"
 echo "Next: firmware/make-sdcard.sh (on the PC with the SD card)"

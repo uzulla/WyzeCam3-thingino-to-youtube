@@ -22,6 +22,9 @@ head -c 16777216 /dev/zero >"$REPO/dist/firmware/thingino-wyze_cam3_t31x_gc2053_
 for p in lapcam osd-feed beacon ffmpeg; do echo "$p" >"$REPO/dist/$p"; done
 echo installer >"$REPO/dist/installer/factory_t31_ZMC6tiIDQN"
 echo test >"$REPO/dist/installer/SOURCE"
+# the version files the build scripts leave next to their output
+for v in firmware/VERSION lapcam.version osd-feed.version beacon.version; do echo v9.9.9 >"$REPO/dist/$v"; done
+echo "ciao+da40db6, test" >"$REPO/dist/firmware/BUILD"
 M=$REPO/firmware/make-sdcard.sh
 
 fail() {
@@ -40,9 +43,15 @@ no_tmp() { [ -z "$(ls "$1" | grep 'lapcam-tmp$')" ] || fail "$2: *.lapcam-tmp le
 echo "1. stock install card"
 C=$(card stock)
 sh "$M" "$C" >/dev/null
-[ "$(listing "$C")" = "README.txt beacon factory_t31_ZMC6tiIDQN ffmpeg lapcam lapcam.args osd-feed osd-feed.json prudynt-osd.json thingino-wyze_cam3_t31x_gc2053_atbm6031.bin " ] || fail "stock listing: $(listing "$C")"
+[ "$(listing "$C")" = "README.txt VERSION.txt beacon factory_t31_ZMC6tiIDQN ffmpeg lapcam lapcam.args osd-feed osd-feed.json prudynt-osd.json thingino-wyze_cam3_t31x_gc2053_atbm6031.bin " ] || fail "stock listing: $(listing "$C")"
 [ "$(cat "$C/lapcam.args")" = "-listen :80" ] || fail "lapcam.args"
+grep -q "^lapcam: v9.9.9$" "$C/VERSION.txt" && grep -q "^image .*: v9.9.9$" "$C/VERSION.txt" || fail "VERSION.txt: $(cat "$C/VERSION.txt")"
 no_tmp "$C" stock
+
+echo "1b. programs from another build than the image are reported"
+echo v9.9.8 >"$REPO/dist/beacon.version"
+if ! sh "$M" "$C" 2>&1 | grep -q "different builds"; then fail "mixed versions not reported"; fi
+echo v9.9.9 >"$REPO/dist/beacon.version"
 
 echo "2. upgrade card (-u): no marker, no installer"
 C=$(card upgrade)

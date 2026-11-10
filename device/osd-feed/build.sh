@@ -7,5 +7,8 @@ set -e
 cd "$(dirname "$0")"
 OUT=${1:-../../dist/osd-feed}
 mkdir -p "$(dirname "$OUT")"
-CGO_ENABLED=0 GOOS=linux GOARCH=mipsle GOMIPS=softfloat go build -trimpath -ldflags="-s -w" -o "$OUT" .
+VERSION=$(sh ../../tools/version.sh) # the release version (docs/release.md)
+CGO_ENABLED=0 GOOS=linux GOARCH=mipsle GOMIPS=softfloat go build -trimpath -ldflags="-s -w -X main.version=$VERSION" -o "$OUT" .
+echo "$VERSION" >"$OUT.version"
 ls -l "$OUT"
+echo "version $VERSION"

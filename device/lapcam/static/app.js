@@ -232,6 +232,14 @@
       sd.className = st.recording.free_mb < 1024 ? "warn" : "";
     } else { sd.textContent = "no card"; sd.className = "bad"; }
     $("st-uptime").textContent = uptimeText(st.uptime_s);
+    const ver = $("st-version"), v = st.versions || {};
+    // the binary on the card and the firmware image are released together:
+    // different numbers mean one of them was updated without the other
+    let vt = v.lapcam || "-";
+    if (v.image) vt += v.mismatch ? ` · image ${v.image} (does not match: update the card or the firmware)` : ` · image ${v.image}`;
+    else vt += " · no lapcam image (installed by hand)";
+    if (v.thingino) vt += ` · Thingino ${v.thingino}`;
+    ver.textContent = vt; ver.className = v.mismatch ? "bad" : "";
     $("st-load").textContent = st.load1 || "-";
     $("st-mem").textContent = st.mem_free_mb;
     $("ap-banner").classList.toggle("hidden", !st.ap_mode);

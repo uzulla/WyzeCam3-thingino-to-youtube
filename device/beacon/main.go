@@ -46,8 +46,13 @@ func main() {
 	cmdPort := flag.Int("command-port", 47475, "UDP port to take commands on (0: take none)")
 	once := flag.Bool("once", false, "print each interface's message once to stdout and exit")
 	toSyslog := flag.Bool("syslog", false, "log to the syslog (logread) instead of stderr; the init script sets this")
+	showVersion := flag.Bool("version", false, "print the version and exit")
 	flag.Parse()
 	log.SetFlags(0)
+	if *showVersion {
+		fmt.Println("beacon " + version)
+		return
+	}
 	if *toSyslog {
 		if w, err := syslog.New(syslog.LOG_DAEMON|syslog.LOG_INFO, "beacon"); err == nil {
 			log.SetOutput(w)

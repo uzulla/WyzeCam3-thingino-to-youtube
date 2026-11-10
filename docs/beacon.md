@@ -67,6 +67,7 @@ UDP のポート 47474 に、**ネットワークインターフェースごと*
 | `host` | ホスト名 |
 | `iface` / `ip` / `mac` | 送ったインターフェース (普通は `wlan0`) と、その IP・MAC アドレス |
 | `build` | ファームの版 (`/etc/os-release` の `BUILD_ID`) |
+| `lapcam` | この beacon が属する lapcam の版 (`v2.0.0` など。[release.md](release.md))。手でビルドしたものは `dev` |
 | `uptime_s` | 起動してからの秒数 |
 | `stream.state` | 配信 (`youtube-relay`) の状態。下の表 |
 | `stream.elapsed_s` | 配信の ffmpeg が動き続けている秒数。ffmpeg が無ければ `null` |

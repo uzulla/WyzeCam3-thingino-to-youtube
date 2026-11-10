@@ -43,7 +43,7 @@ OSD はカメラのストリーマ `prudynt` 側で合成するため、OSD を�
 
 | カメラの `BUILD_ID` | Release |
 |---|---|
-| `ciao+da40db6` (2026-09-14) | [v1.1.0](https://github.com/uzulla/lapcam/releases/tag/v1.1.0) |
+| `ciao+da40db6` (2026-09-14) | [v2.0.0](https://github.com/uzulla/lapcam/releases/tag/v2.0.0) (イメージ + lapcam UI。SD カードから導入: [docs/sdcard.md](docs/sdcard.md)) / [v1.1.0](https://github.com/uzulla/lapcam/releases/tag/v1.1.0) (ffmpeg 単体) |
 | `ciao+c334a03` (2026-08-01) | [v1.0.0](https://github.com/uzulla/lapcam/releases/tag/v1.0.0) |
 | それ以外 | 下の「ビルド手順」で、その commit に合わせて自分でビルドする |
 
@@ -216,6 +216,8 @@ git 管理外です。必要な変更はすべて `patches/` に分離してあ�
 | [docs/speaker.md](docs/speaker.md) | スピーカー: `tell` の読み上げの仕組み (thingino.com の音声合成)、`play` のオプション、音声ファイルを先に作ってオフラインで鳴らす方法 |
 | [docs/troubleshooting.md](docs/troubleshooting.md) | 症状別の対処 |
 | [docs/build.md](docs/build.md) | ffmpeg / prudynt のビルド手順 |
+| [docs/sdcard.md](docs/sdcard.md) | SD カードから一式をインストールする自前の Thingino イメージ: しくみ、`firmware/` のスクリプト、カードの中身、注意点 |
+| [docs/release.md](docs/release.md) | バージョン (git のタグから 1 つの番号を全部に埋める) とリリースの手順 (`tools/release.sh`) |
 | [device/README.md](device/README.md) | `device/` のファイル一覧 |
 | [NOTES.md](NOTES.md) | 経緯、設計判断、ハマりどころ、実測値、未検証事項の記録 |
 
@@ -246,7 +248,7 @@ git 管理外です。必要な変更はすべて `patches/` に分離してあ�
 | Thingino | toolchain | uClibc-ng | mbedTLS | Release | 状態 |
 |---|---|---|---|---|---|
 | `ciao+c334a03` (2026-08-01) | GCC 15 | 1.0.57 | 3.6.6 | v1.0.0 | 実機で長時間配信まで確認済み |
-| `ciao+da40db6` (2026-09-14) | GCC 16.2 | 1.0.59 | 3.6.6 | v1.1.0 | 実機で長時間配信まで確認済み。`device/` のスクリプトはこのビルド専用 |
+| `ciao+da40db6` (2026-09-14) | GCC 16.2 | 1.0.59 | 3.6.6 | v1.1.0、v2.0.0 | 実機で長時間配信まで確認済み。`device/` のスクリプトと `firmware/` のイメージはこのビルド専用 |
 
 > **注意**: バイナリは実機ファームと同じ toolchain 世代・同じ mbedTLS soname に依存します。
 > 実機の `/etc/os-release` の `BUILD_ID` (`ciao+<commit>`) と `TOOLCHAIN_GCC`、および
