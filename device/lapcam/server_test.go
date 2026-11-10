@@ -306,3 +306,29 @@ func TestSignInLimitHoldsUnderParallelGuesses(t *testing.T) {
 		t.Fatalf("right password after the limit: %d, want 429", c)
 	}
 }
+
+func TestRelayConfigured(t *testing.T) {
+	sd := t.TempDir()
+	rl := newRelay(sd)
+	// no youtube-relay.json on the card (and none in /etc on the test machine)
+	if exists(relayEtcCfg) {
+		t.Skip("/etc/youtube-relay.json exists on this machine")
+	}
+	if rl.configured() {
+		t.Errorf("configured without a config file")
+	}
+	for _, body := range []string{`{}`, `{"stream_key": ""}`, `{"stream_key": "  "}`, `not json`} {
+		if err := os.WriteFile(filepath.Join(sd, relayCfgName), []byte(body), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if rl.configured() {
+			t.Errorf("configured with %q", body)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(sd, relayCfgName), []byte(`{"stream_key": "abcd-1234"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if !rl.configured() {
+		t.Errorf("not configured with a stream key")
+	}
+}
