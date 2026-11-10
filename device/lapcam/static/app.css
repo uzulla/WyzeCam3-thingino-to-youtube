@@ -20,6 +20,7 @@ button, input { font: inherit; }
 #login { display: flex; align-items: center; justify-content: center; }
 #login-form { width: min(360px, 92vw); display: flex; flex-direction: column; gap: 12px; }
 #login h1 { margin: 0; font-size: 28px; }
+#login h1 .logo { display: block; width: 100%; max-width: 320px; height: auto; margin: 0 auto 4px; }
 #login p { margin: 0; color: var(--muted); }
 input { width: 100%; padding: 12px 14px; border-radius: 10px; border: 1px solid var(--line); background: var(--panel); color: var(--text); }
 input:focus { outline: 2px solid var(--accent); border-color: transparent; }

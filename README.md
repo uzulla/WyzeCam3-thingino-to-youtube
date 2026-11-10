@@ -1,3 +1,5 @@
+<p align="center"><img src="docs/images/lapcam-logo.png" width="560" alt="lapcam"></p>
+
 # lapcam — Wyze Cam v3 (Thingino) をレース用のオンボードカメラに: YouTube Live 直接配信・SD 録画・OSD・スマホ UI
 
 > **English summary**: Build recipe for a minimal FFmpeg binary (2.5MB) that runs on a
