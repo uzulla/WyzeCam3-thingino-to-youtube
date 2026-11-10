@@ -23,7 +23,7 @@ for p in lapcam osd-feed beacon ffmpeg; do echo "$p" >"$REPO/dist/$p"; done
 echo installer >"$REPO/dist/installer/factory_t31_ZMC6tiIDQN"
 echo test >"$REPO/dist/installer/SOURCE"
 # the version files the build scripts leave next to their output
-for v in firmware/VERSION lapcam.version osd-feed.version beacon.version; do echo v9.9.9 >"$REPO/dist/$v"; done
+for v in firmware/VERSION lapcam.version osd-feed.version beacon.version ffmpeg.version; do echo v9.9.9 >"$REPO/dist/$v"; done
 echo "ciao+da40db6, test" >"$REPO/dist/firmware/BUILD"
 M=$REPO/firmware/make-sdcard.sh
 
@@ -48,11 +48,22 @@ sh "$M" "$C" >/dev/null
 grep -q "^lapcam: v9.9.9$" "$C/VERSION.txt" && grep -q "^firmware .*: v9.9.9$" "$C/VERSION.txt" || fail "VERSION.txt: $(cat "$C/VERSION.txt")"
 no_tmp "$C" stock
 
-echo "1b. programs from another build than the image are reported"
+echo "1b. programs from another build than the firmware are reported"
 echo v9.9.8 >"$REPO/dist/beacon.version"
 output=$(sh "$M" "$C" 2>&1) || fail "mixed versions: making the card failed: $output"
 printf '%s\n' "$output" | grep -q "different builds" || fail "mixed versions not reported"
+grep -q "^beacon: v9.9.8$" "$C/VERSION.txt" || fail "VERSION.txt does not list the odd one: $(cat "$C/VERSION.txt")"
 echo v9.9.9 >"$REPO/dist/beacon.version"
+echo v9.9.7 >"$REPO/dist/firmware/VERSION" # the odd one first
+output=$(sh "$M" "$C" 2>&1) || fail "mixed firmware: making the card failed"
+printf '%s\n' "$output" | grep -q "different builds" || fail "mixed firmware version not reported"
+echo v9.9.9 >"$REPO/dist/firmware/VERSION"
+echo "1c. a part without a version file is reported as unknown, not as another build"
+rm "$REPO/dist/osd-feed.version"
+output=$(sh "$M" "$C" 2>&1) || fail "unknown version: making the card failed"
+printf '%s\n' "$output" | grep -q "no version file" || fail "unknown version not reported: $output"
+grep -q "^osd-feed: unknown$" "$C/VERSION.txt" || fail "VERSION.txt unknown: $(cat "$C/VERSION.txt")"
+echo v9.9.9 >"$REPO/dist/osd-feed.version"
 
 echo "2. upgrade card (-u): no marker, no installer"
 C=$(card upgrade)
@@ -129,5 +140,21 @@ if sh "$M" -u -s "$C" >/dev/null 2>&1; then chmod 644 "$REPO/dist/osd-feed"; fai
 chmod 644 "$REPO/dist/osd-feed"
 [ -f "$C/autoupdate-full.done" ] || fail "marker missing after a failed run"
 no_tmp "$C" failcopy
+
+echo "12. a failed copy on a fresh -u card leaves the marker (the card must not flash)"
+C=$(card failcopy-u)
+chmod 000 "$REPO/dist/osd-feed"
+if sh "$M" -u "$C" >/dev/null 2>&1; then chmod 644 "$REPO/dist/osd-feed"; fail "copy of an unreadable program succeeded (-u)"; fi
+chmod 644 "$REPO/dist/osd-feed"
+[ -f "$C/autoupdate-full.done" ] || fail "-u: no marker after a failed run: the card would flash"
+no_tmp "$C" failcopy-u
+
+echo "13. a failed copy on a stock card leaves no installer (the card must not install)"
+C=$(card failcopy-stock)
+chmod 000 "$REPO/dist/osd-feed"
+if sh "$M" "$C" >/dev/null 2>&1; then chmod 644 "$REPO/dist/osd-feed"; fail "copy of an unreadable program succeeded (stock)"; fi
+chmod 644 "$REPO/dist/osd-feed"
+[ ! -f "$C/factory_t31_ZMC6tiIDQN" ] || fail "stock: the installer is on the card after a failed run"
+no_tmp "$C" failcopy-stock
 
 echo "all tests passed"

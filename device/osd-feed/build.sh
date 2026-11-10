@@ -10,5 +10,6 @@ mkdir -p "$(dirname "$OUT")"
 VERSION=$(sh ../../tools/version.sh) # the release version (docs/release.md)
 CGO_ENABLED=0 GOOS=linux GOARCH=mipsle GOMIPS=softfloat go build -trimpath -ldflags="-s -w -X main.version=$VERSION" -o "$OUT" .
 echo "$VERSION" >"$OUT.version"
+[ "$VERSION" != unknown ] || echo "WARNING: no git history here, the binary says 'unknown' (fine for a try, not for a release)" >&2
 ls -l "$OUT"
 echo "version $VERSION"

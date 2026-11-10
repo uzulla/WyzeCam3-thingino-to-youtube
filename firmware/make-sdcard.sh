@@ -220,12 +220,11 @@ keep_or_put() {
 # --- firmware ---------------------------------------------------------------
 
 if [ -n "$UPGRADE" ]; then
-	if [ -n "$SKIP_FLASH" ]; then
-		# the marker comes first: should anything below fail, the card still
-		# says "already applied" and the bootloader leaves the flash alone
-		printf '1' >"$CARD/autoupdate-full.done"
-		echo "  autoupdate-full.done (the image is NOT flashed at boot; remove the file to flash)"
-	fi
+	# the marker comes first, in both modes: should anything below fail, the
+	# card says "already applied" and the bootloader leaves the flash alone.
+	# Without -s it is removed at the very end, when everything is in place
+	printf '1' >"$CARD/autoupdate-full.done"
+	[ -z "$SKIP_FLASH" ] || echo "  autoupdate-full.done (the image is NOT flashed at boot; remove the file to flash)"
 	put "$IMAGE" autoupdate-full.bin
 	# leftovers of a stock install on this card: harmless to Thingino's
 	# bootloader (it ignores them) but confusing next to autoupdate-full.bin
@@ -261,8 +260,8 @@ else
 	# the installer renames itself to .old when it has run, and the image to
 	# .yay before flashing it: both would stop or confuse a new install
 	rm -f "$CARD/$FACTORY.old" "$CARD/autoupdate-full.bin" "$CARD/autoupdate-full.done" "$CARD/autoupdate-full.yay" "$CARD/uenv.done"
+	rm -f "$CARD/$FACTORY" # the installer itself goes on last (end of this script)
 	put "$IMAGE" "thingino-$CAMERA.bin"
-	put "$cache/$FACTORY" "$FACTORY"
 fi
 
 # --- programs ---------------------------------------------------------------
@@ -327,9 +326,10 @@ fi
 	echo
 	first=""
 	mixed=""
-	for p in firmware/VERSION lapcam.version osd-feed.version beacon.version; do
+	unknown=""
+	for p in firmware/VERSION lapcam.version osd-feed.version beacon.version ffmpeg.version; do
 		v=$(cat "$REPO/dist/$p" 2>/dev/null) || v=""
-		[ -n "$v" ] || v=unknown
+		[ -n "$v" ] || { v=unknown; unknown=1; }
 		case "$p" in
 		firmware/VERSION) n="firmware (thingino-$CAMERA.bin, Thingino $(cat "$REPO/dist/firmware/BUILD" 2>/dev/null || echo "build unknown"))" ;;
 		*) n=${p%.version} ;;
@@ -338,19 +338,24 @@ fi
 		[ -n "$first" ] || first=$v
 		[ "$v" = "$first" ] || mixed=1
 	done
-	echo "ffmpeg: built with the image"
 } >"$CARD/VERSION.txt.lapcam-tmp"
 mv -f "$CARD/VERSION.txt.lapcam-tmp" "$CARD/VERSION.txt"
-if [ -n "$mixed" ]; then
-	echo "  VERSION.txt - WARNING: the image and the programs are from different builds:" >&2
+if [ -n "$unknown" ]; then
+	echo "  VERSION.txt - WARNING: a part has no version file (built before versions existed, or copied in by hand):" >&2
+	sed 's/^/    /' "$CARD/VERSION.txt" >&2
+elif [ -n "$mixed" ]; then
+	echo "  VERSION.txt - WARNING: the firmware and the programs are from different builds:" >&2
 	sed 's/^/    /' "$CARD/VERSION.txt" >&2
 else
 	echo "  VERSION.txt ($first)"
 fi
 
-# only now, with everything in place, may the bootloader act on the card
+# only now, with everything in place, may the bootloader or the installer act
+# on the card
 if [ -n "$UPGRADE" ] && [ -z "$SKIP_FLASH" ]; then
 	rm -f "$CARD/autoupdate-full.done" "$CARD/uenv.done"
+elif [ -z "$UPGRADE" ]; then
+	put "$cache/$FACTORY" "$FACTORY"
 fi
 sync
 echo

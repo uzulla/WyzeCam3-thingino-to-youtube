@@ -138,9 +138,14 @@ fi
 mkdir -p "$REPO/dist/firmware"
 cp "$BIN" "$REPO/dist/firmware/thingino-$CAMERA.bin"
 echo "$build_id" >"$REPO/dist/firmware/BUILD"
-sh "$REPO/tools/version.sh" >"$REPO/dist/firmware/VERSION" # the same value prepare.sh wrote into the image
+# the version prepare.sh wrote into the image (not computed again: the tree
+# may have moved during a long build)
+sed -n 's/^VERSION=//p' "$OUT/data/overlay/etc/lapcam-release" >"$REPO/dist/firmware/VERSION"
+[ -s "$REPO/dist/firmware/VERSION" ] || { echo "no VERSION in $OUT/data/overlay/etc/lapcam-release" >&2; exit 1; }
 if [ -f "$FFMPEG" ]; then
 	cp "$FFMPEG" "$REPO/dist/ffmpeg"
+	# ffmpeg carries no version string of its own: the firmware's goes next to it
+	cp "$REPO/dist/firmware/VERSION" "$REPO/dist/ffmpeg.version"
 fi
 
 echo

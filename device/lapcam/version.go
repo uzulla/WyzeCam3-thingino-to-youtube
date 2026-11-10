@@ -12,12 +12,14 @@ package main
 import (
 	"os"
 	"strings"
+	"sync"
 )
 
 // version - set by build.sh; "dev" when built by hand
 var version = "dev"
 
-const (
+// (variables: tests point them at files of their own)
+var (
 	releaseFile   = "/etc/lapcam-release"
 	osReleaseFile = "/etc/os-release"
 )
@@ -38,6 +40,7 @@ func keyValues(path string) map[string]string {
 	}
 	for _, line := range strings.Split(string(b), "\n") {
 		k, v, ok := strings.Cut(strings.TrimSpace(line), "=")
+		k = strings.TrimSpace(k)
 		if !ok || k == "" || strings.HasPrefix(k, "#") {
 			continue
 		}
@@ -46,13 +49,27 @@ func keyValues(path string) map[string]string {
 	return m
 }
 
-func collectVersions() versions {
+// readVersions - the files are read once: they change only with a reflash,
+// which reboots the camera (so does a new binary on the card)
+func readVersions() versions {
 	v := versions{Lapcam: version}
 	v.Firmware = keyValues(releaseFile)["VERSION"]
 	if id := keyValues(osReleaseFile)["BUILD_ID"]; id != "" {
 		v.Thingino, _, _ = strings.Cut(id, ",") // "ciao+da40db6, 2026-11-10 ..." -> "ciao+da40db6"
 		v.Thingino = strings.TrimSpace(v.Thingino)
 	}
+	// exact: a card with a binary from another commit than the firmware is
+	// what this is for, even during development (docs/release.md says so)
 	v.Mismatch = v.Firmware != "" && v.Firmware != v.Lapcam
 	return v
+}
+
+var (
+	versionsOnce   sync.Once
+	versionsCached versions
+)
+
+func collectVersions() versions {
+	versionsOnce.Do(func() { versionsCached = readVersions() })
+	return versionsCached
 }

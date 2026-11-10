@@ -14,11 +14,14 @@ git のタグ `vX.Y.Z` だけ。`tools/version.sh` が `git describe` で出す:
 ```text
 v2.0.0              タグの上
 v2.0.0-3-g1a2b3c4   タグから 3 コミット進んだ (1a2b3c4)
-v2.0.0-dirty        未コミットの変更あり
-g1a2b3c4            届くタグが無い
+v2.0.0-dirty        未コミットの変更あり (追跡外の新しいファイルも含む)
+g1a2b3c4            届くタグが無い (タグを fetch していない clone も)
+unknown             git が無い (tarball で持ってきた木など。ビルドスクリプトが警告する)
 ```
 
 手で書く VERSION ファイルは置かない (更新忘れの元)。各ビルドスクリプトがこれを読んで埋め込む。
+v2.0.0 のタグを打つまでは、v1.1.0 (ffmpeg 単体時代の最後のタグ) から数えた `v1.1.0-170-g…` のような値になる。
+各プログラムは `-version` で `lapcam v2.0.0` のように名前と版を 1 行出す。
 
 ## どこに入るか
 
@@ -27,11 +30,16 @@ g1a2b3c4            届くタグが無い
 | イメージの `/etc/lapcam-release` | `firmware/prepare.sh` | `VERSION=`、`COMMIT=`、`BUILD_DATE=`、`THINGINO=ciao+da40db6`、`CAMERA=` |
 | mDNS `_lapcam._tcp` の TXT | 同上 | `version=` (lapcam の版)、`thingino=` |
 | `lapcam` / `osd-feed` / `beacon` | 各 `device/*/build.sh` (`-ldflags -X main.version=`) | `-version` で表示。lapcam は `/api/status` の `versions` (`lapcam`、`firmware`、`thingino`、`mismatch`) と、Camera タブの一番下に `lapcam vX · firmware vX` を出す。beacon の UDP には `lapcam` フィールド |
-| `dist/` | 各ビルドスクリプト | `dist/firmware/VERSION`、`dist/lapcam.version` など、成果物の横に |
+| `dist/` | 各ビルドスクリプト | `dist/firmware/VERSION` (イメージに実際に書いた値)、`dist/lapcam.version`、`dist/ffmpeg.version` (ffmpeg 自身は版を持たないので、一緒に作ったファームウェアの版) など、成果物の横に。機種は 1 つ (`wyze_cam3_t31x_gc2053_atbm6031`) を前提にしていて、別機種を同じ `dist/` で作ると VERSION / BUILD が最後の機種のものになる |
 | SD カードの `VERSION.txt` | `firmware/make-sdcard.sh` | カードに入れた各部品の版。食い違っていれば警告 |
 
-lapcam は自分の版と `/etc/lapcam-release` を比べ、違えば赤く出す (カードだけ更新した、ファームウェアだけ古い、
-が分かる)。`/etc/lapcam-release` が無い個体 (手で入れた構成) は「firmware not lapcam's」と出すだけ。
+lapcam は自分の版と `/etc/lapcam-release` を比べ、文字列が完全に一致しなければ赤く出す (カードだけ更新した、
+ファームウェアだけ古い、が分かる)。開発中にカードのバイナリだけ差し替えると当然赤になる。これは意図どおりで、
+「同じリリースの組ではない」という事実の表示。`/etc/lapcam-release` が無い個体 (手で入れた構成) は
+「firmware not lapcam's」と出すだけ。
+
+`device/set-camera-name.sh` が書く mDNS も同じ形 (`version=` は `/etc/lapcam-release` の版、無ければ `none`。`thingino=` を併記)。
+`tools/find-camera` はその `version=` を表示するので、手で入れた個体は `none` と見える。
 
 ## 番号の上げ方
 
@@ -54,4 +62,8 @@ git push origin v2.0.0                   # 先にタグを push (無いと gh re
 
 `tools/release.sh` が作るもの: `dist/release/lapcam-v2.0.0-sdcard/` (素の個体用のカード一式。FAT32 のカードに展開するだけ)、
 その zip、`lapcam-v2.0.0-firmware.bin` (イメージ単体。Thingino 済みの個体なら `autoupdate-full.bin` の名前で
-カードに置くか `sysupgrade` で)、`SHA256SUMS`。
+カードに置くか `sysupgrade` で)、`SHA256SUMS` (zip、イメージ、単体の 4 バイナリ)。確かめること: タグが HEAD にある、
+`tools/version.sh` がタグそのものを言う (別のタグや dirty でない)、`dist/` の版ファイルがタグと一致、バイナリ 3 本の中に
+タグの文字列が埋まっている (手でコピーした別物を弾く)。失敗したら作りかけの成果物は消す。
+
+テスト: `sh tools/version_test.sh` (一時リポジトリでタグ上・タグ後・dirty・追跡外・タグ無し・git 無しの出力)。

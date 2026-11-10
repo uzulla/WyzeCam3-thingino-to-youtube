@@ -29,6 +29,7 @@ type Message struct {
 	Host    string `json:"host"`
 	IP      string `json:"ip"`
 	Build   string `json:"build"`
+	Lapcam  string `json:"lapcam"` // the lapcam release (beacons before v2.0.0 have none)
 	UptimeS int64  `json:"uptime_s"`
 	Stream  struct {
 		State    string `json:"state"`
@@ -119,6 +120,9 @@ func format(now time.Time, m Message, from net.IP) string {
 	}
 	if m.Load1 != nil {
 		parts = append(parts, "load "+*m.Load1)
+	}
+	if m.Lapcam != "" {
+		parts = append(parts, "lapcam "+m.Lapcam)
 	}
 	if m.Build != "" {
 		parts = append(parts, m.Build)

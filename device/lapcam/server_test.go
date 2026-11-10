@@ -144,12 +144,16 @@ func TestGuardAndHeaders(t *testing.T) {
 	// GET /api/me is open and says "not signed in"
 	resp = jsonReq(t, "GET", srv.URL+"/api/me", "", nil, nil)
 	var me struct {
-		SignedIn bool `json:"signed_in"`
+		SignedIn bool   `json:"signed_in"`
+		Version  string `json:"version"`
 	}
 	_ = json.NewDecoder(resp.Body).Decode(&me)
 	resp.Body.Close()
 	if resp.StatusCode != http.StatusOK || me.SignedIn {
 		t.Errorf("/api/me before sign-in: %d %+v", resp.StatusCode, me)
+	}
+	if me.Version != version {
+		t.Errorf("/api/me version: %q, want %q (shown under the sign-in form)", me.Version, version)
 	}
 }
 

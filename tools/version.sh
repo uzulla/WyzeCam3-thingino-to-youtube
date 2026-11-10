@@ -8,7 +8,7 @@
 # card) carries this value: the build scripts call it (docs/release.md).
 set -e
 cd "$(dirname "$0")/.."
-v=$(git describe --tags --match 'v*' --abbrev=7 --dirty --always 2>/dev/null) || v=unknown
+v=$(git describe --tags --match 'v[0-9]*' --abbrev=7 --dirty --always 2>/dev/null) || v=unknown
 case "$v" in
 v*) ;;
 unknown) ;;
