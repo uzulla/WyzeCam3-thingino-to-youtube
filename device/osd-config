@@ -37,8 +37,10 @@
 # The newer of the two wins: this file and the Web UI's "Save configuration to
 # file" (Streamer pages: prudynt writes everything it runs with, flips
 # included, to /etc/prudynt.json). A note next to the file (.osd-config-image)
-# keeps the section, the checksum and mtime of /etc/prudynt.json and this
-# camera's MAC address from when the section was last sent. When the section
+# keeps the section, the checksum and mtime of /etc/prudynt.json, this
+# camera's MAC address and the firmware build from when the section was last
+# sent (a reflash brings a fresh /etc/prudynt.json that is no Web UI save:
+# with another build in the note, the section is sent again). When the section
 # is the same as then but /etc/prudynt.json was written since, the Web UI was
 # saved later: the section is not sent (once logged) and prudynt keeps what
 # /etc/prudynt.json says, until the section in the file is changed. The whole
@@ -157,6 +159,14 @@ host_id() {
 	cat /sys/class/net/*/address 2>/dev/null | grep -v '^00:00:00:00:00:00$' | sort | head -n 1
 }
 
+# This firmware build (BUILD_ID carries the build time), so that a new
+# /etc/prudynt.json that came with a reflash (docs/sdcard.md: the card
+# survives, /etc starts over) is not taken for a Web UI save: the section is
+# sent again on the new firmware
+fw_id() {
+	sed -n 's/^BUILD_ID=//p' /etc/os-release 2>/dev/null | tr -d '"' | head -n 1
+}
+
 # image_note <cfg> - where the note on the last sent "image" section lives
 image_note() {
 	echo "${1%/*}/.osd-config-image"
@@ -165,18 +175,19 @@ image_note() {
 # read_note <cfg> - note_file / note_etc / note_host from the note, read as
 # text (it is on the SD card: never run as shell code). Empty when absent.
 read_note() {
-	note_file="" note_etc="" note_host=""
+	note_file="" note_etc="" note_host="" note_fw=""
 	n=$(image_note "$1")
 	[ -f "$n" ] || return 0
 	note_file=$(sed -n 's/^file=//p' "$n" | head -n 1)
 	note_etc=$(sed -n 's/^etc=//p' "$n" | head -n 1)
 	note_host=$(sed -n 's/^host=//p' "$n" | head -n 1)
+	note_fw=$(sed -n 's/^fw=//p' "$n" | head -n 1)
 }
 
 # write_note <cfg> <file|sum> <etc>
 write_note() {
 	n=$(image_note "$1")
-	printf 'file=%s\netc=%s\nhost=%s\n' "$2" "$3" "$(host_id)" >"$n.tmp" && mv "$n.tmp" "$n" && sync
+	printf 'file=%s\netc=%s\nhost=%s\nfw=%s\n' "$2" "$3" "$(host_id)" "$(fw_id)" >"$n.tmp" && mv "$n.tmp" "$n" && sync
 }
 
 # note_etc_refresh <etc before> - after this script wrote /etc/prudynt.json
@@ -186,7 +197,7 @@ write_note() {
 note_etc_refresh() {
 	for c in $CONFIG_CANDIDATES; do
 		read_note "$c"
-		[ -n "$note_file" ] && [ "$note_etc" = "$1" ] && [ "$note_host" = "$(host_id)" ] || continue
+		[ -n "$note_file" ] && [ "$note_etc" = "$1" ] && [ "$note_host" = "$(host_id)" ] && [ "$note_fw" = "$(fw_id)" ] || continue
 		write_note "$c" "$note_file" "$(etc_sum)"
 	done
 }
@@ -201,7 +212,7 @@ apply_image() {
 	# Saved in the Web UI after the section was last sent: that wins
 	etc_now=$(etc_sum)
 	read_note "$1"
-	if [ "$note_file" = "$1|$sum" ] && [ "$note_etc" != "$etc_now" ] && [ "$note_host" = "$(host_id)" ]; then
+	if [ "$note_file" = "$1|$sum" ] && [ "$note_etc" != "$etc_now" ] && [ "$note_host" = "$(host_id)" ] && [ "$note_fw" = "$(fw_id)" ]; then
 		if [ "$image_complained" != "web:$want" ]; then
 			log "Not sending the image settings in $1: /etc/prudynt.json was saved (the Web UI's 'Save configuration to file') after they were last sent; prudynt keeps what it says. Change them in $1 to send them again"
 			image_complained="web:$want"

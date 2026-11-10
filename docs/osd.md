@@ -284,6 +284,8 @@ cat /tmp/osd-image.raw | ssh root@<camera-ip> 'cat > /run/prudynt/osd-image.tmp 
     ファイルの `image` と、`/etc/prudynt.json` 全体のチェックサムを残す。ファイルが同じままで `/etc/prudynt.json` が
     書き換わっていれば (チェックサムか更新時刻)、Web UI で保存されたと見なす (保存した値が前と同じでも)。
     `osd-config` 自身の書き込み (`osd_pool_size`) は数えない。`.osd-config-image` を消せば、次の起動でファイルの値を送る
+  - メモにはファームウェアの版 (`BUILD_ID`) も入る。ファームウェアを焼き直すと `/etc/prudynt.json` は新品になるが、それは
+    Web UI の保存ではないので、メモの版と今の版が違えばファイルの値を送る (SD からの焼き直し: [sdcard.md](sdcard.md))
   - `.osd-config-image` が無い時 (この機能を入れた直後、新しい SD カード) と、別のカメラで書かれたもの (MAC アドレスで
     見分ける) の時は、ファイルの値を送る。この機能を入れる前に Web UI で保存した反転は、入れた後の最初の起動で
     1 回だけファイルの値に戻る (もう一度 Web UI で保存すれば、以後はそちらが残る)
