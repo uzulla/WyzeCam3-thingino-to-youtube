@@ -9,7 +9,8 @@
 #
 # Runs firmware/prepare.sh (patches, user/<camera>/), then Thingino's own
 # incremental build and packing inside the official builder container (the
-# first time, the whole firmware is compiled: an hour or more on 4 cores),
+# first time, the whole firmware is compiled: about 25 minutes on 4 cores with
+# the download cache),
 # then ffmpeg (not part of the image: it goes on the SD card). Results:
 #   dist/firmware/thingino-<camera>.bin   the 16 MB image (whole flash)
 #   dist/firmware/BUILD                   its BUILD_ID (branch+hash, date)
@@ -34,6 +35,10 @@ TREE=$(cd "$TREE" && pwd)
 
 if ! command -v docker >/dev/null 2>&1; then
 	echo "docker is needed (docs/build.md)" >&2
+	exit 1
+fi
+if ! docker info >/dev/null 2>&1; then
+	echo "docker is installed but not running (or not usable by this user)" >&2
 	exit 1
 fi
 if ! docker ps -a --format '{{.Names}}' | grep -qx "$DL_CACHE"; then
@@ -62,7 +67,16 @@ in_tree() {
 # checkout). The rootfs carries BUILD_ID = branch+hash, so a moved tree means a
 # new output directory and a full build.
 BRANCH=$(git -C "$TREE" rev-parse --abbrev-ref HEAD)
-OUT=$(ls -d "$TREE/output/$BRANCH/$CAMERA"-* 2>/dev/null | head -n 1)
+OUT=""
+for d in "$TREE/output/$BRANCH/$CAMERA"-*; do
+	[ -d "$d" ] || continue
+	if [ -n "$OUT" ]; then
+		echo "more than one output directory for $CAMERA under $TREE/output/$BRANCH (different kernel or libc builds?): remove the stale one" >&2
+		ls -d "$TREE/output/$BRANCH/$CAMERA"-* >&2
+		exit 1
+	fi
+	OUT=$d
+done
 if [ -n "$OUT" ]; then
 	# the data partition is built from user/<camera>/overlay, the full image
 	# from the partitions: make's timestamps do not see a changed overlay file,
@@ -97,7 +111,8 @@ else
 	in_tree br-thingino-ffmpeg
 fi
 
-OUT=$(ls -d "$TREE/output/$BRANCH/$CAMERA"-* | head -n 1)
+OUT=$(ls -d "$TREE/output/$BRANCH/$CAMERA"-* 2>/dev/null | head -n 1)
+[ -n "$OUT" ] || { echo "no output directory for $CAMERA under $TREE/output/$BRANCH" >&2; exit 1; }
 BIN=$OUT/images/thingino-$CAMERA.bin
 if [ ! -f "$BIN" ]; then
 	echo "no image was produced: $BIN (see the make output above)" >&2
@@ -109,10 +124,20 @@ if [ "$size" != 16777216 ]; then
 	exit 1
 fi
 
+build_id=$(sed -n 's/^BUILD_ID="\(.*\)"/\1/p' "$OUT/target/etc/os-release")
+case "$build_id" in
+"ciao+da40db6, "*) ;;
+"") echo "no BUILD_ID in $OUT/target/etc/os-release" >&2; exit 1 ;;
+*) echo "WARNING: BUILD_ID is '$build_id', not ciao+da40db6: device/common.sh will refuse this image (see prepare.sh)" >&2 ;;
+esac
+FFMPEG=$OUT/per-package/thingino-ffmpeg/target/usr/bin/ffmpeg
+if [ ! -f "$FFMPEG" ] && [ "$PACK_ONLY" != 1 ]; then
+	echo "ffmpeg was not built: $FFMPEG" >&2
+	exit 1
+fi
 mkdir -p "$REPO/dist/firmware"
 cp "$BIN" "$REPO/dist/firmware/thingino-$CAMERA.bin"
-sed -n 's/^BUILD_ID="\(.*\)"/\1/p' "$OUT/target/etc/os-release" >"$REPO/dist/firmware/BUILD"
-FFMPEG=$OUT/per-package/thingino-ffmpeg/target/usr/bin/ffmpeg
+echo "$build_id" >"$REPO/dist/firmware/BUILD"
 if [ -f "$FFMPEG" ]; then
 	cp "$FFMPEG" "$REPO/dist/ffmpeg"
 fi

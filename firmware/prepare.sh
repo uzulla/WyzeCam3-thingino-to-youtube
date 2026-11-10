@@ -37,7 +37,7 @@
 #     overlay/ is wiped and regenerated. The other files are overwritten; a
 #     local.mk or opt/ of your own in user/<camera>/ is left alone.
 #
-# Not in the image (the flash is 16 MB: the rootfs has about 300 KB to spare,
+# Not in the image (the flash is 16 MB: the rootfs has about 50 KB to spare,
 # the data partition 8 MB): the Go programs (lapcam 9 MB, osd-feed 9.5 MB,
 # beacon 4 MB) and ffmpeg (2.5 MB) stay on the SD card, where the init scripts
 # look for them anyway (firmware/make-sdcard.sh puts them there).
@@ -46,6 +46,7 @@
 # default JST-9) in the environment; both must change together.
 
 set -e
+umask 022 # the overlay's modes end up on the camera
 
 TREE=$1
 CAMERA=${2:-wyze_cam3_t31x_gc2053_atbm6031}
@@ -60,10 +61,14 @@ if [ -z "$TREE" ] || [ ! -f "$TREE/Makefile" ] || [ ! -d "$TREE/package/prudynt-
 	echo "(the directory must be a Thingino source tree; docs/build.md tells how to get one)" >&2
 	exit 1
 fi
+case "$CAMERA" in
+"" | *[!A-Za-z0-9_-]*) echo "not a camera name: '$CAMERA'" >&2; exit 1 ;;
+esac
 if [ ! -d "$TREE/configs/cameras/$CAMERA" ]; then
 	echo "no such camera in the tree: configs/cameras/$CAMERA" >&2
 	exit 1
 fi
+EXPECT_HASH=da40db6 # the commit the camera's firmware (BUILD_ID ciao+da40db6) was built from
 TREE=$(cd "$TREE" && pwd)
 
 # --- 1. patches --------------------------------------------------------------
@@ -88,22 +93,26 @@ apply_diff() {
 	fi
 }
 
-# put_patch <diff> <package dir/name.patch>: Buildroot applies every *.patch in
-# a package's directory to that package's source, in name order.
+# put_patch <diff> <package dir/name.patch> <package>: Buildroot applies every
+# *.patch in a package's directory to that package's source, in name order,
+# when it extracts the package: a new or changed patch needs the package
+# rebuilt from scratch (noted for build.sh like apply_diff does).
 put_patch() {
 	if [ -f "$TREE/$2" ] && cmp -s "$1" "$TREE/$2"; then
 		echo "  in place: $2"
 	else
 		cp "$1" "$TREE/$2"
-		echo "  copied: $2"
+		echo "  copied: $2 (rebuilds $3)"
+		mkdir -p "$TREE/user/$CAMERA"
+		echo "$3" >>"$TREE/user/$CAMERA/.rebuild"
 	fi
 }
 
 echo "Patches in $TREE"
 apply_diff "$REPO/patches/thingino-ffmpeg-rtmps.diff" thingino-ffmpeg
-put_patch "$REPO/patches/thingino-ffmpeg-rtmp-chunk-size.diff" package/thingino-ffmpeg/0002-rtmp-chunk-size.patch
-put_patch "$REPO/patches/prudynt-osd-textfile.diff" package/prudynt-t/0001-osd-textfile.patch
-put_patch "$REPO/patches/prudynt-msgchannel-warning.diff" package/prudynt-t/0002-msgchannel-warning.patch
+put_patch "$REPO/patches/thingino-ffmpeg-rtmp-chunk-size.diff" package/thingino-ffmpeg/0002-rtmp-chunk-size.patch thingino-ffmpeg
+put_patch "$REPO/patches/prudynt-osd-textfile.diff" package/prudynt-t/0001-osd-textfile.patch prudynt-t
+put_patch "$REPO/patches/prudynt-msgchannel-warning.diff" package/prudynt-t/0002-msgchannel-warning.patch prudynt-t
 apply_diff "$REPO/patches/thingino-agent-adapter-record-args.diff" prudynt-t
 # the setup portal's access point (a camera without Wi-Fi settings opens one
 # at boot) is named after the project: lapcam-<4 hex of the MAC> instead of
@@ -115,7 +124,17 @@ apply_diff "$REPO/patches/thingino-wifi-portal-ssid.diff" wifi
 # "HEAD+da40db6", so the branch has to be named ciao.
 branch=$(git -C "$TREE" rev-parse --abbrev-ref HEAD 2>/dev/null || echo "")
 hash=$(git -C "$TREE" rev-parse --short=7 HEAD 2>/dev/null || echo unknown)
+if [ "$hash" != "$EXPECT_HASH" ]; then
+	echo "WARNING: the tree is at $hash, not $EXPECT_HASH: BUILD_ID will differ from the camera's, device/common.sh will refuse the image, and the patches may not fit" >&2
+fi
 if [ "$branch" != "ciao" ]; then
+	# only a 'ciao' that does not exist yet, or already points here, is
+	# touched: never move somebody's branch
+	if git -C "$TREE" rev-parse -q --verify refs/heads/ciao >/dev/null 2>&1 &&
+		[ "$(git -C "$TREE" rev-parse refs/heads/ciao)" != "$(git -C "$TREE" rev-parse HEAD)" ]; then
+		echo "the tree is on '$branch' and a branch 'ciao' exists at another commit; the build needs HEAD on a branch named ciao (BUILD_ID is branch+hash). Move or delete that branch first" >&2
+		exit 1
+	fi
 	echo "  the tree is on '$branch' (BUILD_ID would be $branch+$hash): putting a branch 'ciao' on this commit"
 	git -C "$TREE" checkout -q -B ciao
 	branch=ciao
@@ -141,7 +160,10 @@ cat >"$U/local.fragment" <<'EOF'
 BR2_PACKAGE_PRUDYNT_T_OSD_FONT_8X8=y
 EOF
 
-cat >"$U/prudynt.json" <<'EOF'
+# prudynt.json is merged into /etc/prudynt.json when the prudynt-t package is
+# installed, so a change here needs that package rebuilt (thingino.json is
+# merged at the end of every build, and the overlay is packed every time)
+cat >"$U/prudynt.json.new" <<'EOF'
 {
   "general": {
     "osd_pool_size": 2048
@@ -164,6 +186,15 @@ cat >"$U/prudynt.json" <<'EOF'
   }
 }
 EOF
+if [ -f "$U/prudynt.json" ] && cmp -s "$U/prudynt.json" "$U/prudynt.json.new"; then
+	rm -f "$U/prudynt.json.new"
+else
+	if [ -f "$U/prudynt.json" ]; then
+		echo "  prudynt.json changed (rebuilds prudynt-t)"
+		echo prudynt-t >>"$U/.rebuild"
+	fi
+	mv -f "$U/prudynt.json.new" "$U/prudynt.json"
+fi
 
 cat >"$U/thingino.json" <<'EOF'
 {
@@ -197,7 +228,7 @@ awk '
 /^KEY_ENTER TIMED 5 \/sbin\/wlan reset;reboot$/ { print "#" $0 "   # replaced by wifi-ap"; print "KEY_ENTER TIMED 5 /usr/sbin/wifi-ap"; next }
 { print }' "$src" >"$dst"
 printf '\n# rec-button: double click starts/stops SD recording, single click tells the IP\nKEY_ENTER PRESS 0 /usr/sbin/rec-button press\nKEY_ENTER RELEASE 0 /usr/sbin/rec-button release\n' >>"$dst"
-if ! grep -q '^#KEY_ENTER TIMED 0.1 tell %ip' "$dst" || ! grep -q '^KEY_ENTER TIMED 5 /usr/sbin/wifi-ap$' "$dst" || grep -q '^KEY_ENTER TIMED 5 /sbin/wlan' "$dst"; then
+if ! grep -q '^#KEY_ENTER TIMED 0\.1 tell %ip' "$dst" || ! grep -q '^KEY_ENTER TIMED 5 /usr/sbin/wifi-ap$' "$dst" || grep -q '^KEY_ENTER TIMED 5 /sbin/wlan' "$dst"; then
 	echo "Thingino's thingino-button.conf no longer has the lines this script edits: $src" >&2
 	exit 1
 fi
@@ -207,6 +238,10 @@ chmod 644 "$dst"
 # custom name) and /etc/hosts (the tree's, with the 127.0.1.1 line renamed)
 echo "$NAME" >"$O/etc/hostname"
 awk -v n="$NAME" '$1 == "127.0.1.1" { print "127.0.1.1\t" n; next } { print }' "$TREE/overlay/etc/hosts" >"$O/etc/hosts"
+if ! grep -q "^127.0.1.1[[:space:]]$NAME\$" "$O/etc/hosts"; then
+	echo "Thingino's overlay/etc/hosts has no 127.0.1.1 line to rename: $TREE/overlay/etc/hosts" >&2
+	exit 1
+fi
 chmod 644 "$O/etc/hostname" "$O/etc/hosts"
 
 # mDNS: _lapcam._tcp next to Thingino's own services (tools/find-camera looks for it)

@@ -1,0 +1,123 @@
+#!/bin/sh
+# make-sdcard_test.sh - exercise firmware/make-sdcard.sh without a card, a
+# network or a build: a throw-away copy of the repository with a fake dist/
+# (and a fake installer cache), writing into temporary directories.
+#   sh firmware/make-sdcard_test.sh
+# Checks the option combinations (-u, -u -s, -w several, -k, -c), that
+# settings on a card are kept, that a bad option changes nothing on the card,
+# that no *.lapcam-tmp is left behind, and the flash markers. Exits 1 on the
+# first failure.
+
+set -e
+
+HERE=$(cd "$(dirname "$0")" && pwd)
+T=$(mktemp -d)
+trap 'rm -rf "$T"' EXIT
+REPO=$T/repo
+mkdir -p "$REPO/firmware/sdcard" "$REPO/dist/firmware" "$REPO/dist/installer"
+cp "$HERE/make-sdcard.sh" "$HERE/fatextract.py" "$REPO/firmware/"
+cp "$HERE/sdcard/"* "$REPO/firmware/sdcard/"
+# a fake image of the right size, fake programs, a fake (cached) installer
+head -c 16777216 /dev/zero >"$REPO/dist/firmware/thingino-wyze_cam3_t31x_gc2053_atbm6031.bin"
+for p in lapcam osd-feed beacon ffmpeg; do echo "$p" >"$REPO/dist/$p"; done
+echo installer >"$REPO/dist/installer/factory_t31_ZMC6tiIDQN"
+echo test >"$REPO/dist/installer/SOURCE"
+M=$REPO/firmware/make-sdcard.sh
+
+fail() {
+	echo "FAIL: $*" >&2
+	exit 1
+}
+# card <name>: a fresh "card" directory (with a space in its path, like /Volumes/NO NAME)
+card() {
+	d="$T/cards/$1 card"
+	mkdir -p "$d"
+	echo "$d"
+}
+listing() { (cd "$1" && ls -A | LC_ALL=C sort | tr '\n' ' '); }
+no_tmp() { [ -z "$(ls "$1" | grep 'lapcam-tmp$')" ] || fail "$2: *.lapcam-tmp left on the card"; }
+
+echo "1. stock install card"
+C=$(card stock)
+sh "$M" "$C" >/dev/null
+[ "$(listing "$C")" = "README.txt beacon factory_t31_ZMC6tiIDQN ffmpeg lapcam lapcam.args osd-feed osd-feed.json prudynt-osd.json thingino-wyze_cam3_t31x_gc2053_atbm6031.bin " ] || fail "stock listing: $(listing "$C")"
+[ "$(cat "$C/lapcam.args")" = "-listen :80" ] || fail "lapcam.args"
+no_tmp "$C" stock
+
+echo "2. upgrade card (-u): no marker, no installer"
+C=$(card upgrade)
+cp "$HERE/sdcard/README.txt" "$C/" # a card made earlier (the script accepts it)...
+printf '1' >"$C/autoupdate-full.done" # ...with the marker left from that use: must go
+sh "$M" -u "$C" >/dev/null
+[ -f "$C/autoupdate-full.bin" ] || fail "-u: no autoupdate-full.bin"
+[ ! -f "$C/autoupdate-full.done" ] || fail "-u: .done still there"
+[ ! -f "$C/factory_t31_ZMC6tiIDQN" ] || fail "-u: installer on the card"
+no_tmp "$C" upgrade
+
+echo "3. upgrade card without flashing (-u -s): marker present"
+C=$(card skip)
+sh "$M" -u -s "$C" >/dev/null
+[ -f "$C/autoupdate-full.bin" ] && [ "$(cat "$C/autoupdate-full.done")" = 1 ] || fail "-u -s: marker"
+no_tmp "$C" skip
+
+echo "4. -s without -u is refused"
+C=$(card s-alone)
+if sh "$M" -s "$C" >/dev/null 2>&1; then fail "-s alone accepted"; fi
+[ -z "$(ls -A "$C")" ] || fail "-s alone wrote something"
+
+echo "5. -w twice and -k: files and their content"
+C=$(card wifi)
+sh "$M" -u -w "Home Net" "home-pass-1" -w "Pocket" "pocket-pass" -k "abcd-1234-efgh" "$C" >/dev/null
+[ "$(grep -c '^network={' "$C/wpa_supplicant.conf")" = 2 ] || fail "two networks"
+grep -q 'ssid="Home Net"' "$C/wpa_supplicant.conf" || fail "ssid with a space"
+[ "$(sed -n 's/.*priority=\([0-9]*\).*/\1/p' "$C/wpa_supplicant.conf" | tr '\n' ' ')" = "10 9 " ] || fail "priorities"
+grep -q '"stream_key": "abcd-1234-efgh"' "$C/youtube-relay.json" || fail "stream key"
+no_tmp "$C" wifi
+
+echo "6. a second run keeps the settings and replaces the programs"
+echo "my args" >"$C/lapcam.args"
+echo '{"mine":1}' >"$C/prudynt-osd.json"
+echo newer >"$REPO/dist/lapcam"
+before=$(cat "$C/wpa_supplicant.conf" "$C/youtube-relay.json" | cksum)
+sh "$M" -u "$C" >/dev/null
+[ "$(cat "$C/lapcam.args")" = "my args" ] || fail "lapcam.args not kept"
+[ "$(cat "$C/prudynt-osd.json")" = '{"mine":1}' ] || fail "prudynt-osd.json not kept"
+[ "$(cat "$C/wpa_supplicant.conf" "$C/youtube-relay.json" | cksum)" = "$before" ] || fail "wifi/key not kept"
+[ "$(cat "$C/lapcam")" = newer ] || fail "program not replaced"
+
+echo "7. bad options change nothing on a card"
+snapshot=$(cd "$C" && ls -A | LC_ALL=C sort | xargs -I{} sh -c 'cksum "{}"' | cksum)
+tabpass=$(printf 'tab\there1')
+for args in "-w ab short" "-w ab 'p\"q12345678'" "-w ab \"\$tabpass\"" "-k 'bad key!'" "-k -u" "-c ../x" "-w '' 12345678"; do
+	if eval sh "$M" -u $args "\"$C\"" >/dev/null 2>&1; then fail "accepted: $args"; fi
+	[ "$(cd "$C" && ls -A | LC_ALL=C sort | xargs -I{} sh -c 'cksum "{}"' | cksum)" = "$snapshot" ] || fail "card changed by: $args"
+done
+no_tmp "$C" bad-options
+
+echo "8. a non-empty directory that is not a card is refused"
+D=$T/notacard
+mkdir -p "$D"
+echo precious >"$D/notes.txt"
+if sh "$M" -u "$D" >/dev/null 2>&1; then fail "wrote into a random directory"; fi
+[ "$(ls "$D")" = "notes.txt" ] || fail "random directory changed"
+
+echo "9. missing dist/ files are reported"
+mv "$REPO/dist/beacon" "$REPO/dist/beacon.away"
+C=$(card nodist)
+if sh "$M" -u "$C" >/dev/null 2>&1; then fail "ran without dist/beacon"; fi
+[ -z "$(ls -A "$C")" ] || fail "wrote without dist/beacon"
+mv "$REPO/dist/beacon.away" "$REPO/dist/beacon"
+
+echo "10. a wrong image size is refused"
+head -c 100 /dev/zero >"$REPO/dist/firmware/thingino-other_cam.bin"
+if sh "$M" -u -c other_cam "$C" >/dev/null 2>&1; then fail "accepted a 100-byte image"; fi
+
+echo "11. a failed copy leaves no half file and, with -u -s, keeps the marker"
+C=$(card failcopy)
+chmod 000 "$REPO/dist/osd-feed"
+if sh "$M" -u -s "$C" >/dev/null 2>&1; then chmod 644 "$REPO/dist/osd-feed"; fail "copy of an unreadable program succeeded"; fi
+chmod 644 "$REPO/dist/osd-feed"
+[ -f "$C/autoupdate-full.done" ] || fail "marker missing after a failed run"
+no_tmp "$C" failcopy
+
+echo "all tests passed"

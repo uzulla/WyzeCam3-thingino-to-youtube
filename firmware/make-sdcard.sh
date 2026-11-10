@@ -2,15 +2,20 @@
 # make-sdcard.sh - put everything lapcam needs on an SD card (docs/sdcard.md).
 # Run on the PC, with the card mounted (FAT32):
 #   firmware/make-sdcard.sh [options] <card dir>
-#     <card dir>      the mounted card (macOS: /Volumes/<name>; Linux: /media/...)
-#                     or any directory, to look at the result first
+#     <card dir>      the mounted card (macOS: /Volumes/<name>; Linux: /media/...).
+#                     A plain directory is accepted when it is empty or holds a
+#                     card made earlier by this script (to look at the result)
 #   -u               for a camera that already runs Thingino (or lapcam): the
 #                    image goes on the card as autoupdate-full.bin, which
 #                    Thingino's bootloader flashes at the next power-on. Without
 #                    -u the card is for a stock Wyze Cam v3: the installer of
-#                    thingino-installers (factory_t31_ZMC6tiIDQN, downloaded and
-#                    cached in dist/installer/) plus the image under the name it
-#                    expects, thingino-<camera>.bin
+#                    thingino-installers (factory_t31_ZMC6tiIDQN, downloaded,
+#                    checked and cached in dist/installer/) plus the image under
+#                    the name it expects, thingino-<camera>.bin
+#     -s             with -u: the camera already runs this image (e.g. the card
+#                    is being remade); autoupdate-full.done is written too, so
+#                    the bootloader does not flash it again. The card may then
+#                    be exFAT as well (the bootloader never reads it)
 #     -w SSID PASS   a Wi-Fi network for wpa_supplicant.conf (repeat for more;
 #                    the first one is preferred). Without -w an existing file on
 #                    the card is kept, else none is written and the camera opens
@@ -18,38 +23,66 @@
 #     -k STREAMKEY   write youtube-relay.json with this YouTube stream key
 #                    (else lapcam's Stream tab does it later)
 #     -c CAMERA      Thingino camera name (default wyze_cam3_t31x_gc2053_atbm6031)
-#     -s             with -u: the camera already runs this image (e.g. the card
-#                    is being remade); autoupdate-full.done is written too, so
-#                    the bootloader does not flash it again
 #
 # Needs, in dist/: firmware/thingino-<camera>.bin (firmware/build.sh), lapcam,
 # osd-feed, beacon (device/*/build.sh) and ffmpeg (firmware/build.sh). Programs
 # and the image are always (re)written; settings already on the card
 # (wpa_supplicant.conf, youtube-relay.json, prudynt-osd.json, osd-feed.json,
 # lapcam.args, logo.png) are kept unless an option says otherwise, so the
-# script also updates a card that is in use. Markers that would stop the
-# bootloader or the installer from acting again (autoupdate-full.done,
-# factory_t31_ZMC6tiIDQN.old) are removed.
+# script also updates a card that is in use. All options are checked before
+# the card is touched, and the markers that make the bootloader or the
+# installer skip the card (autoupdate-full.done, factory_t31_ZMC6tiIDQN.old)
+# are handled last, so a card left by a failed run never flashes by mistake.
 #
 # The card must be FAT32 (the stock bootloader and the installer read nothing
 # else; recordings are short clips, so the 4 GB file limit does not matter).
 # macOS: diskutil eraseDisk FAT32 LAPCAM MBRFormat /dev/diskN
 
 set -e
+umask 022
 
 HERE=$(cd "$(dirname "$0")" && pwd)
 REPO=$(cd "$HERE/.." && pwd)
 CAMERA=wyze_cam3_t31x_gc2053_atbm6031
 UPGRADE=
 SKIP_FLASH=
-WIFI=
+WIFI=""
+NWIFI=0
 KEY=
-INSTALLER_URL=https://raw.githubusercontent.com/wltechblog/thingino-installers/main/wyze-cam-3/wyze-cam-3-sd.zip
+# thingino-installers, pinned to the commit of the SD image read for
+# docs/sdcard.md (2026-08-14); the file taken out of it is checked by hash.
+# To follow a newer installer: change both, after reading its init script.
+INSTALLER_URL=https://raw.githubusercontent.com/wltechblog/thingino-installers/4d8530f6abc24ca8d1d12a0323cc36f02fee2e1c/wyze-cam-3/wyze-cam-3-sd.zip
 FACTORY=factory_t31_ZMC6tiIDQN
+FACTORY_SHA256=6562813c17ac44dabf1edd250fd7fd3b702e98eafeb486405225ed59f87dec6e
 
 usage() {
 	sed -n '2,/^$/p' "$0" | sed 's/^# \{0,1\}//' >&2
-	exit 1
+	exit "${1:-1}"
+}
+
+nl=$(printf '\nx')
+nl=${nl%x}
+tab=$(printf '\t')
+
+# check_wifi <ssid> <pass>: what the generated wpa_supplicant.conf can carry
+check_wifi() {
+	case "$1$2" in
+	*'"'* | *\\* | *"$nl"* | *"$tab"*)
+		echo "quotes, backslashes, tabs and line breaks are not supported in -w values" >&2
+		exit 1
+		;;
+	esac
+	[ -n "$1" ] || { echo "-w: the SSID is empty" >&2; exit 1; }
+	if [ "$(printf '%s' "$1" | LC_ALL=C wc -c)" -gt 32 ]; then
+		echo "-w: an SSID has 32 bytes at most: '$1'" >&2
+		exit 1
+	fi
+	n=$(printf '%s' "$2" | LC_ALL=C wc -c)
+	if [ "$n" -lt 8 ] || [ "$n" -gt 63 ]; then
+		echo "-w: the Wi-Fi password of '$1' must be 8 to 63 characters (WPA2)" >&2
+		exit 1
+	fi
 }
 
 while [ $# -gt 0 ]; do
@@ -58,13 +91,20 @@ while [ $# -gt 0 ]; do
 	-s) SKIP_FLASH=1 ;;
 	-w)
 		[ $# -ge 3 ] || usage
-		WIFI="$WIFI
-$2	$3"
+		check_wifi "$2" "$3"
+		WIFI="$WIFI$2$tab$3$nl"
+		NWIFI=$((NWIFI + 1))
 		shift 2
 		;;
 	-k)
 		[ $# -ge 2 ] || usage
 		KEY=$2
+		case "$KEY" in
+		"" | *[!A-Za-z0-9_-]* | -*)
+			echo "a YouTube stream key has only letters, digits, - and _: '$KEY'" >&2
+			exit 1
+			;;
+		esac
 		shift
 		;;
 	-c)
@@ -72,7 +112,7 @@ $2	$3"
 		CAMERA=$2
 		shift
 		;;
-	-h | --help) usage ;;
+	-h | --help) usage 0 ;;
 	-*) usage ;;
 	*) break ;;
 	esac
@@ -80,11 +120,13 @@ $2	$3"
 done
 [ $# -eq 1 ] || usage
 CARD=$1
+case "$CAMERA" in
+"" | *[!A-Za-z0-9_-]*) echo "not a camera name: '$CAMERA'" >&2; exit 1 ;;
+esac
 if [ -n "$SKIP_FLASH" ] && [ -z "$UPGRADE" ]; then
 	echo "-s goes with -u" >&2
 	exit 1
 fi
-
 if [ ! -d "$CARD" ]; then
 	echo "not a directory: $CARD" >&2
 	exit 1
@@ -107,17 +149,33 @@ if [ "$(wc -c <"$IMAGE" | tr -d ' ')" != 16777216 ]; then
 	echo "not a 16 MB flash image: $IMAGE" >&2
 	exit 1
 fi
+if [ -z "$UPGRADE" ]; then
+	for t in curl unzip python3; do
+		if ! command -v $t >/dev/null 2>&1; then
+			echo "$t is needed to take the installer out of thingino-installers' image" >&2
+			exit 1
+		fi
+	done
+fi
 
 # the card's filesystem, when the directory is a mount point
 fstype=""
 if command -v diskutil >/dev/null 2>&1; then
-	fstype=$(diskutil info "$CARD" 2>/dev/null | sed -n 's/.*File System Personality: *//p')
+	fstype=$(diskutil info "$CARD" 2>/dev/null | sed -n 's/.*File System Personality: *//p') || true
 elif command -v findmnt >/dev/null 2>&1; then
-	fstype=$(findmnt -n -o FSTYPE --target "$CARD" 2>/dev/null)
+	fstype=$(findmnt -n -o FSTYPE --target "$CARD" 2>/dev/null) || true
 	[ "$(findmnt -n -o TARGET --target "$CARD" 2>/dev/null)" = "$(cd "$CARD" && pwd -P)" ] || fstype=""
 fi
 case "$fstype" in
-"") echo "Writing to $CARD (not a mounted card, or its filesystem is unknown here: it must end up on a FAT32 card)" ;;
+"")
+	# a plain directory: only an empty one, or a card this script made
+	# (anything else could be some directory named by mistake)
+	if [ -n "$(ls -A "$CARD" | grep -v '^\.' | head -n 1)" ] && ! grep -q '^lapcam SD card' "$CARD/README.txt" 2>/dev/null; then
+		echo "$CARD is not a mounted card and not empty: refusing to write into it" >&2
+		exit 1
+	fi
+	echo "Writing to $CARD (a directory, not a mounted card: copy the result to a FAT32 card)"
+	;;
 *FAT32* | vfat | msdos) echo "Writing to $CARD ($fstype)" ;;
 *)
 	if [ -n "$SKIP_FLASH" ]; then
@@ -132,10 +190,22 @@ case "$fstype" in
 	;;
 esac
 
+# half-written files never stay behind (the card may be in use)
+tmpdir=""
+cleanup() {
+	rm -f "$CARD"/*.lapcam-tmp
+	if [ -n "$tmpdir" ]; then
+		rm -rf "$tmpdir"
+	fi
+	# (a failing last command here would become the script's exit status)
+	return 0
+}
+trap cleanup EXIT
+
 # put <src> <name> - always written
 put() {
-	cp "$1" "$CARD/$2.tmp"
-	mv -f "$CARD/$2.tmp" "$CARD/$2"
+	cp "$1" "$CARD/$2.lapcam-tmp"
+	mv -f "$CARD/$2.lapcam-tmp" "$CARD/$2"
 	echo "  $2"
 }
 # keep_or_put <src> <name> - a file already on the card wins
@@ -150,32 +220,49 @@ keep_or_put() {
 # --- firmware ---------------------------------------------------------------
 
 if [ -n "$UPGRADE" ]; then
-	rm -f "$CARD/autoupdate-full.done" "$CARD/uenv.done"
-	put "$IMAGE" autoupdate-full.bin
 	if [ -n "$SKIP_FLASH" ]; then
+		# the marker comes first: should anything below fail, the card still
+		# says "already applied" and the bootloader leaves the flash alone
 		printf '1' >"$CARD/autoupdate-full.done"
 		echo "  autoupdate-full.done (the image is NOT flashed at boot; remove the file to flash)"
 	fi
-	# an installer left from a stock install would be harmless (Thingino's
-	# bootloader ignores it) but confusing next to autoupdate-full.bin
-	rm -f "$CARD/$FACTORY" "$CARD/$FACTORY.old" "$CARD/thingino-$CAMERA.bin"
+	put "$IMAGE" autoupdate-full.bin
+	# leftovers of a stock install on this card: harmless to Thingino's
+	# bootloader (it ignores them) but confusing next to autoupdate-full.bin
+	rm -f "$CARD/$FACTORY" "$CARD/$FACTORY.old" "$CARD/thingino-$CAMERA.bin" "$CARD/autoupdate-full.yay"
 else
 	cache=$REPO/dist/installer
-	if [ ! -f "$cache/$FACTORY" ]; then
+	if [ ! -f "$cache/$FACTORY" ] || [ ! -f "$cache/SOURCE" ]; then
 		echo "Getting the installer ($INSTALLER_URL)"
 		mkdir -p "$cache"
-		tmp=$(mktemp -d)
-		trap 'rm -rf "$tmp"' EXIT
-		curl -fsSL -o "$tmp/sd.zip" "$INSTALLER_URL"
-		(cd "$tmp" && unzip -q sd.zip)
-		img=$(ls "$tmp"/*.img | head -n 1)
-		python3 -I "$HERE/fatextract.py" "$img" "$FACTORY" "$cache/$FACTORY"
-		# the image names the SD image's build date; keep it for the record
-		echo "$INSTALLER_URL $(date -u +%Y-%m-%d)" >"$cache/SOURCE"
+		tmpdir=$(mktemp -d)
+		curl -fsSL -o "$tmpdir/sd.zip" "$INSTALLER_URL"
+		(cd "$tmpdir" && unzip -q sd.zip)
+		img=$(find "$tmpdir" -name '*.img' | head -n 1)
+		if [ -z "$img" ]; then
+			echo "no .img in the installer's zip: $INSTALLER_URL" >&2
+			exit 1
+		fi
+		python3 -I "$HERE/fatextract.py" "$img" "$FACTORY" "$tmpdir/$FACTORY"
+		if command -v shasum >/dev/null 2>&1; then
+			sum=$(shasum -a 256 "$tmpdir/$FACTORY" | cut -d' ' -f1)
+		else
+			sum=$(sha256sum "$tmpdir/$FACTORY" | cut -d' ' -f1)
+		fi
+		if [ "$sum" != "$FACTORY_SHA256" ]; then
+			echo "the installer taken out of the image is not the one this script was checked with:" >&2
+			echo "  sha256 $sum, expected $FACTORY_SHA256 (see INSTALLER_URL in this script)" >&2
+			exit 1
+		fi
+		rm -f "$cache/SOURCE"
+		mv "$tmpdir/$FACTORY" "$cache/$FACTORY"
+		printf '%s\nsha256 %s\nfetched %s\n' "$INSTALLER_URL" "$sum" "$(date -u +%Y-%m-%dT%H:%MZ)" >"$cache/SOURCE"
 	fi
-	rm -f "$CARD/$FACTORY.old" "$CARD/autoupdate-full.bin" "$CARD/autoupdate-full.done" "$CARD/autoupdate-full.yay"
-	put "$cache/$FACTORY" "$FACTORY"
+	# the installer renames itself to .old when it has run, and the image to
+	# .yay before flashing it: both would stop or confuse a new install
+	rm -f "$CARD/$FACTORY.old" "$CARD/autoupdate-full.bin" "$CARD/autoupdate-full.done" "$CARD/autoupdate-full.yay" "$CARD/uenv.done"
 	put "$IMAGE" "thingino-$CAMERA.bin"
+	put "$cache/$FACTORY" "$FACTORY"
 fi
 
 # --- programs ---------------------------------------------------------------
@@ -198,33 +285,20 @@ keep_or_put "$HERE/sdcard/prudynt-osd.json" prudynt-osd.json
 keep_or_put "$HERE/sdcard/osd-feed.json" osd-feed.json
 put "$HERE/sdcard/README.txt" README.txt
 
-if [ -n "$WIFI" ]; then
+if [ "$NWIFI" -gt 0 ]; then
 	# priority counts down from 10 so the first -w is tried first;
 	# scan_ssid=1 finds hidden networks too; the header is what S37wifi-from-sd
-	# would add anyway
-	nl=$(printf '\nx')
-	nl=${nl%x}
+	# would add anyway. The values were checked when the options were read.
 	{
 		printf 'ctrl_interface=/run/wpa_supplicant\nupdate_config=1\nap_scan=1\n'
 		prio=10
-		printf '%s\n' "$WIFI" | while IFS="$(printf '\t')" read -r ssid pass; do
-			[ -n "$ssid" ] || continue
-			case "$ssid$pass" in
-			*'"'* | *\\* | *"$nl"*)
-				echo "quotes, backslashes and line breaks are not supported in -w values" >&2
-				exit 1
-				;;
-			esac
-			if [ ${#pass} -lt 8 ] || [ ${#pass} -gt 63 ]; then
-				echo "the Wi-Fi password of '$ssid' must be 8 to 63 characters (WPA2)" >&2
-				exit 1
-			fi
+		printf '%s' "$WIFI" | while IFS="$tab" read -r ssid pass; do
 			printf '\nnetwork={\n\tssid="%s"\n\tpsk="%s"\n\tscan_ssid=1\n\tpriority=%d\n}\n' "$ssid" "$pass" "$prio"
 			prio=$((prio - 1))
 		done
-	} >"$CARD/wpa_supplicant.conf.tmp"
-	mv -f "$CARD/wpa_supplicant.conf.tmp" "$CARD/wpa_supplicant.conf"
-	echo "  wpa_supplicant.conf ($(grep -c '^network=' "$CARD/wpa_supplicant.conf") network(s))"
+	} >"$CARD/wpa_supplicant.conf.lapcam-tmp"
+	mv -f "$CARD/wpa_supplicant.conf.lapcam-tmp" "$CARD/wpa_supplicant.conf"
+	echo "  wpa_supplicant.conf ($NWIFI network(s))"
 elif [ -f "$CARD/wpa_supplicant.conf" ]; then
 	echo "  wpa_supplicant.conf (kept)"
 else
@@ -236,14 +310,8 @@ if [ -f "$CARD/uenv.txt" ] && grep -q '^wlanssid=' "$CARD/uenv.txt"; then
 fi
 
 if [ -n "$KEY" ]; then
-	case "$KEY" in
-	*[!A-Za-z0-9_-]*)
-		echo "a YouTube stream key has only letters, digits, - and _" >&2
-		exit 1
-		;;
-	esac
-	printf '{\n  "enabled": true,\n  "ffmpeg_opts": "",\n  "ffmpeg_out_opts": "",\n  "rtmp_url": "rtmps://a.rtmps.youtube.com:443/live2",\n  "rtsp_url": "rtsp://thingino:thingino@127.0.0.1:554/ch0",\n  "stream_key": "%s"\n}\n' "$KEY" >"$CARD/youtube-relay.json.tmp"
-	mv -f "$CARD/youtube-relay.json.tmp" "$CARD/youtube-relay.json"
+	printf '{\n  "enabled": true,\n  "ffmpeg_opts": "",\n  "ffmpeg_out_opts": "",\n  "rtmp_url": "rtmps://a.rtmps.youtube.com:443/live2",\n  "rtsp_url": "rtsp://thingino:thingino@127.0.0.1:554/ch0",\n  "stream_key": "%s"\n}\n' "$KEY" >"$CARD/youtube-relay.json.lapcam-tmp"
+	mv -f "$CARD/youtube-relay.json.lapcam-tmp" "$CARD/youtube-relay.json"
 	echo "  youtube-relay.json (stream key set)"
 elif [ -f "$CARD/youtube-relay.json" ]; then
 	echo "  youtube-relay.json (kept)"
@@ -252,15 +320,22 @@ else
 fi
 [ -f "$CARD/logo.png" ] && echo "  logo.png (kept)" || echo "  (no logo.png: upload one from lapcam's OSD tab)"
 
+# only now, with everything in place, may the bootloader act on the card
+if [ -n "$UPGRADE" ] && [ -z "$SKIP_FLASH" ]; then
+	rm -f "$CARD/autoupdate-full.done" "$CARD/uenv.done"
+fi
 sync
 echo
 if [ -n "$SKIP_FLASH" ]; then
 	echo "Done. Camera off, card in, camera on: nothing is flashed (autoupdate-full.done is on the card)."
 elif [ -n "$UPGRADE" ]; then
-	echo "Done. Camera off, card in, camera on: the bootloader flashes autoupdate-full.bin and reboots (about 2 minutes)."
+	echo "Done. Camera off, card in, camera on: the bootloader flashes autoupdate-full.bin and reboots (about 2 minutes, red LED on)."
+	echo "A camera on an old Thingino build flashes it silently and cannot leave the .done marker; its new bootloader flashes once more at the next boot (docs/sdcard.md)."
 else
 	echo "Done. Camera off, card in, camera on: the installer backs the stock firmware up to the card and flashes lapcam (a few minutes, LED red/blue/purple), then the camera reboots."
 fi
 echo "Then http://lapcam.local/ (user root, Thingino's default password root)."
-command -v diskutil >/dev/null 2>&1 && echo "Eject first: diskutil eject \"$CARD\""
+if [ -n "$fstype" ] && command -v diskutil >/dev/null 2>&1; then
+	echo "Eject first: diskutil eject \"$CARD\""
+fi
 exit 0

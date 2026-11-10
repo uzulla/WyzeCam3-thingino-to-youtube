@@ -9,6 +9,7 @@ firmware/build.sh        ビルドホストでイメージを作る (prepare.sh 
 firmware/make-sdcard.sh  PC で SD カードに一式を書く
 firmware/fatextract.py   make-sdcard.sh が使う。公式インストーラの SD イメージから 1 ファイルを取り出す
 firmware/sdcard/         カードに置く雛形 (OSD の設定、README.txt)
+firmware/fatextract_test.py, firmware/make-sdcard_test.sh   テスト (下記)
 ```
 
 ## しくみ
@@ -44,9 +45,11 @@ Thingino のビルドには `user/<camera>/` という「ユーザー層」が�
 
 パッチは [build.md](build.md) で手で当てていたもの (ffmpeg の RTMPS と chunk size、prudynt の OSD と警告抑止、
 agent adapter の引数順) に、イメージ用の 1 本 (`patches/thingino-wifi-portal-ssid.diff`: Wi-Fi 未設定時に開く
-設定用 AP の名前を `THINGINO-xxxx` から `lapcam-xxxx` に) を足して prepare.sh が当てる。新たに当たったパッチの
-パッケージは `user/<camera>/.rebuild` に記録され、build.sh が `make rebuild-<pkg>` する (Buildroot は
-パッケージディレクトリのファイル変更を見ないため)。ビルドされた rootfs の prudynt はパッチ入りなので、
+設定用 AP の名前を `THINGINO-xxxx` から `lapcam-xxxx` に) を足して prepare.sh が当てる。新たに当たった (または中身が変わった)
+パッチのパッケージと、`prudynt.json` が変わったときの prudynt-t は `user/<camera>/.rebuild` に記録され、build.sh が
+`make rebuild-<pkg>` する (Buildroot はパッケージディレクトリのファイル変更を見ないし、`prudynt.json` は prudynt-t の
+インストール時にしか混ぜられないため)。ソース木は `da40db6` にあることを前提にし、違えば警告する。ブランチ `ciao` が
+別のコミットを指している木では止まる (勝手に動かさない)。ビルドされた rootfs の prudynt はパッチ入りなので、
 実機で使っていた bind mount (`S30prudynt-osd`) は要らない。
 
 agent adapter については注意: Thingino のビルドは prudynt 用 adapter を入れた後に thingino-agent の
@@ -67,7 +70,7 @@ Go のプログラム (lapcam 9 MB、osd-feed 9.5 MB、beacon 4 MB) と ffmpeg (
 
 | ファイル | 役割 |
 |---|---|
-| `factory_t31_ZMC6tiIDQN` | 純正ブートローダー用のインストーラ (thingino-installers の SD イメージから `fatextract.py` で取り出し、`dist/installer/` にキャッシュ)。`-u` では置かない |
+| `factory_t31_ZMC6tiIDQN` | 純正ブートローダー用のインストーラ。thingino-installers の SD イメージ (コミット `4d8530f`、2026-08-14 版に固定) を取得し、`fatextract.py` で取り出して sha256 を照合し、`dist/installer/` にキャッシュする。`-u` では置かない |
 | `thingino-wyze_cam3_t31x_gc2053_atbm6031.bin` | 自前のイメージ (インストーラが探す名前)。`-u` では `autoupdate-full.bin` の名前で置く |
 | `lapcam` / `osd-feed` / `beacon` / `ffmpeg` | プログラム (`dist/` から) |
 | `lapcam.args` | `-listen :80` |
@@ -77,8 +80,14 @@ Go のプログラム (lapcam 9 MB、osd-feed 9.5 MB、beacon 4 MB) と ffmpeg (
 | `README.txt` | カードの説明 (英語) |
 
 既にカードにある設定ファイル (`wpa_supplicant.conf`、`youtube-relay.json`、`prudynt-osd.json`、`osd-feed.json`、
-`lapcam.args`、`logo.png`) はオプションで指示しない限り残す。プログラムとイメージは毎回上書き。
-`autoupdate-full.done` と `factory_t31_ZMC6tiIDQN.old` は消す (消さないと二度目が走らない)。
+`lapcam.args`、`logo.png`) はオプションで指示しない限り残す。プログラムとイメージは毎回上書き。オプションは
+カードに触る前に全部検査し、途中で失敗しても `*.lapcam-tmp` は残さない。
+
+「焼く・焼かない」を決める印の扱い: 焼く側 (`autoupdate-full.done`、`uenv.done`: Thingino の U-Boot が「適用済み」とみなす印。
+`factory_t31_ZMC6tiIDQN.old`、`autoupdate-full.yay`: インストーラが改名した残骸) は、他が全部書けた**最後**に消す。
+`-s` では逆に `autoupdate-full.done` を**最初**に書く。途中で失敗しても、カードが「焼く」状態で残らないようにするため。
+`-s` のときはブートローダーがカードを読まないので、exFAT のカードでも受け付ける (運用だけなら exFAT でも動く。
+次の書き換えには FAT32 のカードが要る)。
 
 ## 手順
 
@@ -103,10 +112,15 @@ U-Boot も読めない)。`dist/` に lapcam / osd-feed / beacon (各 `device/*/
 ```sh
 # 素の Wyze Cam v3 用
 firmware/make-sdcard.sh -w "自宅のSSID" "パスワード" -w "ポケットWi-Fi" "パスワード" /Volumes/LAPCAM
-# Thingino / lapcam 導入済みの個体を書き換える
-firmware/make-sdcard.sh -u /Volumes/LAPCAM
+# Thingino / lapcam 導入済みの個体を書き換える (ストリームキーも入れておく例)
+firmware/make-sdcard.sh -u -k "xxxx-xxxx-xxxx-xxxx" /Volumes/LAPCAM
+# もう焼いてある個体のカードを作り直す (焼かない)
+firmware/make-sdcard.sh -u -s /Volumes/LAPCAM
 diskutil eject /Volumes/LAPCAM
 ```
+
+他機種は `-c <機種名>` (`dist/firmware/thingino-<機種名>.bin` が要る)。カードでなく普通のディレクトリを渡すと、
+空か、以前このスクリプトが作ったものに限って書く (中身を見たいとき)。
 
 ### 3. カメラに挿す
 
@@ -137,6 +151,13 @@ diskutil eject /Volumes/LAPCAM
   このカードの `-u` で入れ直せる。
 - Thingino 本体の更新 (別コミット) に追従するには、パッチ (`patches/`) を当て直し、`device/common.sh` の BUILD_ID 判定も
   更新する必要がある。
+
+## テスト
+
+```sh
+python3 -I firmware/fatextract_test.py   # FAT32 を組み立てて: 断片化した連鎖、長い名前、終端、循環、途中で切れる連鎖、不良クラスタ、MBR
+sh firmware/make-sdcard_test.sh          # 偽の dist/ と一時ディレクトリで: 各オプション、設定の保持、不正な引数で何も変えない、印の順序
+```
 
 ## 確認したこと・していないこと
 
