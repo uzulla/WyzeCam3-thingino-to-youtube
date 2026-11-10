@@ -77,6 +77,7 @@ Go のプログラム (lapcam 9 MB、osd-feed 9.5 MB、beacon 4 MB) と ffmpeg (
 | `wpa_supplicant.conf` | Wi-Fi (複数可)。`-w SSID PASS` で生成、または手で ([wifi-from-sd.md](wifi-from-sd.md))。無ければ設定用の AP (`lapcam-xxxx`、open、設定ページ http://172.16.0.1/) を開く |
 | `youtube-relay.json` | 配信設定。`-k ストリームキー` で生成、または lapcam の Stream タブで後から |
 | `prudynt-osd.json` / `osd-feed.json` | OSD の配置と内容 (レース用の雛形: ロゴ・G ボール・コース図・MEM/CPU・速度) |
+| `logo.png` | OSD に出すロゴの既定 (`firmware/sdcard/logo.png`、160×160 の URS ロゴ)。lapcam の OSD タブからの差し替えで上書きされ、以後は保持 |
 | `README.txt` | カードの説明 (英語) |
 | `VERSION.txt` | カードに入れた各部品の版 ([release.md](release.md))。イメージとプログラムの版が違えば make-sdcard.sh が警告する |
 
