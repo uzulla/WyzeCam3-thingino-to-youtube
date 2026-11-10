@@ -24,3 +24,7 @@ Thingino 実機に置くスクリプト一式。`/etc` や `/usr` は overlayfs 
 | `wifi-ap` / `install-wifi-ap.sh` | `/usr/sbin/wifi-ap` / (PC 側で実行) | 任意。本体ボタンの 5 秒長押し (Thingino 既定は Wi-Fi 設定を消して再起動) を「再起動までカメラがパスワード無しの AP `lapcam` になる」に変える。保存した Wi-Fi は消えない。`/etc/thingino-button.conf` の 1 行を差し替える | [lapcam.md](../docs/lapcam.md) |
 | `set-camera-name.sh` | (PC 側で実行) | 任意。ホスト名を `lapcam` に、mDNS に `_lapcam._tcp` を足し、録画フォルダを `recordings` に固定して旧フォルダを移す。OS 設定の変更なので `install.sh` とは別 | [lapcam.md](../docs/lapcam.md#カメラの名前-set-camera-namesh) |
 | `beacon/` / `install-beacon.sh` / `S95beacon` | (PC 側でビルド・実行) / SD カード直下の `beacon` (と任意の `beacon.args`) / `/etc/init.d/S95beacon` | 任意。IP・配信の状態・Wi-Fi の電波などを数秒ごとに UDP ブロードキャストし、LAN からの指令 (映像の反転) を受け付ける常駐プログラム (Go)。送り主は確かめない。SD にバイナリがあれば起動する。動作中の SD 抜去は不可 | [beacon.md](../docs/beacon.md) |
+
+これらをカメラ 1 台ずつ手で入れる代わりに、ファームウェアイメージへ焼き込んで SD カードから導入する手順が
+[firmware/](../firmware/) にある ([docs/sdcard.md](../docs/sdcard.md))。`firmware/prepare.sh` がここのファイルを
+Thingino の `user/<camera>/overlay/` に写すので、ここを変えたらイメージも作り直す。

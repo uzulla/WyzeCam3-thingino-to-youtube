@@ -1,0 +1,69 @@
+{
+  "general": {
+    "osd_pool_size": 2048
+  },
+  "osd": {
+    "burnin": {
+      "background_color": "#00000080",
+      "enabled": true,
+      "fill_color": "#ffffffff",
+      "format": "%F %T",
+      "outline_color": "#000000ff",
+      "scale": 0
+    },
+    "imagefile": {
+      "enabled": true,
+      "height": 128,
+      "pos_x": -8,
+      "pos_y": -8,
+      "width": 128
+    },
+    "imagefile2": {
+      "enabled": true,
+      "height": 160,
+      "pos_x": 8,
+      "pos_y": -8,
+      "width": 160
+    },
+    "imagefile3": {
+      "enabled": true,
+      "height": 264,
+      "pos_x": -8,
+      "pos_y": 8,
+      "width": 264
+    },
+    "textfile": {
+      "background_color": "#00000080",
+      "cols": 27,
+      "enabled": true,
+      "fill_color": "#ffffffff",
+      "outline_color": "#00000000",
+      "pos_x": 8,
+      "pos_y": 40,
+      "rows": 2,
+      "scale": 1
+    },
+    "textfile2": {
+      "background_color": "#00000080",
+      "cols": 24,
+      "enabled": false,
+      "fill_color": "#ffffffff",
+      "outline_color": "#00000000",
+      "pos_x": -147,
+      "pos_y": -8,
+      "rows": 2,
+      "scale": 0
+    },
+    "textfile3": {
+      "background_color": "#00000080",
+      "cols": 8,
+      "enabled": true,
+      "fill_color": "#ffffffff",
+      "outline_color": "#00000000",
+      "pos_x": 190,
+      "pos_y": -8,
+      "rows": 1,
+      "scale": 3
+    }
+  }
+}
