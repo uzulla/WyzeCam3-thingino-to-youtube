@@ -133,6 +133,7 @@ func (s *server) routes() http.Handler {
 	mux.HandleFunc("GET /api/me", s.handleMe)
 	// everything else needs a session
 	mux.Handle("GET /api/status", s.auth(http.HandlerFunc(s.handleStatus)))
+	mux.Handle("POST /api/password", s.auth(http.HandlerFunc(s.handlePassword)))
 	mux.Handle("GET /api/preview.mjpeg", s.auth(http.HandlerFunc(s.handlePreview)))
 	mux.Handle("GET /api/preview.mp4", s.auth(http.HandlerFunc(s.handlePreviewMP4)))
 	mux.Handle("GET /api/snapshot.jpg", s.auth(http.HandlerFunc(s.handleSnapshot)))
