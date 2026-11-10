@@ -29,6 +29,7 @@ minimal FFmpeg バイナリと、カメラだけで常設運用するための�
 | 状態を LAN に知らせる・指令を受ける | `beacon` が IP・配信の状態・Wi-Fi の電波などを数秒ごとに UDP ブロードキャストし、PC の `beacon-listen` で表示。`beacon-send` で映像の反転などの指令も送れる | [beacon](docs/beacon.md) |
 | セルラー回線での運用 | RTMP チャンクサイズの調整で RTMPS の送信量を削減。切断・復帰の実測も記録 | [セルラー配信](docs/cellular.md) |
 | SD カードへ同時録画 | prudynt 内蔵の録画で配信と同じ映像 (OSD 込み) を 1 分ごとの MP4 に保存。Web UI の Rec ボタンを直す `install-agent-adapter.sh`、本体ボタンのダブルクリックで開始・停止する `rec-button`、録画中は正面の赤 LED を点ける `rec-led`、PC で 1 本につなぐ `concat-recordings.sh` | [録画](docs/recording.md) |
+| SD カードから一式をインストール | 自前の Thingino イメージ (起動スクリプト、ボタン設定、ホスト名、OSD 入り prudynt を焼き込み) と SD カードの中身を作る。素の Wyze Cam v3 はカードを挿して電源を入れるだけ、Thingino 導入済みの個体は `autoupdate-full.bin` で書き換え | [SD カードからインストール](docs/sdcard.md) |
 
 OSD はカメラのストリーマ `prudynt` 側で合成するため、OSD を使っても ffmpeg は stream copy のままです。
 直接配信だけなら ffmpeg 単体で試せます。常設運用や OSD は必要なものを追加してください。

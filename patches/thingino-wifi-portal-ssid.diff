@@ -1,0 +1,13 @@
+diff --git a/package/wifi/files/S38wpa_supplicant.in b/package/wifi/files/S38wpa_supplicant.in
+index da14ebe7f..a9210643d 100644
+--- a/package/wifi/files/S38wpa_supplicant.in
++++ b/package/wifi/files/S38wpa_supplicant.in
+@@ -222,7 +222,7 @@ prepare_portal() {
+ 		ap_scan=2
+ 
+ 		network={
+-			ssid="THINGINO-${last_two}"
++			ssid="lapcam-${last_two}"
+ 			mode=2
+ 			frequency=2412
+ 			key_mgmt=@WLAN_PORTAL_KEY_MGMT@

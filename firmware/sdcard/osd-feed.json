@@ -1,0 +1,45 @@
+{
+  "interval_ms": 100,
+  "slots": {
+    "imagefile": {
+      "fit": "contain",
+      "png": "/mnt/mmcblk0p1/logo.png"
+    },
+    "imagefile2": {
+      "gball": {
+        "invert_lateral": true,
+        "source": "racebox"
+      }
+    },
+    "imagefile3": {
+      "track": {
+        "source": "racebox"
+      }
+    },
+    "textfile": {
+      "template": "MEM {{lpad 3 .mem.free_mb}}MB {{bar 12 .mem.used_pct}} {{lpad 3 .mem.used_pct}}%\nCPU {{lpad 5 .cpu.load1}} {{bar 12 .cpu.used_pct}} {{lpad 3 .cpu.used_pct}}%"
+    },
+    "textfile3": {
+      "template": "{{if .racebox.ok}}{{printf \"%3.0f\" (mul .racebox.speed_mps 3.6)}}{{else}}---{{end}} km/h"
+    }
+  },
+  "sources": {
+    "cpu": {
+      "interval_ms": 1000,
+      "type": "cpu"
+    },
+    "mem": {
+      "interval_ms": 1000,
+      "type": "meminfo"
+    },
+    "racebox": {
+      "interval_ms": 100,
+      "listen": ":5005",
+      "match": {
+        "type": "racebox"
+      },
+      "stale_ms": 500,
+      "type": "udp"
+    }
+  }
+}
