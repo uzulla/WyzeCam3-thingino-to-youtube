@@ -73,6 +73,19 @@ func (rl *relay) configPath() string {
 func (rl *relay) lapcamPath() string { return filepath.Join(rl.sd, lapcamCfgName) }
 
 // readJSONFile - a JSON object from path (empty map when the file is absent)
+// configured - the relay has a stream key to use (youtube-relay.json on the
+// card or in /etc with a non-empty stream_key). Without one its supervisor
+// may still be running (autostart), waiting for a config: nothing to stop,
+// nothing that could go live.
+func (rl *relay) configured() bool {
+	cfg, err := readJSONFile(rl.configPath())
+	if err != nil {
+		return false
+	}
+	key, _ := cfg["stream_key"].(string)
+	return strings.TrimSpace(key) != ""
+}
+
 func readJSONFile(path string) (map[string]any, error) {
 	b, err := os.ReadFile(path)
 	if err != nil {

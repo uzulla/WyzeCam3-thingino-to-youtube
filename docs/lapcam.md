@@ -27,7 +27,7 @@ device/install-lapcam.sh root@<camera-ip>   # SD カードにバイナリ、over
 | プレビュー (Camera) | 配信しているのと同じ映像 (OSD 込み)。既定は **Video** (prudynt の fMP4 を MediaSource で再生、配信と同じ fps でなめらか。Android と PC、新しめの iPhone)。右の **Video / Pictures** ボタンで MJPEG 4 fps の静止画連続に切り替えられ (どのブラウザでも動く、軽い)、Video が動かないブラウザでは自動で Pictures になる (カメラや Wi-Fi の一時的な不調は 3 秒後に 2 回まで Video をやり直してから)。選択はスマホに記憶。同時に見られるのは 3 台まで。他のタブや裏に回った時は止まる。その下の行に、配信中は LIVE と経過時間、録画中は REC と経過時間 (映像には重ねない) |
 | Go live / Stop live | 配信 (youtube-relay) の開始・停止。停止は 3 秒以内にもう 1 回タップ (誤操作よけ) |
 | Record / Stop recording | SD 録画の開始・停止 (Rec ボタンや本体ボタンと同じ `record` コマンド)。停止も 2 回タップ |
-| Stream | エンコーダの fps と kb/s、Wi-Fi の送信 kb/s (全部の通信)、lapcam 起動後の ffmpeg 再起動回数 |
+| Stream | エンコーダの fps と kb/s、Wi-Fi の送信 kb/s (全部の通信)、lapcam 起動後の ffmpeg 再起動回数。ストリームキーが未設定 (`youtube-relay.json` が無いか `stream_key` が空) の間、Go live ボタンは押せず「set a stream key in the Stream tab」と出る (自動起動で supervisor が待機していても「Stop」にはならない) |
 | Profile | 今使っているストリームキーの名前、起動時の自動開始の有無 |
 | Picture | 左右反転・上下反転の切り替え (prudynt に即時反映 + SD の `prudynt-osd.json` に保存) |
 | Camera | ホスト名と IP、Wi-Fi (SSID と dBm)、SD の空き、稼働時間、負荷、空きメモリ。一番下に Reboot camera (2 回タップ) と Sign out、その下に版 (`lapcam v2.0.0 · firmware v2.0.0`: SD 上のこのバイナリの版と、フラッシュの lapcam ファームウェアの版 `/etc/lapcam-release`。違えば赤で「update the card or the firmware」。土台の Thingino の版は `/api/status` の `versions.thingino` にだけ入れ、画面には出さない: [release.md](release.md))。サインイン画面の下にも lapcam の版 |

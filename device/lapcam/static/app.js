@@ -199,8 +199,11 @@
     $("badge-idle").classList.toggle("hidden", live || rec);
     if (!pending["btn-live"]) {
       const b = $("btn-live");
-      if (st.relay.running) { b.textContent = live ? "Stop live" : "Stop (connecting…)"; b.className = "big on"; }
-      else { b.textContent = "Go live"; b.className = "big"; }
+      // without a stream key the supervisor may run (autostart) but only
+      // waits for a config: there is nothing to stop and nothing to start
+      if (!st.relay.configured) { b.textContent = "Go live (set a stream key in the Stream tab)"; b.className = "big"; b.disabled = true; }
+      else if (st.relay.running) { b.textContent = live ? "Stop live" : "Stop (connecting…)"; b.className = "big on"; b.disabled = false; }
+      else { b.textContent = "Go live"; b.className = "big"; b.disabled = false; }
     }
     if (!pending["btn-rec"]) {
       const b = $("btn-rec");

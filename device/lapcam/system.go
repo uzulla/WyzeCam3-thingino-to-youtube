@@ -57,6 +57,7 @@ type relaySt struct {
 	FfmpegElapsed int    `json:"ffmpeg_elapsed_s"`
 	Restarts      int    `json:"restarts"` // ffmpeg restarts seen since lapcam started
 	Profile       string `json:"profile"`
+	Configured    bool   `json:"configured"` // a stream key is set (else "Go live" has nothing to start)
 }
 
 type image struct {
@@ -159,6 +160,7 @@ func (p *statusPoller) collect() status {
 
 	st.Relay.Running = relayRunning()
 	st.Relay.Autostart = relayAutostart()
+	st.Relay.Configured = p.relay.configured()
 	pid, el := relayFfmpeg(uptime())
 	st.Relay.FfmpegRunning = pid > 0
 	st.Relay.FfmpegElapsed = el
