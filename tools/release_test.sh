@@ -22,6 +22,7 @@ mkdir -p "$R/tools" "$R/firmware/sdcard" "$R/dist/firmware" "$R/dist/installer"
 cp "$HERE/release.sh" "$HERE/version.sh" "$R/tools/"
 cp "$REPO_SRC/firmware/make-sdcard.sh" "$REPO_SRC/firmware/fatextract.py" "$R/firmware/"
 cp "$REPO_SRC/firmware/sdcard/"* "$R/firmware/sdcard/"
+mkdir -p "$R/device" && cp "$REPO_SRC/device/common.sh" "$R/device/" # make-sdcard.sh sources it
 cd "$R"
 printf 'dist/\n' >.gitignore
 git init -q && git add -A && git commit -q -m one

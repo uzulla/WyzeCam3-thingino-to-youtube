@@ -25,7 +25,8 @@
 #     -a KEYFILE     an SSH public key file (~/.ssh/id_ed25519.pub; may hold
 #                    several keys) for the card's authorized_keys: the camera
 #                    applies it at every boot, so ssh keeps working after a
-#                    flash. Without -a an existing file on the card is kept
+#                    flash. It REPLACES the card's file, so put every key that
+#                    should work in it. Without -a an existing file is kept
 #     -c CAMERA      Thingino camera name (default wyze_cam3_t31x_gc2053_atbm6031)
 #
 # Needs, in dist/: firmware/thingino-<camera>.bin (firmware/build.sh), lapcam,
@@ -65,6 +66,7 @@ usage() {
 	sed -n '2,/^$/p' "$0" | sed 's/^# \{0,1\}//' >&2
 	exit "${1:-1}"
 }
+. "$REPO/device/common.sh" # check_pubkeys (the camera-side helpers in it are not used here)
 
 nl=$(printf '\nx')
 nl=${nl%x}
@@ -121,15 +123,7 @@ while [ $# -gt 0 ]; do
 		[ $# -ge 2 ] || usage
 		AUTHKEYS=$2
 		[ -f "$AUTHKEYS" ] || { echo "-a: no such file: $AUTHKEYS" >&2; exit 1; }
-		# what S37keys-from-sd accepts: key lines and comments only
-		if ! tr -d '\r' <"$AUTHKEYS" | grep -v '^[[:space:]]*$' | grep -v '^[[:space:]]*#' | grep -q -E '^(ssh-ed25519|ssh-rsa|ecdsa-sha2-nistp(256|384|521)|sk-ssh-ed25519@openssh\.com|sk-ecdsa-sha2-nistp256@openssh\.com) [A-Za-z0-9+/]+=*( |$)'; then
-			echo "-a: $AUTHKEYS holds no SSH public key (expected lines like 'ssh-ed25519 AAAA... comment')" >&2
-			exit 1
-		fi
-		if tr -d '\r' <"$AUTHKEYS" | grep -v '^[[:space:]]*$' | grep -v '^[[:space:]]*#' | grep -v -q -E '^(ssh-ed25519|ssh-rsa|ecdsa-sha2-nistp(256|384|521)|sk-ssh-ed25519@openssh\.com|sk-ecdsa-sha2-nistp256@openssh\.com) [A-Za-z0-9+/]+=*( |$)'; then
-			echo "-a: $AUTHKEYS has a line that is not an SSH public key (a private key file?)" >&2
-			exit 1
-		fi
+		NKEYS=$(check_pubkeys "$AUTHKEYS") # every line a key ssh-keygen can read (device/common.sh)
 		shift
 		;;
 	-h | --help) usage 0 ;;
@@ -341,7 +335,7 @@ fi
 if [ -n "$AUTHKEYS" ]; then
 	tr -d '\r' <"$AUTHKEYS" >"$CARD/authorized_keys.lapcam-tmp"
 	mv -f "$CARD/authorized_keys.lapcam-tmp" "$CARD/authorized_keys"
-	echo "  authorized_keys ($(grep -c -v -E '^[[:space:]]*(#|$)' "$CARD/authorized_keys") key(s); applied at boot, ssh root@... then needs no password)"
+	echo "  authorized_keys ($NKEYS key(s), replacing what was on the card; applied at boot, ssh root@... then needs no password)"
 elif [ -f "$CARD/authorized_keys" ]; then
 	echo "  authorized_keys (kept)"
 else

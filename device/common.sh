@@ -33,3 +33,42 @@ push() {
 		exit 1
 	fi
 }
+
+# check_pubkeys <file> - abort unless the file is an authorized_keys file: every
+# line a public key (ssh-keygen must parse it; a private key, options such as
+# command="...", or a truncated key fail), a comment or blank. Used before a
+# key file goes to the card (make-sdcard.sh -a, install-keys-from-sd.sh): the
+# camera's S37keys-from-sd only looks at the shape of the lines, and a key it
+# accepts but ssh cannot use would lock everyone out.
+check_pubkeys() {
+	keyre='^(ssh-ed25519|ssh-rsa|ecdsa-sha2-nistp(256|384|521)|sk-ssh-ed25519@openssh\.com|sk-ecdsa-sha2-nistp256@openssh\.com) [A-Za-z0-9+/]+=*( |$)'
+	n=0
+	tmpkey=$(mktemp) || exit 1
+	while IFS= read -r line || [ -n "$line" ]; do
+		line=$(printf '%s' "$line" | tr -d '\r')
+		[ -n "$(printf '%s' "$line" | tr -d '[:space:]')" ] || continue # blank
+		case "$line" in
+		\#*) continue ;; # comment
+		esac
+		if ! printf '%s\n' "$line" | grep -q -E "$keyre"; then
+			rm -f "$tmpkey"
+			echo "$1: not an SSH public key line: '$(printf '%s' "$line" | cut -c1-40)...' (expected 'ssh-ed25519 AAAA... comment'; a private key file?)" >&2
+			exit 1
+		fi
+		if command -v ssh-keygen >/dev/null 2>&1; then
+			printf '%s\n' "$line" >"$tmpkey"
+			if ! ssh-keygen -l -f "$tmpkey" >/dev/null 2>&1; then
+				rm -f "$tmpkey"
+				echo "$1: ssh-keygen cannot read this key: '$(printf '%s' "$line" | cut -c1-40)...'" >&2
+				exit 1
+			fi
+		fi
+		n=$((n + 1))
+	done <"$1"
+	rm -f "$tmpkey"
+	if [ "$n" = 0 ]; then
+		echo "$1: no SSH public key in it (only comments or blank lines)" >&2
+		exit 1
+	fi
+	echo "$n"
+}
