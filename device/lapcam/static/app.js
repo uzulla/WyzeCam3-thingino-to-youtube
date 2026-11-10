@@ -89,7 +89,7 @@
   $("password-form").addEventListener("submit", async (e) => {
     e.preventDefault();
     const cur = $("pw-current").value, nw = $("pw-new").value, again = $("pw-again").value;
-    if (nw.length < 8) { setMsg("password-msg", "The new password needs at least 8 characters.", true); return; }
+    if (nw === "") { setMsg("password-msg", "The new password is empty.", true); return; }
     if (nw !== again) { setMsg("password-msg", "The two new passwords differ.", true); return; }
     if (nw === cur) { setMsg("password-msg", "That is the current password.", true); return; }
     const btn = e.target.querySelector("button[type=submit]");

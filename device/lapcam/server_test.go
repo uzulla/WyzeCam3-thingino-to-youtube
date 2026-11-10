@@ -359,13 +359,19 @@ func TestChangePassword(t *testing.T) {
 	if c := post(`{"current":"wrong","new":"longenough"}`); c != http.StatusUnauthorized {
 		t.Errorf("wrong current password: %d", c)
 	}
-	if c := post(`{"current":"secret","new":"short"}`); c != http.StatusBadRequest {
-		t.Errorf("short new password: %d", c)
+	if c := post(`{"current":"secret","new":""}`); c != http.StatusBadRequest {
+		t.Errorf("empty new password: %d", c)
 	}
 	if c := post(`{"current":"secret","new":"with:colon1"}`); c != http.StatusBadRequest {
 		t.Errorf("colon in password: %d", c)
 	}
-	if c := post(`{"current":"secret","new":"new-password-1"}`); c != http.StatusOK {
+	if c := post(`{"current":"secret","new":"ab"}`); c != http.StatusOK {
+		t.Fatalf("short password refused (no length rule wanted): %d", c)
+	}
+	if ok, err := checkPassword("ab"); err != nil || !ok {
+		t.Errorf("short password does not verify: %v %v", ok, err)
+	}
+	if c := post(`{"current":"ab","new":"new-password-1"}`); c != http.StatusOK {
 		t.Fatalf("change: %d", c)
 	}
 	// the file: root's hash changed and verifies, the other line is untouched

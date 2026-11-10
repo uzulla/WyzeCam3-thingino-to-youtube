@@ -21,10 +21,8 @@ import (
 	"time"
 )
 
-const (
-	defaultPassword = "root" // Thingino's, and what a flash from the card leaves
-	minPasswordLen  = 8
-)
+// defaultPassword - Thingino's, and what a flash from the card leaves
+const defaultPassword = "root"
 
 // newSalt - 16 random characters of the crypt alphabet
 func newSalt() (string, error) {
@@ -76,7 +74,7 @@ func setShadowHash(user, hash string) error {
 }
 
 // handlePassword - POST {current, new}: the current password must be right,
-// the new one 8 to 128 characters. The signed-in sessions stay (they are the
+// the new one anything up to 128 characters without ':' or line breaks. The signed-in sessions stay (they are the
 // owner's); the saved copy follows at its next write.
 func (s *server) handlePassword(w http.ResponseWriter, r *http.Request) {
 	var body struct {
@@ -91,8 +89,11 @@ func (s *server) handlePassword(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]any{"error": fmt.Sprintf("a password has %d characters at most", maxPasswordLen)})
 		return
 	}
-	if len(body.New) < minPasswordLen {
-		writeJSON(w, http.StatusBadRequest, map[string]any{"error": fmt.Sprintf("the new password needs at least %d characters", minPasswordLen)})
+	// no rules on length or characters (the owner's choice); only what the
+	// shadow file cannot hold, and the same upper bound as a sign-in has
+	// (the hash costs CPU per character)
+	if body.New == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "the new password is empty"})
 		return
 	}
 	if strings.ContainsAny(body.New, "\n\r:") {
