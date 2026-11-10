@@ -10,11 +10,13 @@ INSTALL ON A STOCK WYZE CAM V3 (card made without -u)
      to WYZE_BACKUP_xxxxxx/ on this card and lapcam's firmware is written
      (a few minutes). The camera restarts by itself.
   3. First boot takes about a minute. With a wpa_supplicant.conf on this card
-     the camera joins that Wi-Fi; open http://lapcam.local/ (or the camera's
-     IP) and sign in as root with password "root". Change it (Thingino's
-     default). Without Wi-Fi settings the camera opens its own network
-     "lapcam-xxxx" (setup page at http://172.16.0.1/); hold the button 5 s any
-     time to get an open network "lapcam" and reach http://100.64.1.1/.
+     the camera joins that Wi-Fi; open http://lapcam-xxxx.local/ (xxxx: 4 hex
+     digits of the camera's MAC address; tools/find-camera or the router's
+     client list show the name, or use the IP) and sign in as root with
+     password "root". Change it (Thingino's default). Without Wi-Fi settings
+     the camera opens its own network "lapcam-xxxx" (setup page at
+     http://172.16.0.1/); hold the button 5 s any time to get an open network
+     of the same name and reach http://100.64.1.1/.
   The installer renames itself to factory_t31_ZMC6tiIDQN.old when done, so
   the card will not install twice. To go back to Wyze: copy
   WYZE_BACKUP_xxxxxx/combined_backup.bin to the card as autoupdate-full.bin

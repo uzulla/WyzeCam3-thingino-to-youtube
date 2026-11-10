@@ -44,14 +44,16 @@ device/set-camera-name.sh root@<camera-ip>          # 名前は lapcam。別名�
 
 Thingino が機体の名前から決めている 3 つを lapcam に揃える。/etc (overlay) への変更で、工場出荷状態に戻すと消える。
 
-- **ホスト名**: 既定の `ing-wyze-cam3-xxxx` を `lapcam` に (`hostname`、`/etc/hostname`、`/etc/hosts`。Thingino の
-  `S04hostname` は自分で付けた名前を起動時に残す)。LAN では `lapcam.local` で引ける (Android は引けない機種がある)
+- **ホスト名**: 手で入れた個体は `set-camera-name.sh` で `lapcam` に (`hostname`、`/etc/hostname`、`/etc/hosts`。Thingino の
+  `S04hostname` は自分で付けた名前を起動時に残す)。ファームウェア ([sdcard.md](sdcard.md)) は既定名を `lapcam` にした
+  `S04hostname` を持ち、`lapcam-xxxx` (xxxx は MAC 末尾 4 桁) を自動で付けるので、2 台同時でも名前が被らない。LAN では
+  `lapcam-xxxx.local` で引ける (Android は引けない機種がある)
 - **mDNS のサービス**: `/etc/mdns.d/lapcam.service` を置いて `_lapcam._tcp` を出す (Thingino 標準の `_thingino._tcp` は
   そのまま)。`tools/find-camera` はこれを探す ([find-camera.md](find-camera.md))
 - **録画フォルダ**: 録画の保存先は既定で `%hostname` (ホスト名のフォルダ) なので、名前を lapcam にすると SD 直下の
   バイナリ `lapcam` とぶつかる。保存先を固定の `recordings` フォルダにし (`recorder.device_path`)、旧フォルダ
   (`ing-wyze-cam3-xxxx/`) の中身を `recordings/` へ移す (録画中なら移さずに知らせる)
-- beacon と lapcam を再起動して新しい名前を読ませる。AP モードの SSID も `lapcam` (`wifi-ap`)
+- beacon と lapcam を再起動して新しい名前を読ませる。AP モードの SSID はホスト名と同じ (`wifi-ap`: `lapcam-xxxx`、手で付けた名前ならそれ)
 
 ## つながらない時: 本体ボタン 5 秒長押しでカメラが Wi-Fi (AP) を出す (`wifi-ap`)
 

@@ -390,7 +390,7 @@ elif [ -n "$UPGRADE" ]; then
 else
 	echo "Done. Camera off, card in, camera on: the installer backs the stock firmware up to the card and flashes lapcam (a few minutes, LED red/blue/purple), then the camera reboots."
 fi
-echo "Then http://lapcam.local/ (user root, Thingino's default password root)."
+echo "Then http://lapcam-xxxx.local/ (xxxx: 4 hex of the camera's MAC; tools/find-camera lists it; user root, Thingino's default password root)."
 if [ -n "$fstype" ] && command -v diskutil >/dev/null 2>&1; then
 	echo "Eject first: diskutil eject \"$CARD\""
 fi

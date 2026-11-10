@@ -33,8 +33,9 @@
 #                       S93youtube-relay S94osd-feed S95beacon S96rec-led
 #                       S97lapcam), the helper scripts in /usr/sbin, the button
 #                       config (double click = record, 5 s = Wi-Fi AP), the
-#                       agent adapter with the record fix, hostname lapcam, the
-#                       _lapcam._tcp mDNS service, timezone
+#                       agent adapter with the record fix, hostname lapcam-xxxx
+#                       (Thingino's S04hostname with "lapcam" as the default
+#                       name), the _lapcam._tcp mDNS service, timezone
 #     overlay/ is wiped and regenerated. The other files are overwritten; a
 #     local.mk or opt/ of your own in user/<camera>/ is left alone.
 #
@@ -244,15 +245,36 @@ if ! grep -q '^#KEY_ENTER TIMED 0\.1 tell %ip' "$dst" || ! grep -q '^KEY_ENTER T
 fi
 chmod 644 "$dst"
 
-# hostname (inittab runs "hostname -F /etc/hostname"; S04hostname keeps a
-# custom name) and /etc/hosts (the tree's, with the 127.0.1.1 line renamed)
+# hostname: lapcam-<4 hex>, the 4 hex being the end of the MAC address the
+# camera derives from its SoC (two cameras on one network then have
+# different names, and the same 4 hex as the setup portal's lapcam-xxxx).
+# Thingino's S04hostname does exactly this ("<default>-<suffix>" when the
+# name is the default or an earlier auto-generated one, a custom name kept),
+# with the default taken from /etc/os-release, which the build sets to
+# ing-wyze-cam3. The overlay carries Thingino's script with that one function
+# answering "lapcam" instead; a name set by hand (device/set-camera-name.sh)
+# is kept as before. /etc/hostname starts as the default name itself (the
+# rootfs has ing-wyze-cam3 there, which the script would take for a custom
+# name and keep); /etc/hosts is left to it.
 echo "$NAME" >"$O/etc/hostname"
-awk -v n="$NAME" '$1 == "127.0.1.1" { print "127.0.1.1\t" n; next } { print }' "$TREE/overlay/etc/hosts" >"$O/etc/hosts"
-if ! grep -q "^127.0.1.1[[:space:]]$NAME\$" "$O/etc/hosts"; then
-	echo "Thingino's overlay/etc/hosts has no 127.0.1.1 line to rename: $TREE/overlay/etc/hosts" >&2
+chmod 644 "$O/etc/hostname"
+src=$TREE/overlay/etc/init.d/S04hostname
+dst=$O/etc/init.d/S04hostname
+if ! grep -q 'sed -n .s/^HOSTNAME=//p. \$OS_RELEASE_FILE' "$src"; then
+	echo "Thingino's S04hostname no longer reads the default name the way this script expects: $src" >&2
 	exit 1
 fi
-chmod 644 "$O/etc/hostname" "$O/etc/hosts"
+{
+	echo "#!/bin/sh"
+	echo "# lapcam (firmware/prepare.sh): Thingino's S04hostname with the default name"
+	echo "# \"$NAME\" instead of the one in /etc/os-release, so cameras are named $NAME-<4 hex>"
+	sed -e '1{/^#!/d;}' -e "s|echo \"\$(sed -n 's/^HOSTNAME=//p' \$OS_RELEASE_FILE)\"|echo $NAME|" "$src"
+} >"$dst"
+chmod 755 "$dst"
+if ! grep -q "echo $NAME\$" "$dst"; then
+	echo "could not put the default name into $dst" >&2
+	exit 1
+fi
 
 # the release this image belongs to (docs/release.md): lapcam reads it and
 # compares it with its own version; tools/find-camera sees it in mDNS
