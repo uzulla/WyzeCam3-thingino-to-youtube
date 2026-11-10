@@ -41,7 +41,7 @@ Thingino のビルドには `user/<camera>/` という「ユーザー層」が�
 | `prudynt.json` | `/etc/prudynt.json` の既定への上書き: stream0 を 1280x720 / 10 fps / gop 20 / 1 Mbps ([recording.md](recording.md) の実測条件)、`osd_pool_size` 2048、録画先 SD の `recordings`、JPEG チャンネル 5 fps 品質 60 |
 | `thingino.json` | `netwatch.enabled=false` ([netwatch.md](netwatch.md)) |
 | `local.uenv.txt` | U-Boot 環境変数 `gpio_user=38o`: U-Boot が動いている間は正面の赤 LED を点ける (カーネルが起動すると消える)。通常起動なら 2 秒、SD からの書き換え中は 1〜2 分点き続けるので、焼いている最中だと分かる |
-| `overlay/` | データ領域 (jffs2、起動後の `/overlay`) の初期内容。`/etc/lapcam-release` (版: [release.md](release.md))、起動スクリプト S37wifi-from-sd / S93osd-config / S93youtube-relay / S94osd-feed / S95beacon / S96rec-led / S97lapcam、`/usr/sbin` の osd-config / youtube-relay / rec-led / rec-button / wifi-ap、ボタン設定 (ダブルクリックで録画、5 秒で AP)、agent adapter (録画引数の修正入り)、ホスト名 `lapcam` と `/etc/hosts`、mDNS の `_lapcam._tcp`、タイムゾーン (既定 Asia/Tokyo、`LAPCAM_TIMEZONE` / `LAPCAM_TZ` で変更) |
+| `overlay/` | データ領域 (jffs2、起動後の `/overlay`) の初期内容。`/etc/lapcam-release` (版: [release.md](release.md))、起動スクリプト S37wifi-from-sd / S37keys-from-sd / S93osd-config / S93youtube-relay / S94osd-feed / S95beacon / S96rec-led / S97lapcam、`/usr/sbin` の osd-config / youtube-relay / rec-led / rec-button / wifi-ap、ボタン設定 (ダブルクリックで録画、5 秒で AP)、agent adapter (録画引数の修正入り)、ホスト名 `lapcam` と `/etc/hosts`、mDNS の `_lapcam._tcp`、タイムゾーン (既定 Asia/Tokyo、`LAPCAM_TIMEZONE` / `LAPCAM_TZ` で変更) |
 
 パッチは [build.md](build.md) で手で当てていたもの (ffmpeg の RTMPS と chunk size、prudynt の OSD と警告抑止、
 agent adapter の引数順) に、イメージ用の 1 本 (`patches/thingino-wifi-portal-ssid.diff`: Wi-Fi 未設定時に開く
@@ -75,6 +75,7 @@ Go のプログラム (lapcam 9 MB、osd-feed 9.5 MB、beacon 4 MB) と ffmpeg (
 | `lapcam` / `osd-feed` / `beacon` / `ffmpeg` | プログラム (`dist/` から) |
 | `lapcam.args` | `-listen :80` |
 | `wpa_supplicant.conf` | Wi-Fi (複数可)。`-w SSID PASS` で生成、または手で ([wifi-from-sd.md](wifi-from-sd.md))。無ければ設定用の AP (`lapcam-xxxx`、open、設定ページ http://172.16.0.1/) を開く |
+| `authorized_keys` | SSH の公開鍵 (1 行 1 鍵)。`-a ~/.ssh/id_ed25519.pub` で置く。起動時に `S37keys-from-sd` が `/root/.ssh/authorized_keys` に写す (違う時だけ。カードが正)。焼くと `/root` は消えるので、これが無いと焼くたびに root / `root` で入って鍵を入れ直すことになる |
 | `youtube-relay.json` | 配信設定。`-k ストリームキー` で生成、または lapcam の Stream タブで後から |
 | `prudynt-osd.json` / `osd-feed.json` | OSD の配置と内容 (レース用の雛形: ロゴ・G ボール・コース図・MEM/CPU・速度) |
 | `README.txt` | カードの説明 (英語) |
@@ -133,6 +134,18 @@ diskutil eject /Volumes/LAPCAM
 
 純正に戻すには、`WYZE_BACKUP_xxxxxx/combined_backup.bin` を `autoupdate-full.bin` の名前でカードに 1 つだけ置いて起動する
 (thingino-installers の README)。
+
+## 焼いた後に残るもの・消えるもの
+
+カードから焼くとフラッシュ全体 (U-Boot、設定領域、Thingino の `sysupgrade -B` のバックアップ領域も) が書き換わる。
+
+| | 焼いた後 |
+|---|---|
+| root のパスワード | Thingino 既定の `root` に戻る |
+| SSH の鍵 | `/root/.ssh/authorized_keys` は消える → カードの `authorized_keys` があれば起動時に戻る。ホスト鍵は作り直される (PC で known_hosts の警告) |
+| Wi-Fi | 消える → カードの `wpa_supplicant.conf` があれば起動時に戻る |
+| ホスト名、ボタン設定、タイムゾーン、prudynt の既定、netwatch オフ | ファームウェアに焼き込んであるので同じ値 |
+| ストリームキー、OSD の設定、ロゴ、録画、lapcam のプロファイル | カード上なので残る |
 
 ## 注意
 

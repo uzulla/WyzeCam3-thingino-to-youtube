@@ -95,6 +95,15 @@ grep -q 'ssid="Home Net"' "$C/wpa_supplicant.conf" || fail "ssid with a space"
 grep -q '"stream_key": "abcd-1234-efgh"' "$C/youtube-relay.json" || fail "stream key"
 no_tmp "$C" wifi
 
+echo "5b. -a: an SSH public key file, and refusal of what is not one"
+printf 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFZgtestkeyAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA me@pc\r\n# a comment\n\n' >"$T/key.pub"
+sh "$M" -u -a "$T/key.pub" "$C" >/dev/null
+[ "$(grep -c '^ssh-ed25519' "$C/authorized_keys")" = 1 ] || fail "authorized_keys not written"
+grep -q "$(printf '\r')" "$C/authorized_keys" && fail "CR left in authorized_keys"
+printf -- '-----BEGIN OPENSSH PRIVATE KEY-----\nabc\n' >"$T/private"
+if sh "$M" -u -a "$T/private" "$C" >/dev/null 2>&1; then fail "accepted a private key file"; fi
+[ "$(grep -c '^ssh-ed25519' "$C/authorized_keys")" = 1 ] || fail "authorized_keys changed by a refused -a"
+
 echo "6. a second run keeps the settings and replaces the programs"
 echo "my args" >"$C/lapcam.args"
 echo '{"mine":1}' >"$C/prudynt-osd.json"
@@ -104,6 +113,7 @@ sh "$M" -u "$C" >/dev/null
 [ "$(cat "$C/lapcam.args")" = "my args" ] || fail "lapcam.args not kept"
 [ "$(cat "$C/prudynt-osd.json")" = '{"mine":1}' ] || fail "prudynt-osd.json not kept"
 [ "$(cat "$C/wpa_supplicant.conf" "$C/youtube-relay.json" | cksum)" = "$before" ] || fail "wifi/key not kept"
+[ "$(grep -c '^ssh-ed25519' "$C/authorized_keys")" = 1 ] || fail "authorized_keys not kept"
 [ "$(cat "$C/lapcam")" = newer ] || fail "program not replaced"
 
 echo "7. bad options change nothing on a card"

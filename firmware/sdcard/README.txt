@@ -33,6 +33,7 @@ FILES
   lapcam, osd-feed, beacon, ffmpeg   the programs (started from the card at boot)
   lapcam.args                 "-listen :80": lapcam takes port 80
   wpa_supplicant.conf         Wi-Fi networks, applied at boot (edit here or in lapcam's Wi-Fi tab)
+  authorized_keys             SSH public keys, applied at boot (one per line; so ssh works after a flash)
   youtube-relay.json          stream key etc. (lapcam's Stream tab writes it)
   prudynt-osd.json            OSD layout (lapcam's OSD tab writes it)
   osd-feed.json               what the OSD shows (logo, G-ball, track, text)
