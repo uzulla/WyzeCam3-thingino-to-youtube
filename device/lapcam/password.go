@@ -62,13 +62,32 @@ func setShadowHash(user, hash string) error {
 	if !found {
 		return errors.New("no such user in " + shadowFile)
 	}
+	// the file's own mode, written beside it and synced before the rename: a
+	// power cut (the usual way this camera is switched off) must never leave
+	// an empty shadow file, which would lock everyone out
+	mode := os.FileMode(0o600)
+	if fi, err := os.Stat(shadowFile); err == nil {
+		mode = fi.Mode().Perm()
+	}
 	tmp := filepath.Join(filepath.Dir(shadowFile), "."+filepath.Base(shadowFile)+".lapcam")
-	if err := os.WriteFile(tmp, []byte(strings.Join(lines, "\n")+"\n"), 0o600); err != nil {
+	f, err := os.OpenFile(tmp, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, mode)
+	if err != nil {
 		return err
 	}
+	_, werr := f.WriteString(strings.Join(lines, "\n") + "\n")
+	serr := f.Sync()
+	cerr := f.Close()
+	if werr != nil || serr != nil || cerr != nil {
+		_ = os.Remove(tmp)
+		return errors.Join(werr, serr, cerr)
+	}
 	if err := os.Rename(tmp, shadowFile); err != nil {
-		os.Remove(tmp)
+		_ = os.Remove(tmp)
 		return err
+	}
+	if d, err := os.Open(filepath.Dir(shadowFile)); err == nil {
+		_ = d.Sync() // the rename itself
+		_ = d.Close()
 	}
 	return nil
 }
@@ -117,8 +136,10 @@ func (s *server) handlePassword(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !ok {
+		// 403, not 401: 401 means "not signed in" to the app (it would show
+		// the sign-in screen and lose the form)
 		time.Sleep(loginDelay)
-		writeJSON(w, http.StatusUnauthorized, map[string]any{"error": "the current password is wrong"})
+		writeJSON(w, http.StatusForbidden, map[string]any{"error": "the current password is wrong"})
 		return
 	}
 	salt, err := newSalt()

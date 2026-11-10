@@ -356,8 +356,8 @@ func TestChangePassword(t *testing.T) {
 	post := func(body string) int {
 		return code(jsonReq(t, "POST", srv.URL+"/api/password", body, cookie, nil))
 	}
-	if c := post(`{"current":"wrong","new":"longenough"}`); c != http.StatusUnauthorized {
-		t.Errorf("wrong current password: %d", c)
+	if c := post(`{"current":"wrong","new":"longenough"}`); c != http.StatusForbidden {
+		t.Errorf("wrong current password: %d (403: 401 would send the app to the sign-in screen)", c)
 	}
 	if c := post(`{"current":"secret","new":""}`); c != http.StatusBadRequest {
 		t.Errorf("empty new password: %d", c)
