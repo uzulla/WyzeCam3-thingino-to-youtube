@@ -1,13 +1,15 @@
 package main
 
 // osd-config (device/osd-config) keeps a note next to each prudynt-osd.json
-// (.osd-config-image: file=, etc=, host=) saying which "image" section it
-// last sent and what /etc/prudynt.json looked like then. A later change of
-// /etc/prudynt.json that the note does not know about is taken for a save in
-// Thingino's Web UI, which then wins over the SD card's flip. lapcam writes
-// /etc/prudynt.json too (video quality, recorder settings), so it does what
-// osd-config does after its own writes: notes that matched the file before
-// the write follow it (note_etc_refresh).
+// (.osd-config-image: file=, etc=, host=, fw=) saying which "image" section
+// it last sent, what /etc/prudynt.json looked like then, on which camera and
+// on which firmware build. A later change of /etc/prudynt.json that the note
+// does not know about is taken for a save in Thingino's Web UI, which then
+// wins over the SD card's flip (unless the firmware was reflashed since: a
+// fresh /etc/prudynt.json is no save). lapcam writes /etc/prudynt.json too
+// (video quality, recorder settings), so it does what osd-config does after
+// its own writes: notes that matched the file before the write, on this
+// camera and this firmware, follow it (note_etc_refresh).
 
 import (
 	"crypto/md5"
@@ -56,18 +58,26 @@ func hostID() string {
 	return macs[0]
 }
 
+// fwID - osd-config's fw_id: the firmware build, BUILD_ID of /etc/os-release
+// (quotes stripped, date included)
+func fwID() string {
+	return keyValues(osReleaseFile)["BUILD_ID"]
+}
+
 // noteEtcRefresh - after lapcam wrote /etc/prudynt.json: for each config
 // candidate, a note whose etc= matched the file before the write (and whose
-// host is this camera) is updated to the file as it is now
+// host and firmware are this camera's) is updated to the file as it is now,
+// keeping its fw=
 func (s *server) noteEtcRefresh(before string) {
 	host := hostID()
+	fw := fwID()
 	for _, cfg := range []string{filepath.Join(s.sd, osdConfigName), "/etc/" + osdConfigName} {
 		note := filepath.Join(filepath.Dir(cfg), osdNoteName)
 		b, err := os.ReadFile(note)
 		if err != nil {
 			continue
 		}
-		var file, etc, h string
+		var file, etc, h, nfw string
 		for _, line := range strings.Split(string(b), "\n") {
 			if v, ok := strings.CutPrefix(line, "file="); ok && file == "" {
 				file = v
@@ -75,12 +85,14 @@ func (s *server) noteEtcRefresh(before string) {
 				etc = v
 			} else if v, ok := strings.CutPrefix(line, "host="); ok && h == "" {
 				h = v
+			} else if v, ok := strings.CutPrefix(line, "fw="); ok && nfw == "" {
+				nfw = v
 			}
 		}
-		if file == "" || etc != before || h != host {
+		if file == "" || etc != before || h != host || nfw != fw {
 			continue
 		}
-		text := fmt.Sprintf("file=%s\netc=%s\nhost=%s\n", file, etcSum(), host)
+		text := fmt.Sprintf("file=%s\netc=%s\nhost=%s\nfw=%s\n", file, etcSum(), host, fw)
 		_ = writeText(note, text, 0o644)
 	}
 }
