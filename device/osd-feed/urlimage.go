@@ -34,17 +34,20 @@ type urlPicture struct {
 	url      string
 	interval time.Duration
 	timeout  time.Duration
-	stale    time.Duration // the picture is dropped after this long without a successful fetch (0: never)
+	stale    time.Duration // after this long without a successful fetch the picture is marked (0: never)
+	hide     bool          // on_stale "hide": take the picture down instead of writing OFFLINE on it
 	fit      string
 	client   *http.Client
 
-	mu     sync.Mutex
-	w, h   int    // the box the pixels are converted for (set by the slot; a change asks for a new conversion)
-	raw    []byte // the body of the last successful fetch (to skip decoding an unchanged picture)
-	pixels []byte // the last conversion, nil when there is none to show
-	seq    uint64 // bumped whenever pixels change (content or presence)
-	err    error  // the last fetch / decode problem, nil after a success
-	okAt   time.Time
+	mu      sync.Mutex
+	w, h    int    // the box the pixels are converted for (set by the slot; a change asks for a new conversion)
+	raw     []byte // the body of the last successful fetch (to skip decoding an unchanged picture)
+	good    []byte // the last picture that converted, nil when there was none
+	pixels  []byte // what the slot shows now: good, or its OFFLINE version, or nil
+	offline bool   // pixels is the OFFLINE version (or the OFFLINE box)
+	seq     uint64 // bumped whenever pixels change (content or presence)
+	err     error  // the last fetch / decode problem, nil after a success
+	okAt    time.Time
 	// closed when the first fetch attempt has been made (for -once and tests)
 	first     chan struct{}
 	firstOnce sync.Once
@@ -72,6 +75,7 @@ func newURLPicture(cfg SlotConfig, w, h int) *urlPicture {
 	if cfg.StaleMs != nil {
 		p.stale = time.Duration(*cfg.StaleMs) * time.Millisecond
 	}
+	p.hide = cfg.OnStale == "hide"
 	return p
 }
 
@@ -84,8 +88,9 @@ func (p *urlPicture) resize(w, h int) {
 		return
 	}
 	p.w, p.h = w, h
+	p.good = nil
 	if p.pixels != nil {
-		p.pixels = nil
+		p.pixels, p.offline = nil, false
 		p.seq++
 	}
 }
@@ -120,10 +125,11 @@ func (p *urlPicture) fetch(ctx context.Context) {
 	if err == nil {
 		same := p.raw != nil && bytes.Equal(body, p.raw)
 		p.raw = body
-		if same && p.pixels != nil {
+		if same && p.good != nil {
 			// the same picture again: nothing to decode (and a transient
 			// fetch error in between is over)
 			p.err, p.okAt = nil, now
+			p.show(p.good, false)
 			return
 		}
 		if p.w < 2 || p.h < 2 {
@@ -132,26 +138,45 @@ func (p *urlPicture) fetch(ctx context.Context) {
 			var pix []byte
 			if pix, err = convertPNGBytes(body, p.url, p.w, p.h, p.fit); err == nil {
 				p.err, p.okAt = nil, now
-				if !bytes.Equal(pix, p.pixels) {
-					p.pixels, p.seq = pix, p.seq+1
-				}
+				p.good = pix
+				p.show(pix, false)
 				return
 			}
 		}
 	}
 	// A fetch or decode problem: keep showing the last good picture for a
-	// while (a missed or garbled frame is nothing); after stale_ms it
-	// comes down rather than stay frozen
+	// while (a missed or garbled frame is nothing); after stale_ms it is
+	// marked OFFLINE (or taken down) rather than left frozen. With no
+	// picture at all yet, say so at once.
 	p.err = err
+	if p.good == nil && !p.hide {
+		p.show(offlineFrame(nil, p.w, p.h), true)
+		return
+	}
 	p.dropIfStale(now)
 }
 
-// dropIfStale - take the picture down when the last good fetch is older
-// than stale_ms (0: never). Called with the lock held.
-func (p *urlPicture) dropIfStale(now time.Time) {
-	if p.pixels != nil && p.stale > 0 && now.Sub(p.okAt) > p.stale {
-		p.pixels, p.seq = nil, p.seq+1
+// show - make pix what the slot shows (offline: it is the OFFLINE version),
+// counting a change only when the bytes or the kind differ. Lock held.
+func (p *urlPicture) show(pix []byte, offline bool) {
+	if offline == p.offline && bytes.Equal(pix, p.pixels) {
+		return
 	}
+	p.pixels, p.offline, p.seq = pix, offline, p.seq+1
+}
+
+// dropIfStale - when the last good fetch is older than stale_ms (0: never)
+// and the slot still shows it as is: write OFFLINE over it, or take it
+// down (on_stale "hide"). Called with the lock held.
+func (p *urlPicture) dropIfStale(now time.Time) {
+	if p.good == nil || p.offline || p.stale == 0 || now.Sub(p.okAt) <= p.stale {
+		return
+	}
+	if p.hide {
+		p.pixels, p.offline, p.seq = nil, false, p.seq+1
+		return
+	}
+	p.show(offlineFrame(p.good, p.w, p.h), true)
 }
 
 // get - GET the URL within the timeout; the body on a 2xx, the error otherwise

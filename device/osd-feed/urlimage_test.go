@@ -90,7 +90,7 @@ func TestURLPictureFetchesAndSkipsUnchanged(t *testing.T) {
 func TestURLPictureErrorsKeepThenDropThePicture(t *testing.T) {
 	ps := newPictureServer(t, testJPEG(t, 4, 4, color.RGBA{G: 255, A: 255}))
 	stale := 30
-	p := newURLPicture(SlotConfig{URL: ps.URL, StaleMs: &stale}, 4, 4)
+	p := newURLPicture(SlotConfig{URL: ps.URL, StaleMs: &stale, OnStale: "hide"}, 4, 4)
 	p.fetchOnce(context.Background())
 	var seq uint64
 	if _, _, err := p.latest(&seq); err != nil {
@@ -145,7 +145,7 @@ func TestURLPictureErrorsKeepThenDropThePicture(t *testing.T) {
 	}
 	// stale_ms 0: the picture is never taken down
 	zero := 0
-	p = newURLPicture(SlotConfig{URL: ps.URL, StaleMs: &zero}, 4, 4)
+	p = newURLPicture(SlotConfig{URL: ps.URL, StaleMs: &zero, OnStale: "hide"}, 4, 4)
 	p.fetchOnce(context.Background())
 	ps.status.Store(503)
 	time.Sleep(5 * time.Millisecond)
@@ -157,7 +157,7 @@ func TestURLPictureErrorsKeepThenDropThePicture(t *testing.T) {
 }
 
 func TestURLPictureUnreachableAndTimeout(t *testing.T) {
-	p := newURLPicture(SlotConfig{URL: "http://127.0.0.1:1/jpg", TimeoutMs: 200}, 4, 4)
+	p := newURLPicture(SlotConfig{URL: "http://127.0.0.1:1/jpg", TimeoutMs: 200, OnStale: "hide"}, 4, 4)
 	p.fetchOnce(context.Background())
 	var seq uint64
 	if pix, _, err := p.latest(&seq); pix != nil || err == nil {
@@ -170,7 +170,7 @@ func TestURLPictureUnreachableAndTimeout(t *testing.T) {
 		}
 	}))
 	defer slow.Close()
-	p = newURLPicture(SlotConfig{URL: slow.URL, TimeoutMs: 100}, 4, 4)
+	p = newURLPicture(SlotConfig{URL: slow.URL, TimeoutMs: 100, OnStale: "hide"}, 4, 4)
 	start := time.Now()
 	p.fetchOnce(context.Background())
 	if d := time.Since(start); d > time.Second {

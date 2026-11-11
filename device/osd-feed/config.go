@@ -65,6 +65,10 @@ type SlotConfig struct {
 	IntervalMs int    `json:"interval_ms"`
 	TimeoutMs  int    `json:"timeout_ms"`
 	StaleMs    *int   `json:"stale_ms"`
+	// what to show after stale_ms without a picture: "offline" (default:
+	// the last picture darkened with OFFLINE across it, or a dark box with
+	// the word when there never was one) or "hide" (nothing)
+	OnStale string `json:"on_stale"`
 	// image slots only: where in the slot the PNG (or the URL's picture) goes
 	// (default: the whole slot), so that it can share the slot with a G-ball
 	PNGBox *Box `json:"png_box"`
@@ -179,8 +183,11 @@ func loadConfig(path string) (*Config, error) {
 					(sc.StaleMs != nil && *sc.StaleMs < 0) {
 					return nil, fmt.Errorf("%s: slot %s: interval_ms must be 0..%d, timeout_ms 0..60000, stale_ms >= 0", path, name, int(urlMaxInterval/time.Millisecond))
 				}
-			} else if sc.IntervalMs != 0 || sc.TimeoutMs != 0 || sc.StaleMs != nil {
-				return nil, fmt.Errorf("%s: slot %s: interval_ms/timeout_ms/stale_ms go with url", path, name)
+				if sc.OnStale != "" && sc.OnStale != "offline" && sc.OnStale != "hide" {
+					return nil, fmt.Errorf("%s: slot %s: on_stale must be \"offline\" or \"hide\"", path, name)
+				}
+			} else if sc.IntervalMs != 0 || sc.TimeoutMs != 0 || sc.StaleMs != nil || sc.OnStale != "" {
+				return nil, fmt.Errorf("%s: slot %s: interval_ms/timeout_ms/stale_ms/on_stale go with url", path, name)
 			}
 			if b := sc.PNGBox; b != nil && ((sc.PNG == "" && sc.URL == "") || b.X < 0 || b.Y < 0 || b.Width < 1 || b.Height < 1) {
 				return nil, fmt.Errorf("%s: slot %s: png_box needs png or url, x/y >= 0 and width/height >= 1", path, name)
@@ -227,7 +234,7 @@ func loadConfig(path string) (*Config, error) {
 			if sc.Height < 0 || sc.Height > maxImageHeight || sc.Height%2 != 0 || (sc.Height != 0 && sc.Height < 2) {
 				return nil, fmt.Errorf("%s: slot %s: height must be an even number 2..%d (or left out)", path, name, maxImageHeight)
 			}
-		} else if sc.PNG != "" || sc.URL != "" || sc.IntervalMs != 0 || sc.TimeoutMs != 0 || sc.StaleMs != nil || sc.Fit != "" || sc.Width != 0 || sc.Height != 0 || sc.PNGBox != nil || sc.GBall != nil || sc.Track != nil {
+		} else if sc.PNG != "" || sc.URL != "" || sc.IntervalMs != 0 || sc.TimeoutMs != 0 || sc.StaleMs != nil || sc.OnStale != "" || sc.Fit != "" || sc.Width != 0 || sc.Height != 0 || sc.PNGBox != nil || sc.GBall != nil || sc.Track != nil {
 			return nil, fmt.Errorf("%s: slot %s: png/url/fit/width/height/png_box/gball/track are for the imagefile slots", path, name)
 		}
 	}
