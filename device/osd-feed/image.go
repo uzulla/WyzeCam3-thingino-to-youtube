@@ -348,23 +348,26 @@ func convertPNGBytes(data []byte, path string, w, h int, fit string) ([]byte, er
 	if w < 2 || h < 2 {
 		return nil, fmt.Errorf("slot size %dx%d", w, h)
 	}
+	// Headerless BGRA of exactly the box's size is the slot's own layout and
+	// goes through untouched; it is told apart from the others by that length
+	// only after their decoders refused the bytes (a BGRA frame may well
+	// start with bytes that look like a magic)
+	exact := len(data) == w*h*4
 	var rgba *image.RGBA
-	switch pictureKind(data, w, h) {
-	case "bgra":
-		// already the slot's own layout, for exactly the box: no work at all
-		pix, err := bgraPixels(data, w, h)
-		if err != nil {
-			return nil, fmt.Errorf("%s: %w", path, err)
-		}
-		return pix, nil
-	case "pnm":
+	if isPNM(data) {
 		img, err := decodePNM(data)
+		if err != nil && exact {
+			return data, nil
+		}
 		if err != nil {
 			return nil, fmt.Errorf("%s: %w", path, err)
 		}
 		rgba = img
-	default:
+	} else {
 		hdr, _, err := image.DecodeConfig(bytes.NewReader(data))
+		if err != nil && exact {
+			return data, nil
+		}
 		if err != nil {
 			return nil, fmt.Errorf("%s: not a PNG, JPEG, PGM or PPM (%v); headerless BGRA must be exactly %d bytes for the %dx%d box (got %d: ask for w=%d&h=%d)",
 				path, err, w*h*4, w, h, len(data), w, h)

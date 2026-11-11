@@ -274,13 +274,20 @@
       urlInp.value = feed.url || ""; urlInp.spellcheck = false; urlInp.setAttribute("aria-label", "Remote camera URL");
       panel.appendChild(urlInp);
       const RATES = [[5000, "every 5 s"], [2000, "every 2 s"], [1000, "1 / s"], [500, "2 / s"], [250, "4 / s"], [200, "5 / s"], [100, "10 / s"]];
+      // the value in the file stays as it is (it may be one the presets do
+      // not have, from a hand-edited osd-feed.json) until a step is taken
       let ms = feed.interval_ms || 1000;
-      let ri = RATES.findIndex(r => r[0] === ms); if (ri < 0) ri = RATES.findIndex(r => r[0] <= ms); if (ri < 0) ri = 0;
-      const rateRow = stepper("Fetches", RATES[ri][1], () => { ri = Math.max(0, ri - 1); ms = RATES[ri][0]; rateRow.querySelector(".val").textContent = RATES[ri][1]; },
-        () => { ri = Math.min(RATES.length - 1, ri + 1); ms = RATES[ri][0]; rateRow.querySelector(".val").textContent = RATES[ri][1]; });
+      const rateLabel = () => { const r = RATES.find(r => r[0] === ms); return r ? r[1] : `every ${ms} ms`; };
+      const step = (dir) => {
+        let ri = RATES.findIndex(r => r[0] === ms);
+        if (ri < 0) { ri = RATES.findIndex(r => r[0] < ms); ri = dir > 0 ? (ri < 0 ? RATES.length - 1 : ri) : (ri < 0 ? 0 : Math.max(0, ri - 1)); }
+        else ri = Math.max(0, Math.min(RATES.length - 1, ri + dir));
+        ms = RATES[ri][0]; rateRow.querySelector(".val").textContent = rateLabel();
+      };
+      const rateRow = stepper("Fetches", rateLabel(), () => step(-1), () => step(1));
       panel.appendChild(rateRow);
       const hint = document.createElement("div"); hint.className = "lbl";
-      hint.textContent = "Size, rotation, format etc. are the source's own URL parameters. Decoding a JPEG costs this camera CPU (a 320×240 colour JPEG about 4% per fetch/s); uncompressed PGM / PPM / BGRA (fmt=pgm on an m5camera) costs almost nothing.";
+      hint.textContent = "Size, rotation, format etc. are the source's own URL parameters. Each fetch costs this camera CPU: at 320×240 about 4% per fetch/s for a colour JPEG, 2–3% for uncompressed PGM / PPM / BGRA (fmt=pgm on an m5camera: no decoding, but more bytes to receive), 1.6% for a grey JPEG; at 160×120 about 1% whatever the format.";
       panel.appendChild(hint);
       const saveURL = document.createElement("button"); saveURL.className = "primary"; saveURL.textContent = "Save remote camera (restarts osd-feed)";
       saveURL.addEventListener("click", async () => {
@@ -289,7 +296,8 @@
         try {
           await api("/api/osd/feed", url ? { slot: name, url, interval_ms: ms } : { slot: name, url: "" });
           data.feed[name] = Object.assign({}, data.feed[name], url ? { url, interval_ms: ms } : { url: "", interval_ms: 0 });
-          setMsg(url ? "Saved. The remote camera shows within a few seconds." : "Saved. No remote camera.");
+          if (url && !e.enabled) setMsg("Saved. Turn on “Show on the video” above to see it.");
+          else setMsg(url ? "Saved. The remote camera shows within a few seconds." : "Saved. No remote camera.");
         } catch (err) { setMsg(err.message, true); }
       });
       panel.appendChild(saveURL);

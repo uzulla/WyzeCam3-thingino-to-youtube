@@ -194,9 +194,9 @@ type feedSlot struct {
 var osdFeedInit = osdFeedInitDefault
 
 // feedPicture - what the OSD tab sets for an image slot's URL picture: the
-// URL ("" takes it away) and, optionally, the fetch interval
+// URL ("" takes it away, nil leaves it) and the fetch interval (nil leaves it)
 type feedPicture struct {
-	URL        string
+	URL        *string
 	IntervalMs *int
 }
 
@@ -314,22 +314,24 @@ func (s *server) feedEdit(slot string, template *string, gball, track *bool, pic
 		if !isImage(slot) {
 			return fmt.Errorf("%s: only an image slot can show a picture from a URL", slot)
 		}
-		if pic.URL == "" {
+		if pic.URL != nil && *pic.URL == "" {
 			delete(m, "url")
 			delete(m, "interval_ms")
 			delete(m, "timeout_ms")
 			delete(m, "stale_ms")
-		} else {
-			if err := checkFeedURL(pic.URL); err != nil {
+		} else if pic.URL != nil {
+			if err := checkFeedURL(*pic.URL); err != nil {
 				return err
 			}
-			m["url"] = pic.URL
+			m["url"] = *pic.URL
 			delete(m, "png")
 			if _, ok := m["fit"]; !ok {
 				m["fit"] = "contain"
 			}
 		}
 		if pic.IntervalMs != nil {
+			// the interval alone goes with whatever URL the file has now
+			// (read here, under the lock, not by the handler beforehand)
 			if _, hasURL := m["url"]; !hasURL {
 				return errors.New("the fetch interval goes with a URL")
 			}
@@ -445,12 +447,8 @@ func (s *server) handleOSDFeed(w http.ResponseWriter, r *http.Request) {
 	if body.URL != nil || body.IntervalMs != nil {
 		pic = &feedPicture{IntervalMs: body.IntervalMs}
 		if body.URL != nil {
-			pic.URL = strings.TrimSpace(*body.URL)
-		} else {
-			// the interval alone: keep the URL the file has
-			if slots, err := s.feedRead(); err == nil {
-				pic.URL = slots[body.Slot].URL
-			}
+			u := strings.TrimSpace(*body.URL)
+			pic.URL = &u
 		}
 	}
 	if err := s.feedEdit(body.Slot, body.Template, body.GBall, body.Track, pic); err != nil {
@@ -538,6 +536,11 @@ func (s *server) feedSetPNG(slot, path string) error {
 		m = map[string]any{}
 	}
 	m["png"] = path
+	// one picture per slot: a URL set earlier gives way to the PNG
+	delete(m, "url")
+	delete(m, "interval_ms")
+	delete(m, "timeout_ms")
+	delete(m, "stale_ms")
 	if _, ok := m["fit"]; !ok {
 		m["fit"] = "contain"
 	}

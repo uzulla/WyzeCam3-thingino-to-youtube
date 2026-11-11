@@ -8,31 +8,19 @@ package main
 // opaque (BGRA keeps the alpha it carries).
 
 import (
-	"bytes"
 	"errors"
 	"fmt"
 	"image"
 	"strconv"
 )
 
-// pictureKind - what the bytes are, from their magic (PNM) or their length
-// (headerless BGRA for the box); "" means "ask image.Decode" (PNG, JPEG)
-func pictureKind(data []byte, w, h int) string {
-	if len(data) > 2 && data[0] == 'P' && (data[1] == '5' || data[1] == '6') && isPNMSpace(data[2]) {
-		return "pnm"
-	}
-	if w > 0 && h > 0 && len(data) == w*h*4 && (len(data) < 8 || !looksLikeImageFile(data)) {
-		return "bgra"
-	}
-	return ""
+// isPNM - the magic of a binary PGM / PPM
+func isPNM(data []byte) bool {
+	return len(data) > 2 && data[0] == 'P' && (data[1] == '5' || data[1] == '6') && isPNMSpace(data[2])
 }
 
+// isPNMSpace - whitespace as the netpbm header allows it
 func isPNMSpace(c byte) bool { return c == ' ' || c == '\n' || c == '\r' || c == '\t' }
-
-// looksLikeImageFile - the magic of the formats image.Decode knows here
-func looksLikeImageFile(data []byte) bool {
-	return bytes.HasPrefix(data, []byte("\x89PNG")) || bytes.HasPrefix(data, []byte("\xff\xd8"))
-}
 
 // decodePNM - a binary PGM (P5) or PPM (P6) with maxval 255 as an RGBA
 // image (opaque). The header is "P5 <w> <h> 255" in whitespace, a single
@@ -106,13 +94,4 @@ func decodePNM(data []byte) (*image.RGBA, error) {
 		}
 	}
 	return img, nil
-}
-
-// bgraPixels - headerless BGRA of exactly the box's size is the slot's own
-// format: handed through as it is (no decoding, no copy)
-func bgraPixels(data []byte, w, h int) ([]byte, error) {
-	if len(data) != w*h*4 {
-		return nil, fmt.Errorf("BGRA: %d bytes, but the box is %dx%d (%d bytes): ask the camera for w=%d&h=%d", len(data), w, h, w*h*4, w, h)
-	}
-	return data, nil
 }

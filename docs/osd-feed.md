@@ -82,7 +82,7 @@ device/install-osd-feed.sh root@<camera-ip>       # SD にバイナリと (無�
 | `interval_ms` | 描く間隔 (既定 250、下限 100)。prudynt 側がファイルを見るのは 100ms ごとなので、それより短くしても速くならない |
 | `clear_on_exit` | 終了時にスロットのファイルを消す (既定 true) |
 | `sources.<名前>` | データ源。`type` と `interval_ms` (取得間隔、既定 1000)、type ごとの項目 (下表)。名前はテンプレートから `.<名前>.<キー>` で参照する |
-| `slots.imagefile` 〜 `slots.imagefile4` | 画像スロット ([osd.md](osd.md#画像-ロゴなど-を重ねる-osdimagefile))。4 枚は別々に置ける (ロゴ、G ボール、走行図、リモートカメラ)。`png` (SD カード上の透過 PNG) か `url` (JPEG / PNG を取ってくる URL。[下記](#リモートカメラ-url-から取る画像)。`interval_ms` で取得間隔)、`fit` (`contain` = 縮めて収める・拡大はしない・中央配置、`none` = そのまま中央に置き、はみ出た分は切る。既定 `contain`)、`png_box` (PNG を置く場所 `{"x","y","width","height"}`。既定はスロット全体)、`gball` ([G ボール](#racebox-の-g-ボールと速度))、`track` ([走行図](#racebox-の-gps-から走行図))。`png`、`gball`、`track` の少なくとも 1 つが要る。`width` / `height` / `path` は普通は書かない (prudynt から読む) |
+| `slots.imagefile` 〜 `slots.imagefile4` | 画像スロット ([osd.md](osd.md#画像-ロゴなど-を重ねる-osdimagefile))。4 枚は別々に置ける (ロゴ、G ボール、走行図、リモートカメラ)。`png` (SD カード上の透過 PNG) か `url` (JPEG / PNG を取ってくる URL。[下記](#リモートカメラ-url-から取る画像)。`interval_ms` で取得間隔)、`fit` (`contain` = 縮めて収める・拡大はしない・中央配置、`none` = そのまま中央に置き、はみ出た分は切る。既定 `contain`)、`png_box` (PNG を置く場所 `{"x","y","width","height"}`。既定はスロット全体)、`gball` ([G ボール](#racebox-の-g-ボールと速度))、`track` ([走行図](#racebox-の-gps-から走行図))。`png`、`url`、`gball`、`track` の少なくとも 1 つが要る (`png` と `url` は同時には書けない)。`width` / `height` / `path` は普通は書かない (prudynt から読む) |
 | `slots.<スロット>` | `textfile` / `textfile2` / `textfile3`。`template` は Go の text/template (lapcam の OSD タブのテキスト枠で編集するのがこれ)。`path` / `cols` / `rows` は普通は書かない: 起動時と以後 30 秒ごとに prudynt から読んで追従する (OSD タブで大きさを変えれば 30 秒以内に切る幅も変わる。prudynt が答えない時は docs/osd.md の既定値)。**ここに書いた値は prudynt の値より常に優先される**ので、OSD タブで変えたのに反映されない時はここに古い値が残っていないか見る |
 
 ### source の種類

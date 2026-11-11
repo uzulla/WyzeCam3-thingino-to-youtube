@@ -92,6 +92,14 @@ func TestBGRAPassesThroughAtTheBoxSize(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "BGRA must be exactly 64 bytes") {
 		t.Errorf("wrong size: %v", err)
 	}
+	// a BGRA frame whose first pixels look like a magic is still BGRA
+	for name, head := range map[string][]byte{"pnm-like": []byte("P5 "), "jpeg-like": []byte("\xff\xd8\xff"), "png-like": []byte("\x89PNG")} {
+		raw2 := append(append([]byte{}, head...), raw[len(head):]...)
+		out, err := convertPNGBytes(raw2, "t.bgra", 4, 2, "contain")
+		if err != nil || len(out) != len(raw2) || out[0] != head[0] {
+			t.Errorf("%s: BGRA starting with a magic must pass through: %v", name, err)
+		}
+	}
 	// a JPEG that happens to be w*h*4 bytes is still a JPEG (decoded, not passed through)
 	j := testJPEG(t, 2, 2, color.RGBA{R: 255, G: 255, B: 255, A: 255})
 	for len(j)%64 != 0 {

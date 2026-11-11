@@ -50,6 +50,7 @@ type urlPicture struct {
 	firstOnce sync.Once
 }
 
+// newURLPicture - the fetcher for a slot's url, converting for a w x h box
 func newURLPicture(cfg SlotConfig, w, h int) *urlPicture {
 	// An uncompressed 320x240 picture is 300 KB: read it in few, large
 	// syscalls (the default 4 KB buffer means 80 reads per picture, and
@@ -116,36 +117,40 @@ func (p *urlPicture) fetch(ctx context.Context) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	now := time.Now()
-	if err != nil {
-		p.err = err
-		// Keep showing the last picture for a while (a missed frame is
-		// nothing); after that it comes down rather than stay frozen
-		if p.pixels != nil && p.stale > 0 && now.Sub(p.okAt) > p.stale {
-			p.pixels, p.seq = nil, p.seq+1
+	if err == nil {
+		same := p.raw != nil && bytes.Equal(body, p.raw)
+		p.raw = body
+		if same && p.pixels != nil {
+			// the same picture again: nothing to decode (and a transient
+			// fetch error in between is over)
+			p.err, p.okAt = nil, now
+			return
 		}
-		return
-	}
-	p.okAt = now
-	same := p.raw != nil && bytes.Equal(body, p.raw)
-	p.raw = body
-	if same && p.pixels != nil && p.err == nil {
-		return // the same picture again: nothing to decode
-	}
-	if p.w < 2 || p.h < 2 {
-		p.err = fmt.Errorf("slot size %dx%d", p.w, p.h)
-		return
-	}
-	pix, err := convertPNGBytes(body, p.url, p.w, p.h, p.fit)
-	if err != nil {
-		p.err = err
-		if p.pixels != nil {
-			p.pixels, p.seq = nil, p.seq+1
+		if p.w < 2 || p.h < 2 {
+			err = fmt.Errorf("slot size %dx%d", p.w, p.h)
+		} else {
+			var pix []byte
+			if pix, err = convertPNGBytes(body, p.url, p.w, p.h, p.fit); err == nil {
+				p.err, p.okAt = nil, now
+				if !bytes.Equal(pix, p.pixels) {
+					p.pixels, p.seq = pix, p.seq+1
+				}
+				return
+			}
 		}
-		return
 	}
-	p.err = nil
-	if !bytes.Equal(pix, p.pixels) {
-		p.pixels, p.seq = pix, p.seq+1
+	// A fetch or decode problem: keep showing the last good picture for a
+	// while (a missed or garbled frame is nothing); after stale_ms it
+	// comes down rather than stay frozen
+	p.err = err
+	p.dropIfStale(now)
+}
+
+// dropIfStale - take the picture down when the last good fetch is older
+// than stale_ms (0: never). Called with the lock held.
+func (p *urlPicture) dropIfStale(now time.Time) {
+	if p.pixels != nil && p.stale > 0 && now.Sub(p.okAt) > p.stale {
+		p.pixels, p.seq = nil, p.seq+1
 	}
 }
 
@@ -196,6 +201,9 @@ func (p *urlPicture) get(ctx context.Context) ([]byte, error) {
 func (p *urlPicture) latest(lastSeq *uint64) (pix []byte, changed bool, err error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
+	// a GET that hangs (timeout_ms can be longer than stale_ms) must not
+	// keep an old picture up past its time either
+	p.dropIfStale(time.Now())
 	changed = p.seq != *lastSeq
 	*lastSeq = p.seq
 	return p.pixels, changed, p.err
@@ -206,6 +214,7 @@ func (p *urlPicture) describe() string {
 	return fmt.Sprintf("%s every %v (fit %s)", p.url, p.interval, p.fit)
 }
 
+// logURLStart - one line at start-up saying what the slot fetches
 func logURLStart(name string, p *urlPicture) {
 	log.Printf("slot %s: picture from %s", name, p.describe())
 }

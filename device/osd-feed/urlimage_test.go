@@ -114,12 +114,45 @@ func TestURLPictureErrorsKeepThenDropThePicture(t *testing.T) {
 	if pix, changed, err := p.latest(&seq); pix == nil || !changed || err != nil {
 		t.Fatalf("recovered: pix %v changed %v err %v", pix != nil, changed, err)
 	}
-	// not a picture at all
+	// not a picture at all: like a fetch error, the last picture stays until stale_ms
 	junk := []byte("<html>no</html>")
 	ps.body.Store(&junk)
 	p.fetchOnce(context.Background())
-	if pix, changed, err := p.latest(&seq); pix != nil || !changed || err == nil {
+	if pix, changed, err := p.latest(&seq); pix == nil || changed || err == nil {
 		t.Fatalf("junk body: pix %v changed %v err %v", pix != nil, changed, err)
+	}
+	// ... and comes down on time even when no fetch finishes meanwhile (a hanging GET)
+	time.Sleep(40 * time.Millisecond)
+	if pix, changed, err := p.latest(&seq); pix != nil || !changed || err == nil {
+		t.Fatalf("stale without a fetch: pix %v changed %v err %v", pix != nil, changed, err)
+	}
+	// the same good picture after an error is not decoded again (the error clears)
+	good := testJPEG(t, 4, 4, color.RGBA{G: 255, A: 255})
+	ps.body.Store(&good)
+	p.fetchOnce(context.Background())
+	if _, _, err := p.latest(&seq); err != nil {
+		t.Fatal(err)
+	}
+	ps.status.Store(503)
+	p.fetchOnce(context.Background())
+	ps.status.Store(200)
+	p.fetchOnce(context.Background())
+	if pix, changed, err := p.latest(&seq); pix == nil || err != nil {
+		t.Fatalf("same picture after a transient error: pix %v changed %v err %v", pix != nil, changed, err)
+	}
+	if p.raw == nil || !bytes.Equal(p.raw, good) {
+		t.Error("the raw bytes of the good picture must be kept for the comparison")
+	}
+	// stale_ms 0: the picture is never taken down
+	zero := 0
+	p = newURLPicture(SlotConfig{URL: ps.URL, StaleMs: &zero}, 4, 4)
+	p.fetchOnce(context.Background())
+	ps.status.Store(503)
+	time.Sleep(5 * time.Millisecond)
+	p.fetchOnce(context.Background())
+	var seq2 uint64
+	if pix, _, err := p.latest(&seq2); pix == nil || err == nil {
+		t.Fatalf("stale_ms 0: pix %v err %v", pix != nil, err)
 	}
 }
 
@@ -198,7 +231,7 @@ func TestImageSlotWithURL(t *testing.T) {
 	s = newImageSlot("imagefile", SlotConfig{URL: ps.URL, StaleMs: &stale, PNGBox: &Box{X: 0, Y: 0, Width: 8, Height: 4},
 		GBall: &GBallConfig{Source: "rb", X: 0, Y: 4, Size: 32}}, SlotGeometry{Path: path, Width: 40, Height: 40})
 	s.pic.fetchOnce(context.Background())
-	if pix, _, err := s.render(map[string]any{}); err != nil || len(pix) != 40*40*4 {
+	if pix, _, err = s.render(map[string]any{}); err != nil || len(pix) != 40*40*4 {
 		t.Fatalf("composed: err %v len %d", err, len(pix))
 	}
 	if got := px(pix, 40, 0, 0); got[2] < 240 {

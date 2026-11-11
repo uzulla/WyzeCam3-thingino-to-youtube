@@ -425,7 +425,7 @@ func TestOSDFeedPictureURL(t *testing.T) {
 		t.Fatal(err)
 	}
 	ms := 500
-	if err := s.feedEdit("imagefile3", nil, nil, nil, &feedPicture{URL: "http://192.168.11.113/jpg?w=320&h=240", IntervalMs: &ms}); err != nil {
+	if err := s.feedEdit("imagefile3", nil, nil, nil, &feedPicture{URL: sp("http://192.168.11.113/jpg?w=320&h=240"), IntervalMs: &ms}); err != nil {
 		t.Fatal(err)
 	}
 	slots, err := s.feedRead()
@@ -436,14 +436,14 @@ func TestOSDFeedPictureURL(t *testing.T) {
 		t.Errorf("imagefile3: %+v", got)
 	}
 	// the picture element: a slot of its own, made on first use and removed when the URL is cleared
-	if err := s.feedEdit("imagefile4", nil, nil, nil, &feedPicture{URL: "http://h/p.png"}); err != nil {
+	if err := s.feedEdit("imagefile4", nil, nil, nil, &feedPicture{URL: sp("http://h/p.png")}); err != nil {
 		t.Fatal(err)
 	}
 	slots, _ = s.feedRead()
 	if got := slots["imagefile4"]; got.URL != "http://h/p.png" || got.PNG != "" {
 		t.Errorf("imagefile4 with a URL: %+v", got)
 	}
-	if err := s.feedEdit("imagefile4", nil, nil, nil, &feedPicture{URL: ""}); err != nil {
+	if err := s.feedEdit("imagefile4", nil, nil, nil, &feedPicture{URL: sp("")}); err != nil {
 		t.Fatal(err)
 	}
 	slots, _ = s.feedRead()
@@ -451,7 +451,7 @@ func TestOSDFeedPictureURL(t *testing.T) {
 		t.Errorf("imagefile4 after clearing the URL must be gone: %+v", slots["imagefile4"])
 	}
 	// clearing the URL of a slot that also has a track keeps the track
-	if err := s.feedEdit("imagefile3", nil, nil, nil, &feedPicture{URL: ""}); err != nil {
+	if err := s.feedEdit("imagefile3", nil, nil, nil, &feedPicture{URL: sp("")}); err != nil {
 		t.Fatal(err)
 	}
 	slots, _ = s.feedRead()
@@ -462,22 +462,47 @@ func TestOSDFeedPictureURL(t *testing.T) {
 	before, _ := os.ReadFile(filepath.Join(sd, osdFeedName))
 	bad := 50
 	for name, pic := range map[string]feedPicture{
-		"ftp":       {URL: "ftp://h/p"},
-		"relative":  {URL: "/jpg"},
-		"control":   {URL: "http://h/p\n"},
-		"too long":  {URL: "http://h/" + strings.Repeat("a", 600)},
-		"interval":  {URL: "http://h/p", IntervalMs: &bad},
-		"ms no url": {URL: "", IntervalMs: &ms},
+		"ftp":       {URL: sp("ftp://h/p")},
+		"relative":  {URL: sp("/jpg")},
+		"control":   {URL: sp("http://h/p\n")},
+		"too long":  {URL: sp("http://h/" + strings.Repeat("a", 600))},
+		"interval":  {URL: sp("http://h/p"), IntervalMs: &bad},
+		"ms no url": {IntervalMs: &ms}, // imagefile3 has no URL any more
 	} {
 		if err := s.feedEdit("imagefile3", nil, nil, nil, &pic); err == nil {
 			t.Errorf("%s: must be refused", name)
 		}
 	}
-	if err := s.feedEdit("textfile", nil, nil, nil, &feedPicture{URL: "http://h/p"}); err == nil {
+	if err := s.feedEdit("textfile", nil, nil, nil, &feedPicture{URL: sp("http://h/p")}); err == nil {
 		t.Error("a text slot cannot have a picture")
 	}
 	after, _ := os.ReadFile(filepath.Join(sd, osdFeedName))
 	if string(before) != string(after) {
 		t.Error("a refused edit must not change the file")
 	}
+	// the interval alone keeps the URL the file has
+	if err := s.feedEdit("imagefile4", nil, nil, nil, &feedPicture{URL: sp("http://h/p.png"), IntervalMs: &ms}); err != nil {
+		t.Fatal(err)
+	}
+	two := 2000
+	if err := s.feedEdit("imagefile4", nil, nil, nil, &feedPicture{IntervalMs: &two}); err != nil {
+		t.Fatal(err)
+	}
+	slots, _ = s.feedRead()
+	if got := slots["imagefile4"]; got.URL != "http://h/p.png" || got.IntervalMs != 2000 {
+		t.Errorf("interval alone: %+v", got)
+	}
+	// uploading a logo PNG into a slot that had a URL: the URL goes (one picture per slot)
+	if err := s.feedEdit("imagefile", nil, nil, nil, &feedPicture{URL: sp("http://h/p.png"), IntervalMs: &ms}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.feedSetPNG("imagefile", "/mnt/x/logo.png"); err != nil {
+		t.Fatal(err)
+	}
+	slots, _ = s.feedRead()
+	if got := slots["imagefile"]; got.URL != "" || got.IntervalMs != 0 || got.PNG != "/mnt/x/logo.png" {
+		t.Errorf("after feedSetPNG: %+v", got)
+	}
 }
+
+func sp(s string) *string { return &s }
