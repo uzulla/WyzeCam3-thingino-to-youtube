@@ -1,23 +1,17 @@
-# lapcam: スマホ向けの Web UI (Thingino の Web UI を置き換える)
+# lapcam: スマホ向けの Web UI
 
-Thingino の Web UI は監視カメラ向けの機能が多く、このカメラの使い方 (YouTube に配信し、SD に録画し、
-OSD を整える) には合わなくなってきたので、必要なものだけを持つ UI を**別のプログラムとして**作り直す。
-サーキットでスマホから操作することを前提に、プレビューが主役の 1 画面で済むようにする。
+カメラの操作画面。ファームウェアに起動スクリプトが入っていて、SD カードの `lapcam` を起動時に立ち上げ、ポート 80 で答える
+(Thingino の Web UI は lapcam が動いている間は止まる。SD カードが無ければ Thingino の UI がそのまま出る)。
+サーキットでスマホから操作することを前提に、プレビューが主役の 1 画面にしてある。
 
 機能: プレビュー、配信の開始・停止 (ストリームキーの切り替え、画質)、録画の開始・停止とファイルの再生・ダウンロード・削除、
-プレビュー上での OSD の編集、映像の反転、Wi-Fi の設定、本体ボタンでの AP モード、再起動。Thingino の Web UI
-(uhttpd、ポート 80/443) は lapcam が動いている間だけ止め、lapcam がポート 80 で答える (2026-11-09 にユーザーの判断で
-置き換え。SD カードや本体が無くて lapcam が起動できない時は uhttpd がそのまま動く。戻し方は末尾)。
+プレビュー上での OSD の編集、映像の反転、Wi-Fi の設定、パスワードの変更、本体ボタンでの AP モード、再起動。
+Thingino の Web UI は監視カメラ向けの機能が多く、この使い方には合わないので、必要なものだけを持つ UI を別のプログラムとして作った
+(2026-11-09 にユーザーの判断で置き換え)。
 
 ## 使う
 
-```sh
-device/lapcam/build.sh                      # PC で Go のクロスビルド -> dist/lapcam (約 8.6 MB、静的リンク)
-device/install-lapcam.sh root@<camera-ip>   # SD カードにバイナリ、overlay に起動スクリプト S97lapcam を置いて起動。
-                                           # 初回は SD に lapcam.args (-listen :80) を書く。起動後に答えるまで確かめる
-```
-
-スマホのブラウザで `http://<camera-ip>/` を開き、カメラの root パスワード (Thingino の Web UI や ssh と同じ)
+スマホのブラウザで `http://lapcam-xxxx.local/` (または IP) を開き、カメラの root パスワード (ssh と同じ。焼いた直後は `root`)
 でサインインする。ブラウザにパスワードを記憶させれば次回からは 1 タップ。サインインは 30 日残る (lapcam の再起動では消えない。カメラの再起動とパスワード変更で消える)。
 
 画面は下のタブで切り替える (Camera / OSD / Stream / Recordings / Wi-Fi)。
@@ -36,13 +30,10 @@ device/install-lapcam.sh root@<camera-ip>   # SD カードにバイナリ、over
 | Stream タブ | ストリームキーを名前付きで複数保存し、使うものを選ぶ。Save で `youtube-relay.json` に書き、配信中なら再起動 (数秒切れる)。起動時に配信を始めるか (`service enable/disable youtube-relay`)。**Video quality**: 解像度 (1920×1080 / 1280×720 / 960×540 / 640×360)、fps (5〜30)、ビットレート、CBR/VBR を選んで Apply (2 回タップ)。`/etc/prudynt.json` の `stream0.*` に `jct` で書き (gop = fps×2)、prudynt を再起動する (osd-config / 旧 CGI と同じ `/run/prudynt-restart.lock` の手順。配信と録画が 10〜20 秒止まる)。配信側の最近のログ (ストリームキーは伏せる) |
 | Wi-Fi タブ | 今の接続 (SSID、dBm、IP)、保存済みのネットワーク一覧 (優先度順。▲ で先頭へ、Remove)、Scan で見つかった SSID をタップしてパスワードを入れて追加、または手で入力 (スキャンの間は配信が一瞬途切れることがある)。Save and apply で `/etc/wpa_supplicant.conf` を書き直し (ヘッダ行と、network ブロックの他の行 (`key_mgmt=SAE`、`bssid` など) は残す。パスワードは既存のものを引き継ぐ。16 進表記の SSID や引用符を含む名前は 16 進のまま)、SD に `wpa_supplicant.conf` があればそれも同じ内容にし (wifi-from-sd が次の起動で適用するのと一致させる)、`wpa_cli reconfigure` で即時反映。**保存前につながっていたのに 30 秒たっても再接続しなければ、直前の設定に自動で戻す** (打ち間違いで操作不能にならない)。初回だけ元のファイルを `.before-lapcam` に残す。パスワードはブラウザに送らない。今つながっているネットワークを消す保存は 2 回タップで警告 |
 
-## カメラの名前 (`set-camera-name.sh`)
+## カメラの名前
 
-```sh
-device/set-camera-name.sh root@<camera-ip>          # 名前は lapcam。別名なら第 2 引数
-```
-
-Thingino が機体の名前から決めている 3 つを lapcam に揃える。/etc (overlay) への変更で、工場出荷状態に戻すと消える。
+Thingino が機体の名前から決めている 3 つ (ホスト名、mDNS、録画フォルダ) を lapcam に揃えてある。ファームウェアに焼き込んであり、
+素の Thingino に手で入れる場合は `device/set-camera-name.sh root@<camera-ip>` (別名なら第 2 引数) が同じことをする。
 
 - **ホスト名**: 手で入れた個体は `set-camera-name.sh` で `lapcam` に (`hostname`、`/etc/hostname`、`/etc/hosts`。Thingino の
   `S04hostname` は自分で付けた名前を起動時に残す)。ファームウェア ([sdcard.md](sdcard.md)) は既定名を `lapcam` にした
@@ -57,10 +48,6 @@ Thingino が機体の名前から決めている 3 つを lapcam に揃える。
 
 ## つながらない時: 本体ボタン 5 秒長押しでカメラが Wi-Fi (AP) を出す (`wifi-ap`)
 
-```sh
-device/install-wifi-ap.sh root@<camera-ip>   # /usr/sbin/wifi-ap を置き、ボタンの 5 秒長押しの割り当てを変える
-```
-
 サーキットで保存済みの Wi-Fi が無い時のリカバリ用。本体のボタンを **5 秒押し続け (チャイムが鳴る) て離す**と、
 カメラが**パスワード無しのアクセスポイント `lapcam`** になる。スマホをそれにつなぎ、`http://100.64.1.1/` を
 開いて Wi-Fi タブで設定を直し (AP の間は保存だけで、適用は再起動時)、Camera 画面一番下の **Reboot camera** で再起動すると、
@@ -72,7 +59,8 @@ AP になっている間は Camera 画面の上に黄色い帯が出る。自動
   (保存済みの設定は `/etc/wpa_supplicant.conf.station` にも残す)。なので再起動すれば元通り。/etc への書き込みは
   2 回で、その数秒の間に電源が落ちたら `.station` を手で戻す
 - Thingino 既定の 5 秒長押しは「Wi-Fi 設定を消して再起動」(その後は Thingino の設定ポータル) で、保存した
-  ネットワークが消える。インストーラはこの行を `wifi-ap` に差し替える (元の行はコメントで残す。20 秒の初期化はそのまま)
+  ネットワークが消える。ファームウェアはボタン設定でこれを `wifi-ap` に差し替えてある (素の Thingino なら
+  `device/install-wifi-ap.sh root@<camera-ip>` が同じことをする)
 - AP にパスワードは無い (ユーザーの決定: リカバリ時にしか使わない)。その間は電波の届く範囲の誰でもつなげて通信も見える
 - SD の `uenv.txt` に Thingino 標準の `wlan_ssid=` / `wlan_pass=` があると、Wi-Fi の起動処理がそれで設定を上書きして AP が
   立たないので、`wifi-ap` はその場合は何もせず音 ("portal is down") とログで知らせる。保存済みの設定を戻せなかった時も同じ
@@ -131,6 +119,16 @@ JSON の 404、ヘッダ、サインインの成否と Cookie、不明なフィ�
   未サインインは 401、他サイトからの POST は 403、JSON でない POST は 415。OSD: 要素の取得、位置の変更が prudynt と SD の両方に入ること、奇数幅や日時の位置などの拒否、
   テンプレートの保存と osd-feed の再起動、ロゴ PNG のアップロードと PNG 以外の拒否。スマホでは Camera 画面を
   ユーザーが確認 (バッジの位置、上のバー、タブの大きさを直した)。OSD タブのドラッグはこれから
+
+## 素の Thingino に手で入れる場合
+
+```sh
+device/lapcam/build.sh                      # PC で Go のクロスビルド -> dist/lapcam (静的リンク)
+device/install-lapcam.sh root@<camera-ip>   # SD カードにバイナリ、overlay に起動スクリプト S97lapcam を置いて起動。
+                                           # 初回は SD に lapcam.args (-listen :80) を書く。起動後に答えるまで確かめる
+```
+
+ファームウェアを使う個体では不要 (カードの `lapcam` を差し替えるだけ)。
 
 ## 戻す (Thingino の Web UI に)
 
