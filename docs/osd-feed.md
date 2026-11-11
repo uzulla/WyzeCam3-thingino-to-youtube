@@ -146,9 +146,9 @@ text/template 標準の `printf` `if` `range` などに加えて:
 
 ### RaceBox の G ボールと速度
 
-[esp32-racebox](https://github.com/uzulla/esp32-racebox) (RaceBox Mini → ESP32 → Wi-Fi の UDP ブロードキャスト、
+[esp32-racebox-bridge](https://github.com/uzulla/esp32-racebox-bridge) (RaceBox Mini → BLE → ESP32 → Wi-Fi の UDP ブロードキャスト、
 1 件 1 JSON、最大 25 件/秒) の G を 2 枚目の画像スロット (`imagefile2`) に **G ボール**として描き、速度をテキストで出す。ロゴ (`imagefile`) とは別の
-スロットなので、位置は lapcam の OSD タブで別々に動かせる。カメラと ESP32 が同じ
+スロットなので、位置は lapcam の OSD タブで別々に動かせる。RaceBox は BLE でしかデータを出さず、カメラに BLE は無いので、このブリッジが必須。カメラと ESP32 が同じ
 LAN (同じブロードキャストドメイン) にあること。SD カードに最初から入っている `osd-feed.json` はこの構成 (ロゴ + G ボール +
 走行図 + 速度) になっている。
 
@@ -187,14 +187,14 @@ LAN (同じブロードキャストドメイン) にあること。SD カード�
   | キー | 既定値 | 意味 |
   |---|---|---|
   | `source` | (必須) | 値を取る source |
-  | `lateral` / `longitudinal` | `g_y` / `g_x` | 横 G (右が +) と前後 G (加速が +) のキー。既定は esp32-racebox (RaceBox は X が前後、Y が左右) |
+  | `lateral` / `longitudinal` | `g_y` / `g_x` | 横 G (右が +) と前後 G (加速が +) のキー。既定は esp32-racebox-bridge (RaceBox は X が前後、Y が左右) |
   | `invert_lateral` / `invert_longitudinal` | false | 向きを反転。RaceBox の文書は軸の正の向きを書いていない。**RaceBox を傾けて、玉が低い側へ転がるように合わせる** (手元の RaceBox Mini は映像で左右が逆だったので `invert_lateral: true` にしている) |
   | `max_g` | 1.5 | 外周の G (10 まで) |
   | `trail` | 8 | 軌跡の点の数 (0 で無し) |
   | `x` / `y` / `size` | 0 / 0 / 収まる最大 | スロット内の位置と一辺 (px、`size` は 32〜720) |
 - **データが来ない間** (`stale_ms` の間 `match` に合う JSON が届かない、値が数値でない) は玉と軌跡を消し、輪だけ残す。
   戻った時に古い軌跡を引きずらない
-- **速度はテキスト** (`textfile3`)。esp32-racebox の `speed_mps` は GPS の速度なので、止まっていても 1〜2 km/h 出ることがある
+- **速度はテキスト** (`textfile3`)。esp32-racebox-bridge の `speed_mps` は GPS の速度なので、止まっていても 1〜2 km/h 出ることがある
 - 負荷 (720p 配信中、RaceBox から 25 件/秒、上の設定): osd-feed **2.65%**、prudynt 7.8% (G ボール無しの 7.25% から +0.5)。
   G ボール無しで同じ 100ms 描画なら osd-feed 1.1%。下げるために効いたこと:
   - 画像は玉と軌跡の周りだけ描き直す。スロット全体 (200×242、189KB) を毎回複製すると、それだけで osd-feed が 8% を超えた
@@ -203,7 +203,7 @@ LAN (同じブロードキャストドメイン) にあること。SD カード�
 
 ### RaceBox の GPS から走行図
 
-同じ esp32-racebox の緯度・経度を 3 枚目の画像スロット (`imagefile3`) に**走行図**として描く。地図は持たず、走った位置を
+同じ esp32-racebox-bridge の緯度・経度を 3 枚目の画像スロット (`imagefile3`) に**走行図**として描く。地図は持たず、走った位置を
 点で積み上げるだけ。一周 2〜3 分のサーキットなら、数周 (5〜10 分) 走ると軌跡だけでコースの形になる。古い点は
 `points` 個を超えた分から消える (G ボールの軌跡と同じ考え方)。描く範囲は、残っている点の緯度・経度の最小〜最大 (北が上、
 縦横同じ縮尺)。位置は lapcam の OSD タブで動かせる。
@@ -227,7 +227,7 @@ osd-feed.json の `slots` に足す (source は G ボールと同じ `racebox`):
 | キー | 既定値 | 意味 |
 |---|---|---|
 | `source` | (必須) | 値を取る source |
-| `lat` / `lon` | `lat` / `lon` | 緯度・経度 (度) のキー。既定は esp32-racebox |
+| `lat` / `lon` | `lat` / `lon` | 緯度・経度 (度) のキー。既定は esp32-racebox-bridge |
 | `valid` | `latlon_valid` | これが false の位置は描かない (GPS が測位できていない)。source にこのキーが無ければ全部描く |
 | `points` | 6000 | 残す点の数 (36000 まで)。点は描き直しの間隔 (`interval_ms`) ごとに多くて 1 つなので、100ms なら 6000 点で最短 10 分 (下記) |
 | `min_move_m` | 3 | 前の点からこれ (m) 未満しか動いていなければ点を足さない。ピットで止まっている間に `points` を使い切らないため (0 で毎回足す) |

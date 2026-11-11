@@ -11,6 +11,7 @@
 | 2.4 GHz の Wi-Fi | 自宅のルーター、モバイルルーター、スマホのテザリングなど。SSID とパスワード |
 | スマホか PC | 操作はブラウザから。アプリは要らない |
 | YouTube のストリームキー | YouTube Studio のライブ配信の設定にある。後から Web UI で入れてもよい |
+| (任意) RaceBox Mini と [esp32-racebox-bridge](https://github.com/uzulla/esp32-racebox-bridge) | G ボール・速度・走行図を出す場合。ブリッジが RaceBox の BLE を受けて同じ Wi-Fi に UDP で流し、カメラがそれを拾う。無ければ速度が `---` と出て G ボールと走行図が動かないだけ ([osd-feed.md](osd-feed.md#racebox-の-g-ボールと速度)) |
 
 ## 1. カードを作る
 
