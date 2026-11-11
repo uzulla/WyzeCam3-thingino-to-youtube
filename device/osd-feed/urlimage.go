@@ -60,6 +60,7 @@ func newURLPicture(cfg SlotConfig, w, h int) *urlPicture {
 	// the kernel side of each shows as system time on this CPU)
 	tr := http.DefaultTransport.(*http.Transport).Clone()
 	tr.ReadBufferSize = 64 << 10
+	tr.DialContext = dialLocal // a .local host is resolved by mDNS (mdns.go)
 	p := &urlPicture{url: cfg.URL, fit: cfg.Fit, w: w, h: h,
 		interval: urlDefaultInterval, timeout: urlDefaultTimeout, stale: urlDefaultStale,
 		client: &http.Client{Transport: tr}, first: make(chan struct{})}
@@ -189,6 +190,10 @@ func (p *urlPicture) get(ctx context.Context) ([]byte, error) {
 	}
 	resp, err := p.client.Do(req)
 	if err != nil {
+		// the device may have moved: next time, ask the network again
+		if h := req.URL.Hostname(); isLocalName(h) {
+			resolver.forget(h)
+		}
 		return nil, err
 	}
 	defer resp.Body.Close()

@@ -273,9 +273,9 @@
       const urlInp = document.createElement("input"); urlInp.type = "url"; urlInp.placeholder = "http://192.168.0.2/jpg?w=320&h=240&q=60";
       urlInp.value = feed.url || ""; urlInp.spellcheck = false; urlInp.setAttribute("aria-label", "Remote camera URL");
       panel.appendChild(urlInp);
-      // what is on the network, by mDNS: tap one to put its address into the
-      // URL (the query stays yours: w=, h=, fmt= are the source's own). The
-      // address, not the .local name: this camera cannot resolve .local
+      // what is on the network, by mDNS: tap one to put its .local name into
+      // the URL (the query stays yours: w=, h=, fmt= are the source's own).
+      // osd-feed resolves .local itself, so the URL survives a new address
       const findRow = document.createElement("div"); findRow.className = "lbl";
       const findBtn = document.createElement("button"); findBtn.className = "small"; findBtn.textContent = "Find cameras on the network";
       const found = document.createElement("div"); found.className = "remotes";
@@ -287,10 +287,10 @@
           if (!r.hosts.length) { found.textContent = "Nothing answered. Same Wi-Fi? (lapcam-xxxx.local names are this camera's own)"; return; }
           for (const h of r.hosts) {
             const b = document.createElement("button"); b.className = "small";
-            b.textContent = `${h.name} · ${h.ip}${h.port !== 80 ? ":" + h.port : ""}${h.path ? " · " + h.path : ""}`;
-            b.title = h.host;
+            b.textContent = `${h.host} · ${h.ip}${h.port !== 80 ? ":" + h.port : ""}${h.path ? " · " + h.path : ""}`;
+            b.title = h.name;
             b.addEventListener("click", () => {
-              const hostPort = h.ip + (h.port !== 80 ? ":" + h.port : "");
+              const hostPort = h.host + (h.port !== 80 ? ":" + h.port : "");
               let u = null;
               try { u = new URL(urlInp.value); } catch (_) {}
               if (u && (u.protocol === "http:" || u.protocol === "https:")) { u.host = hostPort; urlInp.value = u.toString(); }
