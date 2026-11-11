@@ -3,7 +3,12 @@
 Wyze Cam v3 の正面の状態表示 LED は、Thingino では**赤と青の 2 つの LED** として見える
 (`/sys/class/leds/led_r`、`/sys/class/leds/led_b`)。Thingino の既定では起動後は消えたまま
 (起動スクリプト `S99led` がトリガーを外し、`/etc/thingino.json` の `led.startup_indicator` が `off`)。
-このリポジトリで LED を使うのは、SD カードへの録画中に赤を点ける `rec-led` だけ ([recording.md](recording.md))。
+lapcam のファームウェアで LED が光るのは次の 2 つ:
+
+| いつ | 色 | 仕組み |
+|---|---|---|
+| U-Boot が動いている間 (普通の起動で 2 秒。SD カードの `autoupdate-full.bin` を焼いている間は 1〜2 分ずっと) | 赤 | U-Boot 環境変数 `gpio_user=38o` (`firmware/prepare.sh` の `local.uenv.txt`)。カーネルの LED ドライバが初期化で消す。その後 init スクリプトの間は Thingino の青の点滅 (`S00blink`) |
+| SD カードに録画している間 | 赤 | `rec-led` ([recording.md](recording.md)) |
 
 夜間撮影用の赤外線 LED はこれとは別 (下記)。
 
@@ -52,7 +57,9 @@ jct /etc/thingino.json set led.startup_indicator b    # 青。off で点けな�
 
 ## 夜間撮影用の赤外線 LED
 
-正面の状態表示 LED とは別物で、`light` で操作する (普段は昼夜の切り替え `daynightd` が自動で操作している):
+正面の状態表示 LED とは別物で、`light` で操作する。Thingino では昼夜の切り替え `daynightd` が自動で操作するが、
+lapcam のファームウェアは昼夜切り替えを無効にして昼に固定している (`thingino.json` の `daynight.enabled: false`、
+`force_mode: day`。車内では赤外線がフロントガラスを照らすだけで、トンネルや日陰で配信中に画が切り替わるため):
 
 ```sh
 light ir read     # 今の状態
@@ -75,4 +82,4 @@ light ir on       # 点ける (off / toggle)
 
 実機 (`ciao+da40db6`) で `/sys/class/leds` の中身と各トリガー、`led` / `blink` / `light` / `S99led` のスクリプトを読んで確認した。
 赤は `rec-led` が sysfs で点け消しして `brightness` が 255 / 0 になるのを確認した (2026-11-09)。
-**見た目の確認はしていない** (色の見え方、明るさの段階、赤外線 LED と `daynightd` の関係は未確認)。
+**見た目の確認はしていない** (色の見え方、明るさの段階、U-Boot の間の赤、赤外線 LED と `daynightd` の関係は未確認)。

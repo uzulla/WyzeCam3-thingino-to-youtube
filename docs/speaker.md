@@ -2,11 +2,14 @@
 
 Wyze Cam v3 のスピーカーは、Thingino では **prudynt が鳴らす**。シェルからは `play` (音声ファイルを鳴らす) と
 `tell` (文章を読み上げる) で使う。どちらも Thingino に最初から入っているもので、このリポジトリは変えていない。
+lapcam のファームウェアで鳴るのは、本体ボタンの 1 回押しでの IP の読み上げ (`tell %ip`)、ボタンの合図のチャイム、
+ダブルクリックでの録画の開始・停止の音声 ([setup-button.md](setup-button.md))、`wifi-ap` が AP を立てられなかった時の
+"configuration portal is down" ([lapcam.md](lapcam.md))。
 
 ## 仕組み
 
 ```text
-tell "文章"                 (Setup ボタンの短押しは tell %ip)
+tell "文章"                 (本体ボタンの 1 回押しは rec-button 経由で tell %ip)
   │ 1. 1.1.1.1 に ping してインターネットに繋がっているか確かめる
   │    繋がっていない -> 用意された音声 (設定用ポータルの案内) を鳴らして終わる
   │ 2. %ip -> "IP address is <デフォルトルートのインターフェースの IP>"、%time -> date の出力、それ以外はそのまま
@@ -67,8 +70,8 @@ say -v Kyoko -o stream-started.aiff "配信を開始しました"
 ffmpeg -i stream-started.aiff -c:a libopus -b:a 32k stream-started.opus
 ```
 
-- 置き場所は **SD カード** (例 `/mnt/mmcblk0p1/sounds/`) が向く。内蔵フラッシュの空き (6MB 程度) を使わず、PC で差し替えられる
-- 鳴らす: `play /mnt/mmcblk0p1/sounds/stream-started.opus`。[Setup ボタン](setup-button.md) の割り当てや、
+- 置き場所は **SD カード** (例 `/mnt/mmcblk0p1/sounds/`) が向く。内蔵フラッシュの空きを使わず、PC で差し替えられる
+- 鳴らす: `play /mnt/mmcblk0p1/sounds/stream-started.opus`。[本体ボタン](setup-button.md) の割り当てや、
   状態が変わった時に呼ぶスクリプトから使える
 - `tell` に任意の英文を渡すこともできる (`tell "Stream started"`)。日本語を thingino.com が読めるかは未確認
 - **形式の相性は未確認** (サンプリングレート、チャンネル数、ビットレート)。作ったら最初に 1 つ鳴らして確かめる。
@@ -91,7 +94,8 @@ done
 
 ## 注意
 
-- カメラのマイクがスピーカーの音を拾うので、**配信中に鳴らすと YouTube にも流れる** はず (未確認)
+- カメラのマイクがスピーカーの音を拾うので、**配信中に鳴らすと YouTube にも流れる** はず (未確認)。ダブルクリックの
+  録画開始・停止の音声も同じ (`rec-button` 先頭の `SOUND=0` で止められる。[recording.md](recording.md))
 - 夜間や、人がいる場所に置いたカメラでは、音が出ること自体に注意
 
 ## 確認した範囲

@@ -43,7 +43,7 @@ if ! docker info >/dev/null 2>&1; then
 fi
 if ! docker ps -a --format '{{.Names}}' | grep -qx "$DL_CACHE"; then
 	echo "the download cache container '$DL_CACHE' is missing; in $TREE run:" >&2
-	echo "  WORKFLOW=1 make -f Makefile.container container-pull    (docs/build.md, steps 3-4)" >&2
+	echo "  WORKFLOW=1 make -f Makefile.container container-pull    (docs/build.md, step 1)" >&2
 	exit 1
 fi
 

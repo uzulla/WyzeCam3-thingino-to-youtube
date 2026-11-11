@@ -1,8 +1,10 @@
 # osd-feed: OSD テキストを自動更新する常駐プログラム
 
-[OSD テキストオーバーレイ](osd.md) の矩形に出す文字列を、カメラ上の常駐プログラム `osd-feed` が
-**データ源 (source) → テンプレート → ファイル** の流れで書き続ける。まずはメモリの空き量、0→100% をループする
-バー、時刻のサンプル。外部のデータ (HTTP で JSON を取る) も同じ仕組みで足せる。
+[OSD オーバーレイ](osd.md) の矩形に出す文字列と画像 (ロゴ、RaceBox の G ボールと走行図) を、カメラ上の常駐プログラム
+`osd-feed` が **データ源 (source) → テンプレート → ファイル** の流れで書き続ける。lapcam の SD カードには `osd-feed` と
+設定 `osd-feed.json` (`firmware/sdcard/osd-feed.json`: MEM / CPU のテキスト、ロゴ、G ボール、走行図、速度) と `logo.png` が
+最初から入っていて、ファームウェアの `S94osd-feed` が起動する ([sdcard.md](sdcard.md))。テキストのテンプレートとロゴは
+lapcam の OSD タブで変える ([lapcam.md](lapcam.md))。この文書は設定ファイルの形式、source とテンプレートの仕様、計測。
 
 ```
 osd-feed (Go、SD カードから実行)
@@ -19,32 +21,42 @@ osd-feed (Go、SD カードから実行)
 
 - **言語は Go**。カメラにはインタプリタが無く、Mac で `go build` したバイナリ (静的、libc 非依存) がそのまま動く。
   外部データに必要な HTTP / JSON / タイムアウト / 並行取得が標準ライブラリで済むのが選んだ理由
-- **バイナリ (約 8MB) と設定は SD カードに置く** (`/mnt/mmcblk0p1/osd-feed`、`osd-feed.json`)。内蔵フラッシュの
-  overlay (空き 6MB 程度) には入らない。overlay に置くのは起動スクリプト `S94osd-feed` だけで、SD に両方あれば起動、
-  無ければ何もしない
+- **バイナリ (約 8MB) と設定は SD カードに置く** (`/mnt/mmcblk0p1/osd-feed`、`osd-feed.json`)。内蔵フラッシュ
+  (rootfs の空き約 50 KB、データ領域 8 MB) には入らない。ファームウェアに入っているのは起動スクリプト `S94osd-feed` だけで、
+  SD に両方あれば起動、無ければ何もしない
 - 実測 (720p 配信中の Wyze Cam v3): 4 Hz 更新で CPU 0.8%、RSS 8MB で頭打ち (下の「計測」)
 - prudynt との約束は [osd.md](osd.md) のとおり: tmpfs 上に一時ファイルを書いて `mv`。**フラッシュには何も書かない**
-- 矩形の**有効化・位置・大きさは osd-feed の仕事ではない**。従来どおり SD の `prudynt-osd.json` か
-  [Web UI](osd.md#web-ui-から編集する) で行う (有効になっていないスロットに書いても映らない。起動時のログに出る)
-- Web UI の Show / Clear と同じファイルを書くので、osd-feed が動いている間は Show は使わない (次の描画で上書きされる。
-  Clear で消した場合も、ファイルが無いのに気づいて書き直す)
+- 矩形の**有効化・位置・大きさは osd-feed の仕事ではない**。lapcam の OSD タブ (= SD の `prudynt-osd.json`) で行う
+  (有効になっていないスロットに書いても映らない。起動時のログに出る)。同じファイルを他のプログラムが書くと次の描画で
+  上書きされる (消されてもファイルが無いのに気づいて書き直す)
 - **SD カードは動作中に抜かない前提** (バイナリを SD から直接実行している。抜くとプロセスが異常終了し、終了時の
   ファイル削除も走らないので、最後の表示が残る)
 
-## インストール
+## 起動・停止・確認
+
+- 起動・停止: `service start osd-feed` / `service stop osd-feed` / `service disable osd-feed`。ログは `logread | grep osd-feed`
+- 設定を変えたら `service restart osd-feed` (lapcam の OSD タブでテンプレートを保存した時は lapcam がやる)。先に
+  `/mnt/mmcblk0p1/osd-feed -once` を実行すると、各スロットの描画結果を標準出力に 1 回出して終わるので、テンプレートの
+  確認に使える。`udp` の source は最初の 1 件が届くまで `timeout_ms` (既定 3 秒) 待つ。付属の設定のように `udp` の source があると、
+  動いている osd-feed がそのポート (`:5005`) を使っているので、`service stop osd-feed` してから `-once` を実行し、終わったら `service start osd-feed`
+  (止めている間は OSD が消える)
+- 終了時に書いていたファイル (`/run/prudynt/osd-text*`) は消す (`clear_on_exit`)
+- バイナリの更新は SD カードを作り直す ([sdcard.md](sdcard.md)) か、`device/osd-feed/build.sh` (Mac/PC で。Go 1.25 以降。
+  `dist/osd-feed` ができる) の出力を SD の `osd-feed` に置き換える (実行属性は FAT なので不要)。動いている最中は同じファイルに上書きできない (`Text file busy`) ので、
+  `service stop osd-feed` → 置き換え → `service start osd-feed` の順 (`device/install-osd-feed.sh` もそうしている)
+
+### 素の Thingino に手で入れる場合
+
+自前のファームウェアを焼かずに、素の Thingino に入れる時だけ:
 
 ```sh
-device/osd-feed/build.sh                          # Mac/PC で。Go 1.25 以降。dist/osd-feed ができる
+device/osd-feed/build.sh
 device/install-osd-feed.sh root@<camera-ip>       # SD にバイナリと (無ければ) 設定例、overlay に S94osd-feed を置いて起動
 ```
 
-- 手で置くなら: `dist/osd-feed` → SD の `osd-feed` (実行属性は exFAT なので不要)、`device/osd-feed/osd-feed.json.example` →
-  SD の `osd-feed.json`、`device/S94osd-feed` → `/etc/init.d/S94osd-feed` (chmod +x)
-- 起動・停止: `service start osd-feed` / `service stop osd-feed` / `service disable osd-feed`。ログは `logread | grep osd-feed`
-- 設定を変えたら `service restart osd-feed`。先に `/mnt/mmcblk0p1/osd-feed -once` を実行すると、各スロットの描画結果を
-  標準出力に 1 回出して終わるので、テンプレートの確認に使える。`udp` の source は最初の 1 件が届くまで `timeout_ms` (既定 3 秒) 待つ
-- 消す: `service stop osd-feed; rm /etc/init.d/S94osd-feed /mnt/mmcblk0p1/osd-feed /mnt/mmcblk0p1/osd-feed.json`。
-  終了時に書いていたファイル (`/run/prudynt/osd-text*`) は消す (`clear_on_exit`)
+手で置くなら: `dist/osd-feed` → SD の `osd-feed`、`device/osd-feed/osd-feed.json.example` → SD の `osd-feed.json`、
+`device/S94osd-feed` → `/etc/init.d/S94osd-feed` (chmod +x)。消す:
+`service stop osd-feed; rm /etc/init.d/S94osd-feed /mnt/mmcblk0p1/osd-feed /mnt/mmcblk0p1/osd-feed.json`。
 
 ## 設定 (`osd-feed.json`)
 
@@ -71,7 +83,7 @@ device/install-osd-feed.sh root@<camera-ip>       # SD にバイナリと (無�
 | `clear_on_exit` | 終了時にスロットのファイルを消す (既定 true) |
 | `sources.<名前>` | データ源。`type` と `interval_ms` (取得間隔、既定 1000)、type ごとの項目 (下表)。名前はテンプレートから `.<名前>.<キー>` で参照する |
 | `slots.imagefile` / `slots.imagefile2` / `slots.imagefile3` | 画像スロット ([osd.md](osd.md#画像-ロゴなど-を重ねる-osdimagefile))。3 枚は別々に置ける (ロゴ、G ボール、走行図など)。`png` (SD カード上の透過 PNG)、`fit` (`contain` = 縮めて収める・拡大はしない・中央配置、`none` = そのまま中央に置き、はみ出た分は切る。既定 `contain`)、`png_box` (PNG を置く場所 `{"x","y","width","height"}`。既定はスロット全体)、`gball` ([G ボール](#racebox-の-g-ボールと速度))、`track` ([走行図](#racebox-の-gps-から走行図))。`png`、`gball`、`track` の少なくとも 1 つが要る。`width` / `height` / `path` は普通は書かない (prudynt から読む) |
-| `slots.<スロット>` | `textfile` / `textfile2` / `textfile3`。`template` は Go の text/template。`path` / `cols` / `rows` は普通は書かない: 起動時と以後 30 秒ごとに prudynt から読んで追従する (Web UI で大きさを変えれば 30 秒以内に切る幅も変わる。prudynt が答えない時は docs/osd.md の既定値)。**ここに書いた値は prudynt の値より常に優先される**ので、Web UI で変えたのに反映されない時はここに古い値が残っていないか見る |
+| `slots.<スロット>` | `textfile` / `textfile2` / `textfile3`。`template` は Go の text/template (lapcam の OSD タブのテキスト枠で編集するのがこれ)。`path` / `cols` / `rows` は普通は書かない: 起動時と以後 30 秒ごとに prudynt から読んで追従する (OSD タブで大きさを変えれば 30 秒以内に切る幅も変わる。prudynt が答えない時は docs/osd.md の既定値)。**ここに書いた値は prudynt の値より常に優先される**ので、OSD タブで変えたのに反映されない時はここに古い値が残っていないか見る |
 
 ### source の種類
 
@@ -114,7 +126,8 @@ text/template 標準の `printf` `if` `range` などに加えて:
 - PNG は Go の `image/png` でデコードし、prudynt の `osd.imagefile` の `width × height` に収めて (アスペクト比を保って縮小、
   拡大はしない、余白は透明、中央配置)、**ヘッダなしの生 BGRA (ストレートアルファ)** に変換して `mv` で置く。透過 PNG の
   アルファはそのまま映像に合成される
-- 変換は起動時と、PNG の mtime / サイズが変わった時、スロットの大きさが変わった時 (Web UI で変えると 30 秒以内に追従)。
+- 変換は起動時と、PNG の mtime / サイズが変わった時 (lapcam の OSD タブでロゴをアップロードすると SD の `logo.png` が
+  置き換わり、これで気づく)、スロットの大きさが変わった時 (OSD タブで変えると 30 秒以内に追従)。
   1280 × 720 でも起動時 1 回なので softfloat の MIPS でも問題ない
 - PNG が読めない (無い、壊れている、大きすぎる: 1 辺 4096 px 超、または 8-bit で約 184 万画素 (16-bit はその半分) 超) 時は
   ファイルを消して非表示にし、ログに 1 回出す。壊れた PNG が置かれたままでも再デコードはしない (同じ中身なら結果を覚えている)。直れば戻る
@@ -135,8 +148,9 @@ text/template 標準の `printf` `if` `range` などに加えて:
 
 [esp32-racebox](https://github.com/uzulla/esp32-racebox) (RaceBox Mini → ESP32 → Wi-Fi の UDP ブロードキャスト、
 1 件 1 JSON、最大 25 件/秒) の G を 2 枚目の画像スロット (`imagefile2`) に **G ボール**として描き、速度をテキストで出す。ロゴ (`imagefile`) とは別の
-スロットなので、位置は Web UI の OSD Settings の **G-ball** カードで別々に動かせる。カメラと ESP32 が同じ
-LAN (同じブロードキャストドメイン) にあること。
+スロットなので、位置は lapcam の OSD タブで別々に動かせる。カメラと ESP32 が同じ
+LAN (同じブロードキャストドメイン) にあること。SD カードに最初から入っている `osd-feed.json` はこの構成 (ロゴ + G ボール +
+走行図 + 速度) になっている。
 
 ```json
 {
@@ -192,7 +206,7 @@ LAN (同じブロードキャストドメイン) にあること。
 同じ esp32-racebox の緯度・経度を 3 枚目の画像スロット (`imagefile3`) に**走行図**として描く。地図は持たず、走った位置を
 点で積み上げるだけ。一周 2〜3 分のサーキットなら、数周 (5〜10 分) 走ると軌跡だけでコースの形になる。古い点は
 `points` 個を超えた分から消える (G ボールの軌跡と同じ考え方)。描く範囲は、残っている点の緯度・経度の最小〜最大 (北が上、
-縦横同じ縮尺)。位置は Web UI の OSD Settings の **Track map** カードで動かせる。
+縦横同じ縮尺)。位置は lapcam の OSD タブで動かせる。
 
 osd-feed.json の `slots` に足す (source は G ボールと同じ `racebox`):
 

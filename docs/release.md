@@ -20,7 +20,6 @@ unknown             git が無い (tarball で持ってきた木など。ビル�
 ```
 
 手で書く VERSION ファイルは置かない (更新忘れの元)。各ビルドスクリプトがこれを読んで埋め込む。
-v2.0.0 のタグを打つまでは、v1.1.0 (ffmpeg 単体時代の最後のタグ) から数えた `v1.1.0-170-g…` のような値になる。
 各プログラムは `-version` で `lapcam v2.0.0` のように名前と版を 1 行出す。
 
 ## どこに入るか
@@ -44,7 +43,7 @@ lapcam は自分の版と `/etc/lapcam-release` を比べ、文字列が完全�
 ## 番号の上げ方
 
 - 機能追加・修正: patch か minor。
-- Thingino の土台を変える (別コミットに追従): minor を上げ、README の対応表に Thingino の版との組を足す。
+- Thingino の土台を変える (別コミットに追従): minor を上げ、[development.md](development.md) の対応表を更新する。
   `device/common.sh` の判定と `firmware/prepare.sh` の `EXPECT_HASH` も変える。
 - v1.x は ffmpeg 単体の時代の番号。v2.0.0 からがイメージ + lapcam UI の体系。
 

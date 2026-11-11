@@ -1,291 +1,101 @@
-<p align="center"><img src="docs/images/lapcam-logo.png" width="560" alt="lapcam"></p>
+<p align="center"><img src="docs/images/lapcam-logo.png" width="420" alt="lapcam"></p>
 
-# lapcam — Wyze Cam v3 (Thingino) をレース用のオンボードカメラに: YouTube Live 直接配信・SD 録画・OSD・スマホ UI
+<p align="center">
+<b>Wyze Cam v3 をレース用のオンボードカメラにするファームウェア</b><br>
+YouTube Live へ直接配信 · SD カードに同時録画 · ロゴやテレメトリの OSD · スマホから操作
+</p>
 
-> **English summary**: Build recipe for a minimal FFmpeg binary (2.5MB) that runs on a
-> Wyze Cam v3 flashed with [Thingino](https://thingino.com/), letting the camera push its
-> H.264/AAC stream **directly to YouTube Live over RTMPS** — no relay PC required.
-> Pure stream copy (no re-encoding): measured load on the Ingenic T31 is 3-10% CPU depending on
-> bitrate (3.3% at 330kbps, 4.8% at 1Mbps, ~10% at 1080p25 / 2.1Mbps) and ~3.4MB RSS.
-> Binaries are specific to a Thingino build; pick the Release matching your camera's `BUILD_ID`.
-> Includes a streaming supervisor with automatic recovery, a Thingino Web UI, SD-card
-> configuration, and optional text / transparent PNG overlays with live data from HTTP JSON.
-> See [docs/](docs/) for setup and [NOTES.md](NOTES.md) for implementation details (Japanese).
+<p align="center">
+<a href="https://github.com/uzulla/lapcam/releases/latest"><img src="https://img.shields.io/github/v/release/uzulla/lapcam?label=release&color=2f81f7" alt="release"></a>
+<a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-green" alt="MIT"></a>
+<img src="https://img.shields.io/badge/camera-Wyze%20Cam%20v3-555" alt="Wyze Cam v3">
+<img src="https://img.shields.io/badge/base-Thingino-f80" alt="Thingino">
+</p>
 
-Thingino 化した Wyze Cam v3 から、中継マシンなしで YouTube Live へ直接配信するための
-minimal FFmpeg バイナリと、カメラだけで常設運用するためのツール一式です。
-配信の自動起動・切断後の自動復帰、ブラウザからの設定、SD カードでの設定持ち運びに加え、
-映像へのテキスト・ロゴ画像の重ね合わせ (OSD) や外部データの自動表示にも対応しています。
+<p align="center">
+<a href="docs/getting-started.md"><b>はじめる</b></a> ·
+<a href="https://github.com/uzulla/lapcam/releases">ダウンロード</a> ·
+<a href="#ドキュメント">ドキュメント</a>
+</p>
 
-## できること
+---
 
-| 機能 | 内容 | 導入・使い方 |
-|---|---|---|
-| YouTube Live へ直接配信 | H.264/AAC を再エンコードせず RTMPS で送信。中継 PC 不要 | [まず配信を試す](#まず配信を試す) |
-| 常設・自動復帰 | `youtube-relay` が ffmpeg を監視し、終了後に再起動。ネットワーク復帰を待って再開 | [配信 supervisor](docs/relay.md) |
-| スマホから操作する Web UI | プレビュー、配信・録画の開始と停止、ストリームキーと画質、OSD の配置をプレビュー上で編集、録画ファイルの再生・zip ダウンロード、Wi-Fi、AP モード。Thingino の Web UI を置き換える | [lapcam](docs/lapcam.md) |
-| (旧) Thingino の Web UI に足すページ | YouTube Live ページ (キーの設定、開始・停止、自動起動、ログ) と OSD Settings ページ。lapcam に置き換えたので uhttpd を止めた機体では使わない | [YouTube Live Web UI](docs/relay.md#web-ui)、[OSD](docs/osd.md#web-ui-から編集する) |
-| SD カードで設定を持ち運ぶ | 配信キー・OSD 設定を SD に保存。複数の Wi-Fi 設定と SSH の公開鍵を起動時に適用する機能も用意 | [配信設定](docs/relay.md)、[Wi-Fi 設定](docs/wifi-from-sd.md)、[SSH 鍵](docs/sdcard.md) |
-| テキスト・画像 OSD | 独立したテキスト 3 か所と透過画像 1 か所を映像に合成。Web UI で配置や大きさを設定 | [OSD](docs/osd.md) |
-| 表示内容の自動更新 | `osd-feed` がメモリ量・時刻・カウンタ・HTTP / UDP の JSON をテンプレートに反映し、PNG を画像 OSD に変換。RaceBox の G ボール・速度・走行図も出せる | [osd-feed](docs/osd-feed.md) |
-| 状態を LAN に知らせる・指令を受ける | `beacon` が IP・配信の状態・Wi-Fi の電波などを数秒ごとに UDP ブロードキャストし、PC の `beacon-listen` で表示。`beacon-send` で映像の反転などの指令も送れる | [beacon](docs/beacon.md) |
-| セルラー回線での運用 | RTMP チャンクサイズの調整で RTMPS の送信量を削減。切断・復帰の実測も記録 | [セルラー配信](docs/cellular.md) |
-| SD カードへ同時録画 | prudynt 内蔵の録画で配信と同じ映像 (OSD 込み) を 1 分ごとの MP4 に保存。Web UI の Rec ボタンを直す `install-agent-adapter.sh`、本体ボタンのダブルクリックで開始・停止する `rec-button`、録画中は正面の赤 LED を点ける `rec-led`、PC で 1 本につなぐ `concat-recordings.sh` | [録画](docs/recording.md) |
-| SD カードから一式をインストール | 自前の Thingino イメージ (起動スクリプト、ボタン設定、ホスト名、OSD 入り prudynt を焼き込み) と SD カードの中身を作る。素の Wyze Cam v3 はカードを挿して電源を入れるだけ、Thingino 導入済みの個体は `autoupdate-full.bin` で書き換え | [SD カードからインストール](docs/sdcard.md) |
+lapcam は、数千円の Wi-Fi カメラ **Wyze Cam v3** を、サーキット走行の車載カメラとして使うためのファームウェアと道具一式です。
+SD カードを挿して電源を入れるだけでインストールでき、以後はカメラの電源を入れると勝手に配信が始まります。
+中継用の PC やスマホアプリは要りません。
 
-OSD はカメラのストリーマ `prudynt` 側で合成するため、OSD を使っても ffmpeg は stream copy のままです。
-直接配信だけなら ffmpeg 単体で試せます。常設運用や OSD は必要なものを追加してください。
+- **カメラから YouTube Live へ直接配信。** カメラが作った H.264/AAC をそのまま RTMPS で送るので、再エンコードも中継 PC も不要。
+  テザリングやモバイルルーターの細い回線を想定し、送信量を映像の約 1.08 倍まで削り、電波が切れても戻れば自動で復帰します。
+- **SD カードに同時録画。** 配信と同じ映像 (OSD 込み) を 1 分ごとの MP4 で保存。本体ボタンのダブルクリックでも開始・停止でき、録画中は正面の赤 LED が点きます。
+- **OSD。** 時計、テキスト、チームのロゴ、[RaceBox](https://www.racebox.pro/) の G ボール・速度・走行図を映像に重ねられます。配置はスマホの画面上でドラッグするだけ。
+- **スマホの Web UI。** プレビューを見ながら配信と録画の開始・停止、画質、ストリームキー、OSD、Wi-Fi、パスワードを 1 画面で。Thingino の Web UI を置き換えます。
+- **設定は全部 SD カードに。** Wi-Fi、ストリームキー、SSH の鍵、OSD、ロゴ、録画がカードの上にあるので、カードを差し替えれば別の現場の設定になり、ファームウェアを更新しても設定は残ります (パスワードだけはカメラ側で、焼き直すと初期値に戻ります)。
+- **現地で困らない。** ボタンを 5 秒押せばカメラ自身が Wi-Fi を出して設定画面を開けます。名前は `lapcam-xxxx.local`、LAN には自分の IP と状態を放送し続けます。
 
-## まず配信を試す
+<p align="center">
+<img src="docs/images/lapcam-camera.png" width="24%" alt="Camera: プレビュー、配信と録画の開始・停止">
+<img src="docs/images/lapcam-osd.png" width="24%" alt="OSD: 要素をドラッグして配置">
+<img src="docs/images/lapcam-stream.png" width="24%" alt="Stream: ストリームキーと画質">
+<img src="docs/images/lapcam-recordings.png" width="24%" alt="Recordings: 録画の設定と一覧">
+</p>
 
-[Releases](https://github.com/uzulla/lapcam/releases) からバイナリを取得し、
-カメラに転送して実行するだけです。**バイナリはカメラの Thingino のビルドごとに別物**なので、
-カメラで `grep BUILD_ID /etc/os-release` を見て、対応する Release のものを使ってください
-(違うものは起動しません):
+> **English**: lapcam turns a Wyze Cam v3 into an onboard camera for track days. It is a custom
+> [Thingino](https://thingino.com/)-based firmware that streams straight to YouTube Live over RTMPS
+> (stream copy, no relay PC), records the same video to the SD card, overlays a logo and RaceBox telemetry,
+> and is operated from a phone. Install by inserting the SD card and powering on. Docs are in Japanese;
+> the card's `README.txt` and the Web UI are in English.
 
-| カメラの `BUILD_ID` | Release |
-|---|---|
-| `ciao+da40db6` (2026-09-14) | [v2.0.0](https://github.com/uzulla/lapcam/releases/tag/v2.0.0) (イメージ + lapcam UI。SD カードから導入: [docs/sdcard.md](docs/sdcard.md)) / [v1.1.0](https://github.com/uzulla/lapcam/releases/tag/v1.1.0) (ffmpeg 単体) |
-| `ciao+c334a03` (2026-08-01) | [v1.0.0](https://github.com/uzulla/lapcam/releases/tag/v1.0.0) |
-| それ以外 | 下の「ビルド手順」で、その commit に合わせて自分でビルドする |
-
-```sh
-# PC 側: ダウンロードしてリネームし、カメラへ転送
-mv ffmpeg-thingino-wyze-cam3-t31-mipsel ffmpeg
-cat ffmpeg | ssh root@<camera-ip> 'cat > /tmp/ffmpeg && chmod +x /tmp/ffmpeg'
-
-# カメラ側: これだけで YouTube Live に配信が始まる
-/tmp/ffmpeg -rtsp_transport tcp \
-  -i 'rtsp://thingino:thingino@127.0.0.1:554/ch0' \
-  -c copy -f flv \
-  'rtmps://a.rtmps.youtube.com:443/live2/{KEY}'
-```
-
-- `{KEY}` は YouTube Studio のライブ配信設定にあるストリームキー
-- RTSP の認証 (`thingino:thingino`) とパス (`/ch0`) は Thingino のデフォルト。変更していれば合わせる
-- 再エンコードなし (stream copy) なので、カメラの負荷は CPU 3〜10% (ビットレート次第) / RAM 3MB 程度
-- `/tmp` は再起動で消える。`/tmp` で試す時の細かい注意 (scp が使えない、libatomic など) と、常設・自動起動・自動復帰は
-  supervisor を導入する ([docs/relay.md](docs/relay.md))
-- **2026-09 以降の Thingino は、ゲートウェイへの ping が約 90 秒通らないとカメラを OS ごと
-  再起動する (netwatch、デフォルト有効)。** 配信が切れるので、長時間配信する前に無効化しておく:
-
-  ```sh
-  device/disable-netwatch.sh root@<camera-ip>
-  # カメラ上で直接やるなら: jct /etc/thingino.json set netwatch.enabled false && service restart netwatch
-  ```
-
-  Thingino の OS 設定を変えるものなので、ffmpeg やスクリプトのインストールとは別の手順にしてある。
-  理由と代償 (Wi-Fi が固まっても自動復旧しなくなる) は [docs/netwatch.md](docs/netwatch.md)
-
-## 常設運用する
-
-`device/` のインストーラは **Thingino `ciao+da40db6` 専用**です。他のビルドでは変更せずに中止します。
-以下は、このリポジトリを取得した PC のリポジトリ直下で実行します。
-
-```sh
-# 対応する Release の ffmpeg を指定して、配信 supervisor と Web UI をインストール
-device/install.sh root@<camera-ip> path/to/ffmpeg
-```
-
-インストール後、Thingino の **Services → YouTube Live** (`http://<camera-ip>/youtube.html`) を開き、
-ストリームキーを設定・保存します。配信の開始・停止、再起動、自動起動の設定、ログ確認もこのページで行えます。
-
-![YouTube Live の設定・状態表示](docs/images/youtube-webui.png)
-
-配信設定は SD カード直下の `youtube-relay.json` が優先され、なければ `/etc/youtube-relay.json` を使います。
-SD の抜去で配信を止めたい場合は、内蔵側の設定を無効にしておきます。
-ただし、後述の `osd-feed` も使う場合は SD からプログラムを実行するため、動作中に SD を抜かないでください。
-設定例・保存先・運用コマンドは [docs/relay.md](docs/relay.md) を参照してください。
-
-長時間配信では、前述の netwatch の無効化も検討してください。
-Wi-Fi 設定を SD で持ち運ぶ場合は [docs/wifi-from-sd.md](docs/wifi-from-sd.md) の別インストーラを使います。
-
-## テキスト・ロゴ・外部データを映像に重ねる (任意)
-
-OSD には `patches/prudynt-osd-textfile.diff` を当ててビルドした prudynt が必要です。
-Releases の ffmpeg 単体には含まれません。ビルド手順は [docs/build.md](docs/build.md) を参照してください。
-
-```sh
-# パッチ入り prudynt と OSD の設定サービス・Web UI をインストール
-device/install-prudynt-osd.sh root@<camera-ip> path/to/prudynt
-
-# データの自動表示や PNG ロゴを使う場合は osd-feed も追加 (Go 1.25 以降と SD カードが必要)
-device/osd-feed/build.sh
-device/install-osd-feed.sh root@<camera-ip>
-```
-
-prudynt の導入時は配信が数秒中断します。ファームウェアの焼き直しは不要ですが、パッチ入り prudynt への
-切り替えと、標準の起動スクリプトの調整を行います。詳しくは [docs/osd.md](docs/osd.md) を参照してください。
-
-- **テキスト**: 3 か所に独立した複数行テキストを表示できます (ASCII のみ)。ファイルの更新は 0.1 秒間隔で確認されます。
-- **画像**: 1 か所に透過 PNG のロゴなどを表示できます。`osd-feed` が PNG を prudynt 用の画像データへ変換します。
-- **レイアウト**: **Streamer → OSD Settings** で、表示の有効化・位置・大きさ・色などを設定し、SD の `prudynt-osd.json` に保存できます。
-- **自動表示**: SD の `osd-feed.json` にデータ源とテンプレートを設定すると、時刻・メモリ量・プログレスバー・HTTP JSON の値を表示できます。
-  表示枠の有効化や配置は `prudynt-osd.json`、表示内容は `osd-feed.json` で設定します。
-
-![透過ロゴ画像とテキスト OSD の表示例](docs/images/osd-image-logo.jpg)
-
-PNG の置き場所は `osd-feed.json` で指定します (設定例では SD 直下の `logo.png`)。
-大きな画像やテキストには OSD 用メモリの調整が必要です。
-設定項目と制約は [docs/osd.md](docs/osd.md)、データ源・テンプレート・PNG 変換は
-[docs/osd-feed.md](docs/osd-feed.md) にまとめています。
-
-## 配信の仕組み
+## しくみ
 
 ```text
-従来:  Wyze Cam v3 → RTSP → 中継PC (ffmpeg) → RTMPS → YouTube Live
-これ:  Wyze Cam v3 (ffmpeg入り) ──────────── RTMPS → YouTube Live
+従来:  Wyze Cam v3 ──RTSP──▶ 中継 PC (ffmpeg) ──RTMPS──▶ YouTube Live
+lapcam: Wyze Cam v3 ─────────────────────────RTMPS──▶ YouTube Live
 ```
 
-カメラ内部では以下を行います。ffmpeg での再エンコードは一切しません:
+Thingino (オープンな IP カメラ用ファームウェア) を土台に、配信の監視、OSD、録画、ボタン、ホスト名などを焼き込んだ自前のイメージを作っています。
+フラッシュに入りきらないプログラム (Web UI の `lapcam`、OSD を描く `osd-feed`、状態を放送する `beacon`、`ffmpeg`) と設定は SD カードに置き、
+起動時にカードから読みます。カメラの中でやっていることは `prudynt` (Thingino のストリーマ) が出す H.264/AAC を `ffmpeg` が FLV に詰めて
+TLS で送るだけで、CPU の負荷は配信で数 % です。
 
-```text
-localhost RTSP (prudynt) → H.264/AAC stream copy → FLV mux → RTMPS/TLS → YouTube Live
-```
+## はじめる
 
-## リポジトリ構成
-
-```text
-patches/   Thingino / FFmpeg / prudynt に当てる差分
-             thingino-ffmpeg-rtmps.diff         thingino-ffmpeg パッケージを RTMPS 対応にする
-             thingino-ffmpeg-rtmp-chunk-size.diff  FFmpeg 本体: RTMP の送信チャンクサイズを rtmp_chunk_size オプション (既定 4096、128〜65536) で指定できるようにする。素の FFmpeg は 128 固定で、RTMPS の送信量が映像の 1.7 倍になる (4096 で 1.08 倍)
-             prudynt-osd-textfile.diff          任意: prudynt にテキスト 3 枠・画像 1 枠の OSD を足す
-             prudynt-msgchannel-warning.diff    任意: prudynt が 5 秒ごとに出す誤報の警告 (msgChannel sink clogged) を止める
-             thingino-agent-adapter-record-args.diff  任意: Thingino の agent の prudynt 用バックエンドで `record` の引数順を直す (device/agent-adapter に適用済み)
-device/    カメラ側の常設運用一式 (ファイルの一覧は device/README.md、使い方は docs/)
-             youtube-relay / S93youtube-relay   supervisor と起動スクリプト
-             www/youtube.html / www/x/json-youtube.cgi
-                                                Web UI の「YouTube Live」ページ (キーの設定、再起動、サービスの有効/無効)
-             install.sh                         上記と ffmpeg をカメラへ入れる (自前のファイルを置く + メニュー 1 行の追記)
-             disable-netwatch.sh                Thingino の netwatch (OS 自動再起動) を無効化する
-             install-wifi-from-sd.sh / S37wifi-from-sd
-                                                任意: SD の wpa_supplicant.conf (複数 Wi-Fi 可) を起動時に適用
-             install-prudynt-osd.sh / S30prudynt-osd / osd-progress-demo
-                                                任意: 上記 OSD パッチ入りの prudynt を入れる、操作側のサンプル
-             osd-config / S93osd-config / prudynt-osd.json.example
-                                                任意: OSD の設定を SD カードのファイルから読んで prudynt に送り直す
-             www/osd-settings.html / www/x/json-osd-text.cgi
-                                                任意: Thingino の Web UI に足す OSD 設定ページ (テキスト・画像) と CGI
-             osd-feed/ / S94osd-feed / install-osd-feed.sh
-                                                任意: OSD テキストの自動更新と PNG の変換 (Go、SD カードから実行)
-             beacon/ / S95beacon / install-beacon.sh
-                                                任意: IP と配信の状態を LAN に UDP ブロードキャストし続け、指令を受ける (Go、SD カードから実行)
-             rec-led / S96rec-led / install-rec-led.sh
-                                                任意: prudynt が SD に録画している間、正面の赤 LED を点ける
-             agent-adapter / install-agent-adapter.sh
-                                                任意: Web UI の「Rec ch0」ボタンを直す (ファームに録画バックエンドが入っていない)
-             rec-button / install-rec-button.sh
-                                                任意: 本体のボタンのダブルクリックで SD 録画を開始・停止する
-             lapcam/ / S97lapcam / install-lapcam.sh
-                                                スマホ向けの Web UI (Go、SD カードから実行、ポート 80。Thingino の Web UI を置き換える)
-             wifi-ap / install-wifi-ap.sh       任意: 本体ボタン 5 秒長押しで、再起動までカメラが Wi-Fi (AP) を出す (リカバリ用)
-             set-camera-name.sh                 任意: ホスト名・mDNS のサービス名・録画フォルダをプロジェクト名 (lapcam) に揃える
-             common.sh                          対応ファームの判定 (違えば何も変更せず中止)
-tools/     PC で使う道具
-             find-camera/                       LAN 内の lapcam のカメラと IP を mDNS で探す (Go、`go -C tools/find-camera run .`)
-             beacon-listen/                     カメラの beacon を受け取って表示する (Go、`go -C tools/beacon-listen run .`)
-             beacon-send/                       カメラの beacon に指令 (映像の反転など) を送る (Go、`go -C tools/beacon-send run . ping`)
-             concat-recordings.sh               SD の 1 分ごとの録画ファイルを再エンコードなしで 1 本の MP4 につなぐ (ffmpeg)
-docs/      使い方と設定の文書 (下の「ドキュメント」参照)
-NOTES.md   実装の詳細・設計判断・ハマりどころ・実測値の記録 (手順は書かない)
-dist/      ビルド成果物 (git 管理外)。配布は GitHub Releases (ffmpeg バイナリ単体) で行う
-LICENSE    MIT (第三者由来のものは LICENSE.md)。LICENSES/ に GPL-3.0-or-later、FFmpeg、Thingino のライセンス本文
-```
-
-OS (Thingino) の更新・バックアップ・設定変更と、このリポジトリの成果物のインストールは分けてあります。
-`install.sh` は自前のファイルを置くだけで、OS の設定を変えるもの (`disable-netwatch.sh`、
-`install-wifi-from-sd.sh`) は別のスクリプトです。
-
-`thingino-firmware/` (Thingino のソースツリー) はビルド時にこの直下へ clone しますが、
-git 管理外です。必要な変更はすべて `patches/` に分離してあります。
+必要なものは Wyze Cam v3 と FAT32 の microSD カード、2.4 GHz の Wi-Fi、スマホ。
+[Releases](https://github.com/uzulla/lapcam/releases) の zip をカードに展開し、Wi-Fi の設定を書いて、カメラに挿して電源を入れます。
+手順は **[docs/getting-started.md](docs/getting-started.md)** に。
 
 ## ドキュメント
 
-| 文書 | 内容 |
+| 使う | |
 |---|---|
-| [docs/relay.md](docs/relay.md) | 配信 supervisor: インストール、設定ファイル (SD カードモード)、ffmpeg の置き場所、運用、Web UI (YouTube Live ページ)、ストリームキーの取り扱い |
-| [docs/osd.md](docs/osd.md) | テキスト・画像 OSD: インストール、使い方、Web UI での編集、設定項目、SD カードの設定ファイル、大きさの上限 |
-| [docs/osd-feed.md](docs/osd-feed.md) | `osd-feed`: データ源 (メモリ、カウンタ、時刻、HTTP JSON) とテンプレート、PNG の画像 OSD への変換、設定、計測 |
-| [docs/wifi-from-sd.md](docs/wifi-from-sd.md) | Wi-Fi 設定を SD カードで運ぶ |
-| [docs/netwatch.md](docs/netwatch.md) | netwatch (ping 失敗での OS 再起動) の無効化 |
-| [docs/cellular.md](docs/cellular.md) | セルラー回線 (車載) での配信: 送信量 (RTMPS と平文 RTMP の実測)、切断からの復帰の実測、チューニングの選択肢 |
-| [docs/find-camera.md](docs/find-camera.md) | カメラの IP アドレスを調べる (`tools/find-camera`、OS のコマンド、スマホのアプリ、Setup ボタン) |
-| [docs/beacon.md](docs/beacon.md) | `beacon`: カメラの IP・配信の状態などを LAN に UDP ブロードキャストし続ける、`tools/beacon-listen` での受け取り、`tools/beacon-send` での指令 (映像の反転)、JSON の形式 |
-| [docs/setup-button.md](docs/setup-button.md) | 本体の Setup ボタン: 押す長さごとの動作 (IP の読み上げ、Wi-Fi のリセット、工場出荷状態に戻す)、割り当ての変え方 |
-| [docs/front-led.md](docs/front-led.md) | 正面の LED (赤・青) と赤外線 LED の操作: `led` / `blink` / sysfs、起動時の点灯 |
-| [docs/lapcam.md](docs/lapcam.md) | スマホ向けの Web UI: プレビュー、配信・録画、OSD の配置をプレビュー上で編集、ストリームキーと画質、録画ファイルの再生・zip ダウンロード・削除、Wi-Fi、ボタン長押しの AP モード。Go の単体バイナリで、Thingino の Web UI (uhttpd) を止めてポート 80 を引き受ける |
-| [docs/recording.md](docs/recording.md) | SD カードへの録画: prudynt 内蔵レコーダーの始め方 (Rec ボタン、本体ボタンのダブルクリック、自動開始、`record`)、Rec ボタンが失敗する原因と直し方、サイズの実測、録画中の赤 LED (`rec-led`)、PC への取り出しと 1 本への結合 |
-| [docs/speaker.md](docs/speaker.md) | スピーカー: `tell` の読み上げの仕組み (thingino.com の音声合成)、`play` のオプション、音声ファイルを先に作ってオフラインで鳴らす方法 |
-| [docs/troubleshooting.md](docs/troubleshooting.md) | 症状別の対処 |
-| [docs/build.md](docs/build.md) | ffmpeg / prudynt のビルド手順 |
-| [docs/sdcard.md](docs/sdcard.md) | SD カードから一式をインストールする自前の Thingino イメージ: しくみ、`firmware/` のスクリプト、カードの中身、注意点 |
-| [docs/release.md](docs/release.md) | バージョン (git のタグから 1 つの番号を全部に埋める) とリリースの手順 (`tools/release.sh`) |
-| [device/README.md](device/README.md) | `device/` のファイル一覧 |
-| [NOTES.md](NOTES.md) | 経緯、設計判断、ハマりどころ、実測値、未検証事項の記録 |
+| [はじめる](docs/getting-started.md) | カードを作ってカメラに入れる、最初の設定、更新 |
+| [Web UI (lapcam)](docs/lapcam.md) | 各タブでできること、AP モード、仕組み |
+| [カメラを探す](docs/find-camera.md) | `lapcam-xxxx.local`、`tools/find-camera`、ルーターの一覧 |
+| [トラブルシュート](docs/troubleshooting.md) | 症状別の対処、ログの読み方 |
 
-## FFmpeg の特徴・実測負荷
-
-- **バイナリ 2.5MB** (stripped)。FFmpeg 8.0.1 を RTSP 入力 + FLV/RTMPS 出力だけに絞った構成
-- **stream copy 専用** — encoder/decoder/filter を一切含まない
-- **TLS は mbedTLS** — Thingino 実機に入っている `libmbedtls.so.3.6.6` に動的リンク
-- **ファームウェア世代ごとにビルドが必要** — toolchain (GCC / uClibc) を実機に揃えるため。
-  対応表は下記「動作確認環境」
-- **ファームウェア書き換え不要** — `/tmp` に転送して実行するだけ (PoC 用途)
-- **RTMP チャンクサイズの調整** — パッチで送信チャンクの既定値を 128 から 4096 バイトへ変更。
-  720p10 / 約 1Mbps で RTMPS の送信量は映像・音声の約 1.7 倍から約 1.08 倍へ低減
-  (測定条件は [docs/cellular.md](docs/cellular.md))
-- 実測負荷: ffmpeg CPU **3.3%** / RSS **3.3MB**(720p15 / ~330kbps 配信時、CPU idle 81%→73%)。
-  TLS の負荷はビットレートにほぼ比例する: 720p10 / 1Mbps で 4.8%、1080p25 / 2.1Mbps で約 10%
-  (2026-09 以降の Thingino は既定が 1080p25 / 約 2.1Mbps)
-
-## 動作確認環境
-
-| 項目 | 値 |
+| 機能ごと | |
 |---|---|
-| カメラ | Wyze Cam v3 (Ingenic T31X, GC2053, ATBM6031) |
-| ファームウェア | Thingino `ciao+da40db6` (2026-09-14) — 下表参照 |
-| ABI | mipsel / MIPS32 o32 / hard-float / uClibc-ng |
-| ビルドホスト | x86_64 Linux + Docker |
+| [配信](docs/relay.md) | 配信の監視 (`youtube-relay`) と設定ファイル |
+| [録画](docs/recording.md) | SD 録画の仕組み、ファイルの取り出しと結合 |
+| [OSD](docs/osd.md) / [osd-feed](docs/osd-feed.md) | テキスト・画像 OSD の仕様、テンプレート、RaceBox のテレメトリ |
+| [beacon](docs/beacon.md) | 状態の UDP 放送と、PC からの指令 |
+| [SD カードの Wi-Fi 設定](docs/wifi-from-sd.md) | `wpa_supplicant.conf` の書き方 |
+| [セルラー回線](docs/cellular.md) | 送信量と切断からの復帰の実測 |
+| [本体ボタン](docs/setup-button.md) / [LED](docs/front-led.md) / [スピーカー](docs/speaker.md) | ハードウェアの小ネタ |
 
-| Thingino | toolchain | uClibc-ng | mbedTLS | Release | 状態 |
-|---|---|---|---|---|---|
-| `ciao+c334a03` (2026-08-01) | GCC 15 | 1.0.57 | 3.6.6 | v1.0.0 | 実機で長時間配信まで確認済み |
-| `ciao+da40db6` (2026-09-14) | GCC 16.2 | 1.0.59 | 3.6.6 | v1.1.0、v2.0.0 | 実機で長時間配信まで確認済み。`device/` のスクリプトと `firmware/` のイメージはこのビルド専用 |
+| 作る | |
+|---|---|
+| [SD カードとファームウェア](docs/sdcard.md) | インストールの仕組み、`firmware/` のスクリプト、カードの中身、焼いた後に残るもの |
+| [開発](docs/development.md) | リポジトリの構成、対応するカメラとファームウェア、ビルドとテスト |
+| [ビルド手順](docs/build.md) | ファームウェアイメージと ffmpeg / prudynt のビルド |
+| [バージョンとリリース](docs/release.md) | 版の付け方、`tools/release.sh` |
+| [NOTES.md](NOTES.md) | 設計の判断、ハマりどころ、実測値の記録 |
 
-> **注意**: バイナリは実機ファームと同じ toolchain 世代・同じ mbedTLS soname に依存します。
-> 実機の `/etc/os-release` の `BUILD_ID` (`ciao+<commit>`) と `TOOLCHAIN_GCC`、および
-> `ls /usr/lib | grep mbed` を確認の上、**その commit でビルドし直してください** (手順は同じです)。
-> パッチ (`patches/`) は上記どちらの commit にも無修正で当たります。
+## ライセンス
 
-## ビルド手順
-
-自分でビルドする場合の手順 (ffmpeg、OSD パッチ入りの prudynt) は [docs/build.md](docs/build.md)。
-必要なもの: Docker が使える x86_64 Linux、ディスク ~10GB。
-
-## 補足
-
-- **ライセンス**: このリポジトリの自作部分は **MIT** ([LICENSE](LICENSE))。第三者由来のもの (FFmpeg のソースを変える
-  `patches/thingino-ffmpeg-rtmp-chunk-size.diff` と Releases の FFmpeg バイナリは **GPL-3.0-or-later**、prudynt のパッチは
-  上流 prudynt-t にライセンス表記が無く再配布の許諾が確認できていない、など) と、配布バイナリの対応ソースの入手先は
-  [LICENSE.md](LICENSE.md)
-- **TLS 証明書検証**: FFmpeg 8.x のデフォルトでは無効です (通信は暗号化されます)。
-  検証したい場合は CA バンドルを置き `-tls_verify 1 -ca_file <path>` を付けてください
-- **ストリームキー**: シェル履歴やログに残ります。露出した場合は YouTube Studio で再生成を
-- 実装の詳細・経緯・ハマりどころは [NOTES.md](NOTES.md) を参照
-
-## ステータス
-
-実機 (Wyze Cam v3、Thingino `ciao+da40db6`) で、YouTube Live への直接配信、supervisor による自動復帰、
-SD カードでのスタンドアロン運用、長時間配信、テキスト・画像 OSD (720p)、`osd-feed` の動作・負荷を確認済みです。
-`S37wifi-from-sd` による複数 Wi-Fi の適用も 2026-09-22 に実機で確認済みです。
-
-1080p での OSD の負荷・メモリ上限と、Thingino 標準の `uenv.txt` による Wi-Fi 設定は未確認です。
-Thingino パッケージとしての統合・ファームウェア組み込みは未実装です。
-確認の経緯は [NOTES.md](NOTES.md)、画像 OSD と `osd-feed` の実測は
-[docs/osd.md](docs/osd.md)・[docs/osd-feed.md](docs/osd-feed.md) を参照してください。
+自作部分は [MIT](LICENSE)。FFmpeg 由来のパッチとバイナリは GPL-3.0-or-later、その他の第三者由来のものは [LICENSE.md](LICENSE.md) に。
 
 ## 謝辞
 
-- [Thingino](https://github.com/themactep/thingino-firmware) — オープンな IP カメラファームウェアと
-  クロスビルド環境
+- [Thingino](https://github.com/themactep/thingino-firmware): オープンな IP カメラファームウェアと、そのビルド環境
+- [thingino-installers](https://github.com/wltechblog/thingino-installers): 純正の Wyze Cam v3 に SD カードから書き込む仕組み
 - [FFmpeg](https://ffmpeg.org/)

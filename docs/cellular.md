@@ -3,6 +3,8 @@
 車載で、カメラ → 車内のモバイルルーター (Wi-Fi) → LTE → YouTube という構成を想定した調査の記録。
 「通信品質がとても悪い」前提で、何が送信量を増やし、電波が途切れた時に何が起きて、どこにチューニングの余地があるかを、
 実機 (`ciao+da40db6`、720p10 / CBR 1024kbps) で測った数字とともにまとめる。測定日は 2026-09-22。
+ここで「対処済み」としたもの (チャンクサイズを直した ffmpeg、netwatch の無効化、720p10 / 1024kbps の既定) は
+今のファームウェアと SD カード ([sdcard.md](sdcard.md)) に入っている。
 設定の変え方そのものは [relay.md](relay.md)、症状別の対処は [troubleshooting.md](troubleshooting.md)。
 
 ## 結論 (先に)
@@ -41,8 +43,8 @@ RTMPS では書き込み 1 回が TLS レコード 1 つ (約 29 バイトの枝
 小さな書き込みが多い分 TCP/IPv6 ヘッダ (60 バイト以上/セグメント) の比率も上がる。平文 RTMP では TCP が小さな書き込みを
 まとめるので目立たない。詳細と FFmpeg 側の該当箇所は [NOTES.md](../NOTES.md) の「RTMPS の送信量が映像の 1.7 倍だった」。
 
-対処は `patches/thingino-ffmpeg-rtmp-chunk-size.diff` (接続直後にチャンクサイズ 4096 をサーバへ宣言する)。このリポジトリの
-手順でビルドした ffmpeg には入っている。値は `ffmpeg_out_opts` の `-rtmp_chunk_size` で変えられる (128〜65536、既定 4096。128 で素の動作)。
+対処は `patches/thingino-ffmpeg-rtmp-chunk-size.diff` (接続直後にチャンクサイズ 4096 をサーバへ宣言する)。SD カードに置く
+ffmpeg (リリースの zip、`firmware/build.sh`) には入っている。値は `ffmpeg_out_opts` の `-rtmp_chunk_size` で変えられる (128〜65536、既定 4096。128 で素の動作)。
 
 ### セルラーでの含意
 
@@ -51,8 +53,9 @@ RTMPS では書き込み 1 回が TLS レコード 1 つ (約 29 バイトの枝
 - 平文 RTMP にする利点は送信量 3% と CPU 0.3 ポイント。**キーが経路上を平文で流れる**ことと引き換えになる
   ([relay.md](relay.md) の「ストリームキーの取り扱い」)。帯域を最優先するなら平文、そうでなければ RTMPS で差し支えない
 - ポート 1935 を塞ぐ・絞る回線があり、443 はほぼ通る。平文 RTMP が不安定な時は、まず RTMPS に戻して比べる
-- 送信量を本当に減らしたいなら、エンコーダのビットレート (`stream0.bitrate`) と fps を下げるのが桁違いに効く。これは
-  Thingino の設定 (WebUI か `/etc/prudynt.json`) の話で、このリポジトリの範囲外
+- 送信量を本当に減らしたいなら、エンコーダのビットレート (`stream0.bitrate`) と fps を下げるのが桁違いに効く。
+  ファームウェアの既定は 720p / 10fps / 1024kbps (`firmware/prepare.sh` の `prudynt.json`)。変えるのは lapcam の
+  Stream タブの Video quality ([lapcam.md](lapcam.md)) か `/etc/prudynt.json`
 
 ## 2. TLS は通信品質の悪さに対して不利か
 
@@ -110,8 +113,8 @@ YouTube の IPv6 帯 (`2404:6800::/32`) を blackhole 経路に、IPv4 のデフ
 | RTMPS / 平文 RTMP | `rtmp_url` で選ぶ | 帯域最優先なら平文 (−3%)。キーが平文で流れる。1935 が通らない回線では RTMPS |
 | `-rw_timeout` (出力の書き込みタイムアウト) | なし | **長い圏外の後の「最悪 2 分」を 10〜20 秒に縮める。** 代償は、その秒数を超える途切れで必ず再起動する (YouTube の 45 秒以内なら本来は再起動なしで続行できた)。車載で入れるなら **20 秒前後** (`ffmpeg_out_opts` に `-rw_timeout 20000000`。単位はマイクロ秒)。接続自体のタイムアウトは FFmpeg の既定で 5 秒 |
 | `tcp_retries2` | 15 (Linux 既定) | 触らない。上記のとおり実害の源ではなく、下げると一時的な遅延で接続を捨てやすくなる |
-| netwatch | 無効 ([netwatch.md](netwatch.md)) | **必須。** 有効だとゲートウェイへの ping が約 90 秒通らないだけでカメラが OS ごと再起動する。車内ルーターの上流断でも、ルーター自身が ping に応えれば再起動しないが、応えないルーターなら圏外のたびに再起動する |
-| エンコーダのビットレート / fps | 1024kbps / 10fps | 送信量を減らす本命。Thingino 側の設定 |
+| netwatch | 無効 (ファームウェアで無効にしてある。[netwatch.md](netwatch.md)) | **必須。** 有効だとゲートウェイへの ping が約 90 秒通らないだけでカメラが OS ごと再起動する。車内ルーターの上流断でも、ルーター自身が ping に応えれば再起動しないが、応えないルーターなら圏外のたびに再起動する |
+| エンコーダのビットレート / fps | 1024kbps / 10fps (ファームウェアの既定) | 送信量を減らす本命。lapcam の Stream タブで変える |
 
 ## 5. 測り方 (再現用)
 

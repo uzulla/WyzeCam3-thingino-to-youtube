@@ -3,6 +3,8 @@
 `beacon` はカメラ上で動く小さな常駐プログラム (Go) で、**数秒ごとに自分の状態 (IP、配信しているか、Wi-Fi の電波の強さなど)
 を JSON 1 つにまとめ、UDP のブロードキャストで同じ LAN に送る**。PC 側の `tools/beacon-listen` で受け取って表示する。
 また、**LAN から UDP で届いた指令 (映像の上下・左右の反転など) を実行する** (`tools/beacon-send` で送る。[指令](#指令))。
+ファームウェア ([sdcard.md](sdcard.md)) に起動スクリプトが入っていて、SD カードの `beacon` を起動時に動かすので、
+入れる作業は要らない。
 
 [find-camera](find-camera.md) (mDNS) は「こちらから聞いて、答えてもらう」方式。beacon は聞かなくても流れてくるので、
 受け取る側は待つだけでよく、IP が変わったことや配信が止まったことも続けて見える。
@@ -10,22 +12,17 @@
 ```text
 $ go -C tools/beacon-listen run .
 listening on UDP port 47474 (Ctrl+C to stop)
-13:08:59  ing-wyze-cam3-9793        192.168.11.29    streaming 16m16s      wifi -28dBm  up 17m33s  mem 68MB  load 2.13  ciao+da40db6
+13:08:59  lapcam-9793               192.168.11.29    streaming 16m16s      wifi -28dBm  up 17m33s  mem 68MB  load 2.13  lapcam v2.1.0  ciao+da40db6
 ```
 
 ブロードキャストはルーターを越えないので、**受け取る PC やスマホはカメラと同じ Wi-Fi / LAN にいる必要がある** (mDNS と同じ)。
 
-## インストール
+## カメラ側
 
-PC に Go (1.25 以降) と、カメラに SD カードが必要。リポジトリのルートで:
-
-```sh
-device/beacon/build.sh                      # dist/beacon (カメラ用、約 4MB)
-device/install-beacon.sh root@<camera-ip>
-```
-
-- バイナリは SD カード (`/mnt/mmcblk0p1/beacon`)、起動スクリプトだけ内蔵側 (`/etc/init.d/S95beacon`) に置く。
-  SD にバイナリがあれば起動時に動き始める。設定用ポータルの状態 (`/run/portal_mode`) の時は動かない
+- バイナリは SD カード (`/mnt/mmcblk0p1/beacon`。リリースの zip に入っている)、起動スクリプトは内蔵側 (`/etc/init.d/S95beacon`。
+  ファームウェアに焼き込んである)。SD にバイナリがあれば起動時に動き始める。設定用ポータルの状態 (`/run/portal_mode`) の時は動かない
+- 自前のファームウェアを焼かずに、素の Thingino に手で入れる場合 (PC に Go 1.25 以降): `device/beacon/build.sh` (dist/beacon、約 4MB) →
+  `device/install-beacon.sh root@<camera-ip>`
 - 動作中に SD カードを抜かない (プログラムを SD から実行しているため。osd-feed と同じ)
 - 止める: `/etc/init.d/S95beacon stop`。自動起動もやめる: `service disable beacon`
 - 消す: `ssh root@<camera-ip> '/etc/init.d/S95beacon stop; rm /etc/init.d/S95beacon /mnt/mmcblk0p1/beacon'`
@@ -40,7 +37,7 @@ go -C tools/beacon-listen run . -json      # 届いた JSON をそのまま 1 �
 ```
 
 - 1 行の中身: 受け取った時刻、ホスト名、IP、配信の状態と経過時間、Wi-Fi の電波 (dBm)、起動してからの時間、空きメモリ、
-  ロードアベレージ、ファームの版
+  ロードアベレージ、lapcam の版、Thingino の版
 - カメラが複数あれば、それぞれの行が混ざって流れる (ホスト名で見分ける)
 - macOS で初回に「受信接続を許可しますか」と出たら許可する。Windows ではファイアウォールの許可を求められたら
   「プライベート ネットワーク」を許可する (許可しないと届かない)
@@ -55,8 +52,8 @@ UDP のポート 47474 に、**ネットワークインターフェースごと*
 (例 `192.168.11.255`) 宛てに送る。中身は 1 行の JSON (300 バイト程度):
 
 ```json
-{"type":"lapcam-beacon","v":1,"seq":1,"host":"ing-wyze-cam3-9793","iface":"wlan0","ip":"192.168.11.29",
- "mac":"02:b4:91:43:97:94","build":"ciao+da40db6","uptime_s":943,
+{"type":"lapcam-beacon","v":1,"seq":1,"host":"lapcam-9793","iface":"wlan0","ip":"192.168.11.29",
+ "mac":"02:b4:91:43:97:94","build":"ciao+da40db6","lapcam":"v2.1.0","uptime_s":943,
  "stream":{"state":"streaming","elapsed_s":866},"rssi_dbm":-26,"mem_free_mb":68,"load1":"2.08"}
 ```
 
@@ -64,10 +61,10 @@ UDP のポート 47474 に、**ネットワークインターフェースごと*
 |---|---|
 | `type` / `v` | 常に `lapcam-beacon` / 形式の版 (今は `1`)。項目を足しても `v` は変えず、意味を変える時に上げる |
 | `seq` | 送るたびに 1 増える (同じ回はどのインターフェースでも同じ)。カメラを再起動すると 1 から |
-| `host` | ホスト名 |
+| `host` | ホスト名 (`lapcam-xxxx`) |
 | `iface` / `ip` / `mac` | 送ったインターフェース (普通は `wlan0`) と、その IP・MAC アドレス |
-| `build` | ファームの版 (`/etc/os-release` の `BUILD_ID`) |
-| `lapcam` | この beacon が属する lapcam の版 (`v2.0.0` など。[release.md](release.md))。手でビルドしたものは `dev` |
+| `build` | Thingino の版 (`/etc/os-release` の `BUILD_ID`) |
+| `lapcam` | この beacon が属する lapcam の版 (`v2.1.0` など。[release.md](release.md))。手でビルドしたものは `dev` |
 | `uptime_s` | 起動してからの秒数 |
 | `stream.state` | 配信 (`youtube-relay`) の状態。下の表 |
 | `stream.elapsed_s` | 配信の ffmpeg が動き続けている秒数。ffmpeg が無ければ `null` |
@@ -79,7 +76,7 @@ UDP のポート 47474 に、**ネットワークインターフェースごと*
 
 ### `stream.state`
 
-Web UI の YouTube Live ページの Status と同じ方法で見ている (relay の pidfile と、その子の ffmpeg)。
+relay の pidfile と、その子の ffmpeg を見て決める (lapcam の Stream タブの表示と同じ見方)。
 
 | 値 | 意味 |
 |---|---|
@@ -99,11 +96,11 @@ beacon は UDP のポート 47475 で指令を待ち、実行して結果を送�
 ```sh
 go -C tools/beacon-send run . image vflip=toggle                     # LAN 内のすべてのカメラ (ブロードキャスト)
 go -C tools/beacon-send run . -to 192.168.11.29 image vflip=true hflip=false   # 1 台に (IP か名前)
-go -C tools/beacon-send run . -host ing-wyze-cam3-9793 ping          # ブロードキャストで、この名前のカメラだけ
+go -C tools/beacon-send run . -host lapcam-9793 ping                 # ブロードキャストで、この名前のカメラだけ
 ```
 
 ```text
-ing-wyze-cam3-9793       192.168.11.29   ok     {"image":{"vflip":false}}
+lapcam-9793              192.168.11.29   ok     {"image":{"vflip":false}}
 ```
 
 | 指令 | 引数 | 動作 |
@@ -130,7 +127,7 @@ ing-wyze-cam3-9793       192.168.11.29   ok     {"image":{"vflip":false}}
 自前のプログラムから送るなら、UDP でカメラ (かブロードキャストアドレス) の 47475 番に、1 パケットに JSON 1 つ (4096 バイトまで) を送る:
 
 ```json
-{"type":"lapcam-command","v":1,"id":"5f2c9a01d4e3b7c8","host":"ing-wyze-cam3-9793","cmd":"image","args":{"vflip":"toggle"}}
+{"type":"lapcam-command","v":1,"id":"5f2c9a01d4e3b7c8","host":"lapcam-9793","cmd":"image","args":{"vflip":"toggle"}}
 ```
 
 | キー | |
@@ -143,8 +140,8 @@ ing-wyze-cam3-9793       192.168.11.29   ok     {"image":{"vflip":false}}
 結果は、送ってきたアドレスとポートに返す:
 
 ```json
-{"type":"lapcam-command-result","v":1,"id":"5f2c9a01d4e3b7c8","host":"ing-wyze-cam3-9793","cmd":"image","ok":true,"result":{"image":{"vflip":false}}}
-{"type":"lapcam-command-result","v":1,"id":"...","host":"ing-wyze-cam3-9793","cmd":"reboot","ok":false,"error":"unknown command \"reboot\" (known: ping, image)"}
+{"type":"lapcam-command-result","v":1,"id":"5f2c9a01d4e3b7c8","host":"lapcam-9793","cmd":"image","ok":true,"result":{"image":{"vflip":false}}}
+{"type":"lapcam-command-result","v":1,"id":"...","host":"lapcam-9793","cmd":"reboot","ok":false,"error":"unknown command \"reboot\" (known: ping, image)"}
 ```
 
 ## 設定
@@ -177,9 +174,9 @@ SD カードに `beacon.args` を置くと、その 1 行目をオプション�
 
 ## 確認した範囲
 
-実機 (`ciao+da40db6`) と PC (macOS) の `beacon-listen` で:
+実機 (`ciao+da40db6`、手で入れた個体) と PC (macOS) の `beacon-listen` で:
 
-- インストール、`beacon.args` (CRLF の行も含む) での間隔の変更
+- `install-beacon.sh` でのインストール、`beacon.args` (CRLF の行も含む) での間隔の変更
 - **再起動後の自動起動**: 起動から 18 秒で最初の 1 件が届き、配信の ffmpeg の起動から `connecting` → 60 秒で `streaming`
 - `youtube-relay` を止めると `stopped`、起動し直すと `idle` (ffmpeg の起動前の一瞬) → `connecting` → `streaming`
 
