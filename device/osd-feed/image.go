@@ -345,33 +345,56 @@ const (
 )
 
 func convertPNGBytes(data []byte, path string, w, h int, fit string) ([]byte, error) {
-	hdr, _, err := image.DecodeConfig(bytes.NewReader(data))
-	if err != nil {
-		return nil, fmt.Errorf("%s: %w", path, err)
-	}
-	bpp := int64(4)
-	switch hdr.ColorModel {
-	case color.RGBA64Model, color.NRGBA64Model, color.Gray16Model:
-		bpp = 8
-	}
-	if hdr.Width <= 0 || hdr.Height <= 0 || hdr.Width > maxSourceSide || hdr.Height > maxSourceSide ||
-		int64(hdr.Width)*int64(hdr.Height)*bpp > maxSourceBytes {
-		return nil, fmt.Errorf("%s: %dx%d (%d bytes/pixel) is too large to decode here (at most %d pixels of 8-bit, %d per side): shrink it first",
-			path, hdr.Width, hdr.Height, bpp, maxSourcePixels, maxSourceSide)
-	}
-	src, _, err := image.Decode(bytes.NewReader(data))
-	if err != nil {
-		return nil, fmt.Errorf("%s: %w", path, err)
-	}
 	if w < 2 || h < 2 {
 		return nil, fmt.Errorf("slot size %dx%d", w, h)
 	}
-	// Premultiplied RGBA is what averaging must happen in (a fully
-	// transparent pixel's colour must not bleed into its neighbours)
-	b := src.Bounds()
-	rgba := image.NewRGBA(image.Rect(0, 0, b.Dx(), b.Dy()))
-	draw.Draw(rgba, rgba.Bounds(), src, b.Min, draw.Src)
+	var rgba *image.RGBA
+	switch pictureKind(data, w, h) {
+	case "bgra":
+		// already the slot's own layout, for exactly the box: no work at all
+		pix, err := bgraPixels(data, w, h)
+		if err != nil {
+			return nil, fmt.Errorf("%s: %w", path, err)
+		}
+		return pix, nil
+	case "pnm":
+		img, err := decodePNM(data)
+		if err != nil {
+			return nil, fmt.Errorf("%s: %w", path, err)
+		}
+		rgba = img
+	default:
+		hdr, _, err := image.DecodeConfig(bytes.NewReader(data))
+		if err != nil {
+			return nil, fmt.Errorf("%s: not a PNG, JPEG, PGM or PPM (%v); headerless BGRA must be exactly %d bytes for the %dx%d box (got %d: ask for w=%d&h=%d)",
+				path, err, w*h*4, w, h, len(data), w, h)
+		}
+		bpp := int64(4)
+		switch hdr.ColorModel {
+		case color.RGBA64Model, color.NRGBA64Model, color.Gray16Model:
+			bpp = 8
+		}
+		if hdr.Width <= 0 || hdr.Height <= 0 || hdr.Width > maxSourceSide || hdr.Height > maxSourceSide ||
+			int64(hdr.Width)*int64(hdr.Height)*bpp > maxSourceBytes {
+			return nil, fmt.Errorf("%s: %dx%d (%d bytes/pixel) is too large to decode here (at most %d pixels of 8-bit, %d per side): shrink it first",
+				path, hdr.Width, hdr.Height, bpp, maxSourcePixels, maxSourceSide)
+		}
+		src, _, err := image.Decode(bytes.NewReader(data))
+		if err != nil {
+			return nil, fmt.Errorf("%s: %w", path, err)
+		}
+		// Premultiplied RGBA is what averaging must happen in (a fully
+		// transparent pixel's colour must not bleed into its neighbours)
+		b := src.Bounds()
+		rgba = image.NewRGBA(image.Rect(0, 0, b.Dx(), b.Dy()))
+		draw.Draw(rgba, rgba.Bounds(), src, b.Min, draw.Src)
+	}
+	return layoutRGBA(rgba, w, h, fit), nil
+}
 
+// layoutRGBA - a premultiplied RGBA picture fitted into w x h and laid out
+// as BGRA with straight alpha (see convertPNG)
+func layoutRGBA(rgba *image.RGBA, w, h int, fit string) []byte {
 	sw, sh := rgba.Rect.Dx(), rgba.Rect.Dy()
 	dw, dh := sw, sh
 	if fit == "contain" && (sw > w || sh > h) {
@@ -413,7 +436,7 @@ func convertPNGBytes(data []byte, path string, w, h int, fit string) ([]byte, er
 			out[o], out[o+1], out[o+2], out[o+3] = bb, g, r, a
 		}
 	}
-	return out, nil
+	return out
 }
 
 // boxScale - shrink a premultiplied RGBA image to dw x dh by averaging the

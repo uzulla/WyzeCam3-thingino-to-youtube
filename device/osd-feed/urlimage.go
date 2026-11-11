@@ -51,9 +51,14 @@ type urlPicture struct {
 }
 
 func newURLPicture(cfg SlotConfig, w, h int) *urlPicture {
+	// An uncompressed 320x240 picture is 300 KB: read it in few, large
+	// syscalls (the default 4 KB buffer means 80 reads per picture, and
+	// the kernel side of each shows as system time on this CPU)
+	tr := http.DefaultTransport.(*http.Transport).Clone()
+	tr.ReadBufferSize = 64 << 10
 	p := &urlPicture{url: cfg.URL, fit: cfg.Fit, w: w, h: h,
 		interval: urlDefaultInterval, timeout: urlDefaultTimeout, stale: urlDefaultStale,
-		client: &http.Client{}, first: make(chan struct{})}
+		client: &http.Client{Transport: tr}, first: make(chan struct{})}
 	if p.fit == "" {
 		p.fit = "contain"
 	}
@@ -157,15 +162,28 @@ func (p *urlPicture) get(ctx context.Context) ([]byte, error) {
 		return nil, err
 	}
 	defer resp.Body.Close()
-	body, err := io.ReadAll(io.LimitReader(resp.Body, urlMaxBody+1))
-	if err != nil {
-		return nil, fmt.Errorf("%s: %w", p.url, err)
-	}
 	if resp.StatusCode/100 != 2 {
 		return nil, fmt.Errorf("%s: HTTP %d", p.url, resp.StatusCode)
 	}
-	if len(body) > urlMaxBody {
+	if resp.ContentLength > urlMaxBody {
 		return nil, fmt.Errorf("%s: the picture is over %d MB", p.url, urlMaxBody>>20)
+	}
+	var body []byte
+	if n := resp.ContentLength; n > 0 {
+		// the size is known: one buffer of that size, filled in place (ReadAll
+		// would grow and copy its way up to it, several copies of a big picture)
+		body = make([]byte, n)
+		if _, err := io.ReadFull(resp.Body, body); err != nil {
+			return nil, fmt.Errorf("%s: %w", p.url, err)
+		}
+	} else {
+		body, err = io.ReadAll(io.LimitReader(resp.Body, urlMaxBody+1))
+		if err != nil {
+			return nil, fmt.Errorf("%s: %w", p.url, err)
+		}
+		if len(body) > urlMaxBody {
+			return nil, fmt.Errorf("%s: the picture is over %d MB", p.url, urlMaxBody>>20)
+		}
 	}
 	if len(body) == 0 {
 		return nil, fmt.Errorf("%s: empty response", p.url)

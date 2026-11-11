@@ -280,7 +280,7 @@
         () => { ri = Math.min(RATES.length - 1, ri + 1); ms = RATES[ri][0]; rateRow.querySelector(".val").textContent = RATES[ri][1]; });
       panel.appendChild(rateRow);
       const hint = document.createElement("div"); hint.className = "lbl";
-      hint.textContent = "Size, quality, rotation etc. are the source's own URL parameters. Decoding costs the camera CPU: a 320×240 colour JPEG is about 4% per fetch/s, grey or 160×120 about 1.5%.";
+      hint.textContent = "Size, rotation, format etc. are the source's own URL parameters. Decoding a JPEG costs this camera CPU (a 320×240 colour JPEG about 4% per fetch/s); uncompressed PGM / PPM / BGRA (fmt=pgm on an m5camera) costs almost nothing.";
       panel.appendChild(hint);
       const saveURL = document.createElement("button"); saveURL.className = "primary"; saveURL.textContent = "Save remote camera (restarts osd-feed)";
       saveURL.addEventListener("click", async () => {
