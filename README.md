@@ -32,6 +32,9 @@ SD カードを挿して電源を入れるだけでインストールでき、�
 - **設定は全部 SD カードに。** Wi-Fi、ストリームキー、SSH の鍵、OSD、ロゴ、録画がカードの上にあるので、カードを差し替えれば別の現場の設定になり、ファームウェアを更新しても設定は残ります (パスワードだけはカメラ側で、焼き直すと初期値に戻ります)。
 - **現地で困らない。** ボタンを 5 秒押せばカメラ自身が Wi-Fi を出して設定画面を開けます。名前は `lapcam-xxxx.local`、LAN には自分の IP と状態を放送し続けます。
 
+<p align="center"><img src="docs/images/live-example.jpg" width="800" alt="配信の例: 雨のサーキット。左上に時計とカメラの負荷、左下に G ボールと速度、右上に走行図、右下にチームのロゴ"></p>
+<p align="center"><sub>実際の配信から (2026-11-02)。時計、G ボール、速度、走行図、ロゴはすべてカメラの中で重ねている</sub></p>
+
 <p align="center">
 <img src="docs/images/lapcam-camera.png" width="24%" alt="Camera: プレビュー、配信と録画の開始・停止">
 <img src="docs/images/lapcam-osd.png" width="24%" alt="OSD: 要素をドラッグして配置">
