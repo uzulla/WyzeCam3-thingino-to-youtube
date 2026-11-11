@@ -148,6 +148,7 @@ func (s *server) routes() http.Handler {
 	mux.Handle("POST /api/osd/element", s.auth(http.HandlerFunc(s.handleOSDElement)))
 	mux.Handle("POST /api/osd/feed", s.auth(http.HandlerFunc(s.handleOSDFeed)))
 	mux.Handle("POST /api/osd/logo", s.auth(http.HandlerFunc(s.handleLogoUpload)))
+	mux.Handle("GET /api/osd/remotes", s.auth(http.HandlerFunc(s.handleRemotes)))
 	mux.Handle("GET /api/wifi", s.auth(http.HandlerFunc(s.handleWifiGet)))
 	mux.Handle("GET /api/wifi/scan", s.auth(http.HandlerFunc(s.handleWifiScan)))
 	mux.Handle("POST /api/wifi/networks", s.auth(http.HandlerFunc(s.handleWifiSet)))

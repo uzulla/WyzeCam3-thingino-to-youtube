@@ -458,6 +458,17 @@ func (s *server) handleOSDFeed(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "restarted": "osd-feed"})
 }
 
+// handleRemotes - the devices on the LAN that a remote camera URL could
+// point at (mdns.go); about 2 s, so the tab asks only on a tap
+func (s *server) handleRemotes(w http.ResponseWriter, r *http.Request) {
+	hosts, err := browseRemotes(r.Context())
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]any{"error": err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"hosts": hosts})
+}
+
 // handleLogoUpload - a PNG from the phone becomes the logo (osd-feed notices
 // the new file by its mtime and converts it within a second)
 func (s *server) handleLogoUpload(w http.ResponseWriter, r *http.Request) {

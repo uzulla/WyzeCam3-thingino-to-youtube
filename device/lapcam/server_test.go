@@ -70,7 +70,7 @@ func TestRoutesNeedASession(t *testing.T) {
 		{"GET", "/api/status"}, {"GET", "/api/preview.mjpeg"}, {"GET", "/api/preview.mp4"}, {"GET", "/api/snapshot.jpg"},
 		{"POST", "/api/relay"}, {"GET", "/api/relay/config"}, {"POST", "/api/relay/config"},
 		{"POST", "/api/record"}, {"POST", "/api/image"}, {"POST", "/api/reboot"}, {"GET", "/api/log"},
-		{"GET", "/api/osd"}, {"POST", "/api/osd/element"}, {"POST", "/api/osd/feed"},
+		{"GET", "/api/osd"}, {"POST", "/api/osd/element"}, {"POST", "/api/osd/feed"}, {"GET", "/api/osd/remotes"},
 		{"GET", "/api/wifi"}, {"GET", "/api/wifi/scan"}, {"POST", "/api/wifi/networks"},
 		{"GET", "/api/quality"}, {"POST", "/api/quality"},
 		{"GET", "/api/recordings"}, {"GET", "/api/recordings/file?p=x.mp4"}, {"POST", "/api/recordings/zip"},
