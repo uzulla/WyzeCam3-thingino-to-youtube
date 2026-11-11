@@ -86,5 +86,5 @@ PC もスマホも無い時は、カメラの Setup ボタンを**短く 1 回�
   mDNS も Web UI も届かない
 - カメラが Wi-Fi に繋がっていない (設定を誤った、保存した Wi-Fi が無い): 本体ボタンを 5 秒押してカメラを AP にし、
   `lapcam-xxxx` に繋いで `http://100.64.1.1/` の Wi-Fi タブで直す ([lapcam.md](lapcam.md))。または SD カードの
-  `wpa_supplicant.conf` を書き換える ([wifi-from-sd.md](wifi-from-sd.md))
+  `wpa_supplicant.conf` を書き換える ([wifi-from-sd.md](wifi-from-sd.md)。カードに `uenv.txt` の Wi-Fi 設定があると AP は起動しないので、そちらを直す)
 - VPN を使っている PC は、VPN を切ると見つかることがある

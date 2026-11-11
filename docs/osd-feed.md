@@ -37,10 +37,13 @@ osd-feed (Go、SD カードから実行)
 - 起動・停止: `service start osd-feed` / `service stop osd-feed` / `service disable osd-feed`。ログは `logread | grep osd-feed`
 - 設定を変えたら `service restart osd-feed` (lapcam の OSD タブでテンプレートを保存した時は lapcam がやる)。先に
   `/mnt/mmcblk0p1/osd-feed -once` を実行すると、各スロットの描画結果を標準出力に 1 回出して終わるので、テンプレートの
-  確認に使える。`udp` の source は最初の 1 件が届くまで `timeout_ms` (既定 3 秒) 待つ
+  確認に使える。`udp` の source は最初の 1 件が届くまで `timeout_ms` (既定 3 秒) 待つ。付属の設定のように `udp` の source があると、
+  動いている osd-feed がそのポート (`:5005`) を使っているので、`service stop osd-feed` してから `-once` を実行し、終わったら `service start osd-feed`
+  (止めている間は OSD が消える)
 - 終了時に書いていたファイル (`/run/prudynt/osd-text*`) は消す (`clear_on_exit`)
 - バイナリの更新は SD カードを作り直す ([sdcard.md](sdcard.md)) か、`device/osd-feed/build.sh` (Mac/PC で。Go 1.25 以降。
-  `dist/osd-feed` ができる) の出力を SD の `osd-feed` に置き換える (実行属性は FAT なので不要)
+  `dist/osd-feed` ができる) の出力を SD の `osd-feed` に置き換える (実行属性は FAT なので不要)。動いている最中は同じファイルに上書きできない (`Text file busy`) ので、
+  `service stop osd-feed` → 置き換え → `service start osd-feed` の順 (`device/install-osd-feed.sh` もそうしている)
 
 ### 素の Thingino に手で入れる場合
 

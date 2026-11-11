@@ -56,7 +56,7 @@ v2.0.0 からがファームウェア + Web UI の体系。
 
 | 何を | どこで | コマンド |
 |---|---|---|
-| ファームウェアイメージと ffmpeg | ビルドホスト | `firmware/build.sh thingino-firmware` (初回 25 分ほど。device/ の変更後は `PACK_ONLY=1` で数秒) |
+| ファームウェアイメージと ffmpeg | ビルドホスト | `firmware/build.sh thingino-firmware` (初回 25 分ほど。device/ のスクリプトや overlay だけ変えた後は `PACK_ONLY=1` で数秒。パッチや `prudynt.json` を変えた後は付けない) |
 | lapcam / osd-feed / beacon | PC (Go) | `device/lapcam/build.sh` など。`go vet` と `go test` を通してから静的リンクのバイナリを `dist/` に出す |
 | SD カード | PC | `firmware/make-sdcard.sh [-u] [-w SSID PASS]… /Volumes/カード` |
 | リリース一式 | PC | `tools/release.sh vX.Y.Z` ([release.md](release.md)) |

@@ -319,8 +319,8 @@ else
 	echo "  (no wpa_supplicant.conf: the camera will open its own Wi-Fi network at boot; -w SSID PASS writes one)"
 fi
 # Thingino's own one-network uenv.txt would fight with wpa_supplicant.conf
-if [ -f "$CARD/uenv.txt" ] && grep -q '^wlanssid=' "$CARD/uenv.txt"; then
-	echo "  WARNING: uenv.txt on the card sets wlanssid; Thingino applies it after wpa_supplicant.conf. Remove one of the two." >&2
+if [ -f "$CARD/uenv.txt" ] && grep -q '^wlan_ssid=' "$CARD/uenv.txt"; then
+	echo "  WARNING: uenv.txt on the card sets wlan_ssid; Thingino applies it after wpa_supplicant.conf. Remove one of the two." >&2
 fi
 
 if [ -n "$KEY" ]; then

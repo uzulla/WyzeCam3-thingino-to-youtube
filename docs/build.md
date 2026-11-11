@@ -30,7 +30,7 @@ cd ..
 
 ```sh
 firmware/build.sh thingino-firmware            # 初回はフルビルド (4 コアで 25 分ほど)
-PACK_ONLY=1 firmware/build.sh thingino-firmware   # device/ や prepare.sh の設定を変えた後: イメージの組み直しだけ (数秒〜1 分)
+PACK_ONLY=1 firmware/build.sh thingino-firmware   # device/ のスクリプトや overlay だけ変えた後: イメージの組み直しだけ (数秒〜1 分)
 ```
 
 `firmware/prepare.sh` が `patches/` を当てて `user/<機種>/` (焼き込む設定と overlay) を用意し、ビルダーコンテナの中で Thingino の
@@ -46,7 +46,8 @@ dist/ffmpeg, dist/ffmpeg.version                            カードに置く f
 - 出力先は `output/ciao/<機種>-3.10.14-uclibc/`。prepare.sh がコミット `da40db6` に `ciao` ブランチを付けるため
   (detached のままだと BUILD_ID が `HEAD+da40db6` になり、`device/common.sh` が実機で弾く)
 - パッチや `prudynt.json` が変わった時は、prepare.sh が `user/<機種>/.rebuild` に記録し、build.sh が `make rebuild-<pkg>` する
-  (Buildroot はパッケージディレクトリの変更を見ない)
+  (Buildroot はパッケージディレクトリの変更を見ない)。この時は `PACK_ONLY=1` では組み直せず、その旨を出して止まるので、
+  `PACK_ONLY` を付けずに実行する
 - rootfs (squashfs 5696 KB) の空きは約 50 KB。入らなくなるとビルドが失敗する。大きいものは SD カードへ ([sdcard.md](sdcard.md))
 - 他機種は `firmware/build.sh thingino-firmware <機種名>` (未検証)
 

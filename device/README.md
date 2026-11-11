@@ -18,7 +18,7 @@ SD カードに置く。**ここを変えたらイメージ (かカード) も�
 | `S97lapcam` | `/etc/init.d/` | SD の `lapcam` を起動し、その間 uhttpd (Thingino の Web UI) を止める | [lapcam.md](../docs/lapcam.md) |
 | `rec-button` | `/usr/sbin/` | 本体ボタンの押す・離すから、ダブルクリック (SD 録画の開始・停止) と 1 回押し (IP の読み上げ) を判定する。ボタン設定 `/etc/thingino-button.conf` は prepare.sh が Thingino のものを書き換えて作る | [recording.md](../docs/recording.md#本体のボタンのダブルクリックで開始停止-rec-button) |
 | `wifi-ap` | `/usr/sbin/` | 本体ボタン 5 秒長押しで、再起動までカメラをパスワード無しの AP (名前はホスト名) にする | [lapcam.md](../docs/lapcam.md) |
-| `agent-adapter` | `/usr/libexec/agent/adapter.sh` | 録画 (Rec) が使う agent API の prudynt 用バックエンド。Thingino のビルドは何もしない null 版を入れるので、録画引数を直した版 (`patches/thingino-agent-adapter-record-args.diff`) で上書きする | [recording.md](../docs/recording.md#lapcam-の-record-ボタンが頼る-agent-adapter) |
+| `agent-adapter` | `/usr/libexec/agent/adapter.sh` | 録画 (Rec) が使う agent API の prudynt 用バックエンド。Thingino のビルドは何もしない null 版を入れるので、録画引数を直した版 (`patches/thingino-agent-adapter-record-args.diff`) で上書きする | [recording.md](../docs/recording.md#thingino-の-agent-adapter-旧-ui-の-rec-ボタン用) |
 | `lapcam/` | SD カード直下の `lapcam` (と `lapcam.args`) | スマホ向けの Web UI (Go、ポート 80)。プレビュー、配信・録画、OSD、Wi-Fi、パスワード変更。`build.sh` でビルド | [lapcam.md](../docs/lapcam.md) |
 | `osd-feed/` | SD カード直下の `osd-feed` と `osd-feed.json` | メモリ量・時刻・カウンタ・HTTP JSON から OSD テキストを生成し、PNG を画像 OSD 用に変換する常駐プログラム (Go)。`build.sh` でビルド | [osd-feed.md](../docs/osd-feed.md) |
 | `beacon/` | SD カード直下の `beacon` (と `beacon.args`) | IP・配信の状態・Wi-Fi の電波などを数秒ごとに UDP ブロードキャストし、LAN からの指令 (映像の反転) を受け付ける常駐プログラム (Go)。送り主は確かめない。`build.sh` でビルド | [beacon.md](../docs/beacon.md) |
@@ -31,7 +31,7 @@ SD カードに置く。**ここを変えたらイメージ (かカード) も�
 ## 2. 素の Thingino に手で入れる (自前のファームウェアを焼かない場合)
 
 `ciao+da40db6` の Thingino が入ったカメラに、上のものを ssh で 1 台ずつ入れるスクリプト。`/etc` や `/usr` は overlayfs で
-フラッシュに残るので再起動後も消える。すべて PC 側で `root@<camera-ip>` を引数に実行する。`common.sh` が `BUILD_ID` を
+フラッシュに残るので再起動後も残る (Thingino を入れ直す・更新すると消える)。すべて PC 側で `root@<camera-ip>` を引数に実行する。`common.sh` が `BUILD_ID` を
 確かめ、`ciao+da40db6` でなければ何も変えずに中止する。
 
 | ファイル | 入れるもの | 文書 |
@@ -42,7 +42,7 @@ SD カードに置く。**ここを変えたらイメージ (かカード) も�
 | `install-keys-from-sd.sh` | `S37keys-from-sd` (引数の公開鍵をカードの `authorized_keys` に追加する) | [sdcard.md](../docs/sdcard.md) |
 | `install-prudynt-osd.sh` | パッチ入り prudynt (テキスト 3 枠・画像 1 枠) を bind mount で差し替える `S30prudynt-osd`、`osd-config` / `S93osd-config`、`osd-progress-demo`、Thingino の Web UI の「OSD Settings」ページ (下記 `www/`) | [osd.md](../docs/osd.md) |
 | `install-osd-feed.sh` | `osd-feed` (SD) と `S94osd-feed` | [osd-feed.md](../docs/osd-feed.md) |
-| `install-agent-adapter.sh` | `agent-adapter` (元は `adapter.sh.null` に残す) | [recording.md](../docs/recording.md#lapcam-の-record-ボタンが頼る-agent-adapter) |
+| `install-agent-adapter.sh` | `agent-adapter` (元は `adapter.sh.null` に残す) | [recording.md](../docs/recording.md#thingino-の-agent-adapter-旧-ui-の-rec-ボタン用) |
 | `install-rec-button.sh` | `rec-button` と `/etc/thingino-button.conf` の書き換え (元は `.orig` に残す) | [recording.md](../docs/recording.md#本体のボタンのダブルクリックで開始停止-rec-button) |
 | `install-rec-led.sh` | `rec-led` / `S96rec-led` | [recording.md](../docs/recording.md) |
 | `install-lapcam.sh` | `lapcam` (SD) と `S97lapcam`。uhttpd を止めて無効にする | [lapcam.md](../docs/lapcam.md) |

@@ -43,7 +43,7 @@ ssh で入るなら、公開鍵を 1 行 1 鍵で `authorized_keys` に置いて
 同じカードで二度は走らない。
 
 **Thingino や lapcam が入っている個体**: `lapcam-vX.Y.Z-firmware.bin` (Releases にある。zip の中の `thingino-wyze_cam3_….bin` と同じもの) を
-`autoupdate-full.bin` の名前でカードに置き、電源を入れ直す。正面の赤 LED が点いている 1〜2 分の間に書き込まれ、再起動する。
+`autoupdate-full.bin` の名前でカードに置き (前に焼いたカードなら `autoupdate-full.done` を消す)、電源を入れ直す。正面の赤 LED が点いている 1〜2 分の間に書き込まれ、再起動する。
 終わると `autoupdate-full.done` がカードに残り、以後は焼かない。設定はフラッシュの分 (ホスト名、Wi-Fi、パスワード) が消えるが、
 カードの分は全部残る ([sdcard.md](sdcard.md#焼いた後に残るもの消えるもの))。
 
@@ -74,4 +74,4 @@ ssh が使える個体なら、カードにイメージを置いて `sysupgrade 
 
 ## 純正に戻す
 
-カードの `WYZE_BACKUP_xxxxxx/combined_backup.bin` を `autoupdate-full.bin` の名前でカードに 1 つだけ置いて電源を入れる。
+カードの `WYZE_BACKUP_xxxxxx/combined_backup.bin` を `autoupdate-full.bin` の名前でカードに 1 つだけ置き、`autoupdate-full.done` があれば消して、電源を入れる。

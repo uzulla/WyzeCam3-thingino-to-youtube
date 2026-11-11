@@ -3,11 +3,13 @@
 SD 直下の `wpa_supplicant.conf` を起動時にカメラへ適用する `S37wifi-from-sd` と、Thingino 標準の `uenv.txt` との比較。
 **ファームウェアに入っているので、SD カードから入れた個体 ([sdcard.md](sdcard.md)) では何も入れなくてよい**:
 `firmware/make-sdcard.sh -w SSID PASS` (複数回書ける) がカードに `wpa_supplicant.conf` を作り、
-lapcam の Wi-Fi タブ ([lapcam.md](lapcam.md)) で変えた設定もカードの同じファイルに書き戻されるので、両者はずれない。
+lapcam の Wi-Fi タブ ([lapcam.md](lapcam.md)) で変えた設定も、カードにそのファイルがあればそこに書き戻されるので、両者はずれない
+(カードにファイルが無い個体では Wi-Fi タブの設定はカメラ側にだけ残り、カードを別のカメラに移しても付いてこない。
+持ち運びたければ先にカードに `wpa_supplicant.conf` を置いておく)。
 ストリームキー ([relay.md](relay.md)) と合わせて **SD 1 枚に Wi-Fi 設定とストリームキーを入れて持ち運べる**
 (車載で現地のモバイルルーターに繋ぎ替える、など)。
 
-方法は 2 つ。**併用はしないこと** (両方あると A が後から上書きする。make-sdcard.sh はカードに `uenv.txt` があれば警告する)。
+方法は 2 つ。**併用はしないこと** (両方あると A が後から上書きする。make-sdcard.sh はカードの `uenv.txt` に `wlan_ssid=` があれば警告する)。
 
 | | A. `uenv.txt` (Thingino 標準) | B. `wpa_supplicant.conf` (**ファームウェアが使う方**) |
 |---|---|---|
@@ -18,7 +20,9 @@ lapcam の Wi-Fi タブ ([lapcam.md](lapcam.md)) で変えた設定もカード�
 どちらも共通の注意:
 
 - 読み込まれるのは**起動時だけ**。SD を挿しただけでは反映されないので再起動する
-  (起動時に繋がらなければ、本体ボタン 5 秒長押しの AP モードから lapcam の Wi-Fi タブでも直せる)
+  (起動時に繋がらなければ、本体ボタン 5 秒長押しの AP モードから lapcam の Wi-Fi タブでも直せる。ただし A の `uenv.txt` が
+  カードにあると `wifi-ap` は AP を起動しない (起動処理がその設定で AP を上書きするため) ので、A を間違えた時は PC で
+  `uenv.txt` の `wlan_ssid=` / `wlan_pass=` の行を直すか消す)
 - 適用された設定はカメラ側に保存される。**SD を抜いても元の Wi-Fi には戻らない**
   (最後に適用されたものが残る)。繋がらなくなったら、SD のファイルを直して再起動すれば復旧できる
   (A は毎回、B は SD の内容が最後に適用した時から変わっていれば適用する)。

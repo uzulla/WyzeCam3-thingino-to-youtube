@@ -175,4 +175,14 @@ chmod 644 "$REPO/dist/osd-feed"
 [ ! -f "$C/factory_t31_ZMC6tiIDQN" ] || fail "stock: the installer is on the card after a failed run"
 no_tmp "$C" failcopy-stock
 
+echo "14. a uenv.txt with Thingino's wlan_ssid= next to wpa_supplicant.conf is reported"
+C=$(card uenv)
+sh "$M" -u -s -w Home secret-pass "$C" >/dev/null 2>&1 || fail "uenv: making the first card failed"
+printf 'wlan_ssid=Home\nwlan_pass=secret\n' >"$C/uenv.txt"   # as Thingino's S38wpa_supplicant reads it
+output=$(sh "$M" -u -s "$C" 2>&1) || fail "uenv: making the card failed: $output"
+printf '%s\n' "$output" | grep -q "uenv.txt on the card sets wlan_ssid" || fail "uenv.txt wlan_ssid= not reported: $output"
+printf 'something=else\n' >"$C/uenv.txt"
+output=$(sh "$M" -u -s "$C" 2>&1) || fail "uenv-other: making the card failed: $output"
+if printf '%s\n' "$output" | grep -q "uenv.txt on the card sets"; then fail "uenv.txt without wlan_ssid= reported"; fi
+
 echo "all tests passed"

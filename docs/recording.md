@@ -54,10 +54,10 @@ Recordings タブの設定 (Thingino の Video Recorder ページと同じ `/etc
 | 1 ファイルの長さ | 秒。既定 60。長くしても継ぎ目で欠けないので、ファイル数を減らしたければ 600 など |
 | カードがいっぱいになったら古いものから消す | Thingino の `recordmgr` (`S95recordmgr`)。上限 (GB) と最低空き容量 (MB) で決める。変えると lapcam が `recordmgr` を再起動する |
 
-## lapcam の Record ボタンが頼る agent adapter
+## Thingino の agent adapter (旧 UI の Rec ボタン用)
 
-Record ボタン (旧 Thingino UI の Rec ボタンも) は prudynt に直接ではなく、Thingino の agent API (`/api/v1/actions/record`) に
-録画を頼む。agent はその要求を `/usr/libexec/agent/adapter.sh` (ストリーマごとのバックエンド) に渡すが、Thingino のビルドは
+lapcam の Record ボタン、`rec-button`、ssh の `record` は、prudynt の FIFO (`/run/prudynt/mp4ctl`) に直接書く `record` コマンドで
+録画を始める。一方、旧 Thingino UI の Rec ボタンは Thingino の agent API (`/api/v1/actions/record`) に録画を頼む。agent はその要求を `/usr/libexec/agent/adapter.sh` (ストリーマごとのバックエンド) に渡すが、Thingino のビルドは
 prudynt 用の adapter を入れた後に thingino-agent の「null」版で上書きしてしまうため、出荷ファーム `ciao+da40db6` では
 "record action is not supported without an active backend adapter" (旧 UI では "Failed to start recording on channel 0") になる。
 lapcam のファームウェアは prudynt 版 (`device/agent-adapter`) を overlay に置いて直している。直したのはもう 1 点、
@@ -137,7 +137,8 @@ device/install-rec-led.sh root@<camera-ip>         # /usr/sbin/rec-led と /etc/
 ```
 
 戻す: `mv /usr/libexec/agent/adapter.sh.null /usr/libexec/agent/adapter.sh`、
-`mv /etc/thingino-button.conf.orig /etc/thingino-button.conf; rm /usr/sbin/rec-button; /etc/init.d/S15thingino-button restart`、
+`mv /etc/thingino-button.conf.orig /etc/thingino-button.conf; rm /usr/sbin/rec-button; /etc/init.d/S15thingino-button restart`
+(`.orig` はインストール時のファイル全体なので、その後に `install-wifi-ap.sh` で変えた 5 秒長押しの行も元に戻る。残したければ `rec-button` の行だけ手で直す)、
 `/etc/init.d/S96rec-led stop; rm /etc/init.d/S96rec-led /usr/sbin/rec-led`。保存先は Thingino の既定 `%hostname` (ホスト名の
 フォルダ) のままなので、`recordings` に固定するなら `device/set-camera-name.sh` ([lapcam.md](lapcam.md))。
 

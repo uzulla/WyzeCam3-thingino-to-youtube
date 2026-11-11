@@ -34,6 +34,7 @@ Thingino の Web UI は監視カメラ向けの機能が多く、この使い方
 
 Thingino が機体の名前から決めている 3 つ (ホスト名、mDNS、録画フォルダ) を lapcam に揃えてある。ファームウェアに焼き込んであり、
 素の Thingino に手で入れる場合は `device/set-camera-name.sh root@<camera-ip>` (別名なら第 2 引数) が同じことをする。
+別名にすると mDNS のサービスも `_<別名>._tcp` になるので、`tools/find-camera` は `-service _<別名>._tcp` で探す ([find-camera.md](find-camera.md))。
 
 - **ホスト名**: 手で入れた個体は `set-camera-name.sh` で `lapcam` に (`hostname`、`/etc/hostname`、`/etc/hosts`。Thingino の
   `S04hostname` は自分で付けた名前を起動時に残す)。ファームウェア ([sdcard.md](sdcard.md)) は既定名を `lapcam` にした

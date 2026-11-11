@@ -97,7 +97,7 @@ Go のプログラム (lapcam 9 MB、osd-feed 9.5 MB、beacon 4 MB) と ffmpeg (
 
 ### 1. イメージを作る (ビルドホスト)
 
-[build.md](build.md) の手順 1 (ソース木の取得、`da40db6`) と 3〜4 (builder イメージと DL キャッシュ) を済ませた上で:
+[build.md](build.md) の手順 1 (ソース木の取得 `da40db6`、builder イメージ、DL キャッシュ) を済ませた上で:
 
 ```sh
 firmware/build.sh thingino-firmware            # 初回はフルビルド (4 コアで 25 分ほど)
