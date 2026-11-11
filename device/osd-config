@@ -107,10 +107,10 @@ known_slots() {
 	printf '%s' "$k"
 }
 
-# Slots (textfile, textfile2, textfile3, imagefile, imagefile2, imagefile3) that the config file mentions:
+# Slots (textfile, textfile2, textfile3, imagefile, imagefile2, imagefile3, imagefile4) that the config file mentions:
 # only those are ours to turn off again when the file goes away.
 slots_in() {
-	for slot in textfile textfile2 textfile3 imagefile imagefile2 imagefile3; do
+	for slot in textfile textfile2 textfile3 imagefile imagefile2 imagefile3 imagefile4; do
 		case $(jct "$1" get "osd.$slot" 2>/dev/null) in "{"*) printf '%s ' "$slot" ;; esac
 	done
 }

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net/url"
 	"os"
 	"time"
 )
@@ -54,8 +55,22 @@ type SlotConfig struct {
 	Fit    string `json:"fit"`
 	Width  int    `json:"width"`
 	Height int    `json:"height"`
-	// image slots only: where in the slot the PNG goes (default: the whole
-	// slot), so that it can share the slot with a G-ball
+	// image slots only, instead of png: a JPEG or PNG fetched from a URL
+	// (another camera's snapshot, say; urlimage.go) every interval_ms
+	// (default 1000, at least 100), each GET given timeout_ms (default
+	// 3000); the picture is taken down after stale_ms without a successful
+	// fetch (default 10000, 0 = kept). The URL is used as given: size,
+	// quality etc. are the server's parameters.
+	URL        string `json:"url"`
+	IntervalMs int    `json:"interval_ms"`
+	TimeoutMs  int    `json:"timeout_ms"`
+	StaleMs    *int   `json:"stale_ms"`
+	// what to show after stale_ms without a picture: "offline" (default:
+	// the last picture darkened with OFFLINE across it, or a dark box with
+	// the word when there never was one) or "hide" (nothing)
+	OnStale string `json:"on_stale"`
+	// image slots only: where in the slot the PNG (or the URL's picture) goes
+	// (default: the whole slot), so that it can share the slot with a G-ball
 	PNGBox *Box `json:"png_box"`
 	// image slots only: a G-ball (gball.go) drawn from a source's values
 	GBall *GBallConfig `json:"gball"`
@@ -151,14 +166,31 @@ func loadConfig(path string) (*Config, error) {
 	}
 	for name, sc := range c.Slots {
 		if !validSlot(name) {
-			return nil, fmt.Errorf("%s: unknown slot %q (textfile, textfile2, textfile3, imagefile, imagefile2 or imagefile3)", path, name)
+			return nil, fmt.Errorf("%s: unknown slot %q (textfile, textfile2, textfile3, imagefile, imagefile2, imagefile3 or imagefile4)", path, name)
 		}
 		if isImageSlot(name) {
-			if sc.PNG == "" && sc.GBall == nil && sc.Track == nil {
-				return nil, fmt.Errorf("%s: slot %s needs \"png\" (the file to show), \"gball\" or \"track\"", path, name)
+			if sc.PNG == "" && sc.URL == "" && sc.GBall == nil && sc.Track == nil {
+				return nil, fmt.Errorf("%s: slot %s needs \"png\" (the file to show), \"url\" (a picture to fetch), \"gball\" or \"track\"", path, name)
 			}
-			if b := sc.PNGBox; b != nil && (sc.PNG == "" || b.X < 0 || b.Y < 0 || b.Width < 1 || b.Height < 1) {
-				return nil, fmt.Errorf("%s: slot %s: png_box needs png, x/y >= 0 and width/height >= 1", path, name)
+			if sc.PNG != "" && sc.URL != "" {
+				return nil, fmt.Errorf("%s: slot %s: png and url cannot both be set (one picture per slot)", path, name)
+			}
+			if sc.URL != "" {
+				if err := checkPictureURL(sc.URL); err != nil {
+					return nil, fmt.Errorf("%s: slot %s: url: %v", path, name, err)
+				}
+				if sc.IntervalMs < 0 || sc.IntervalMs > int(urlMaxInterval/time.Millisecond) || sc.TimeoutMs < 0 || sc.TimeoutMs > 60000 ||
+					(sc.StaleMs != nil && *sc.StaleMs < 0) {
+					return nil, fmt.Errorf("%s: slot %s: interval_ms must be 0..%d, timeout_ms 0..60000, stale_ms >= 0", path, name, int(urlMaxInterval/time.Millisecond))
+				}
+				if sc.OnStale != "" && sc.OnStale != "offline" && sc.OnStale != "hide" {
+					return nil, fmt.Errorf("%s: slot %s: on_stale must be \"offline\" or \"hide\"", path, name)
+				}
+			} else if sc.IntervalMs != 0 || sc.TimeoutMs != 0 || sc.StaleMs != nil || sc.OnStale != "" {
+				return nil, fmt.Errorf("%s: slot %s: interval_ms/timeout_ms/stale_ms/on_stale go with url", path, name)
+			}
+			if b := sc.PNGBox; b != nil && ((sc.PNG == "" && sc.URL == "") || b.X < 0 || b.Y < 0 || b.Width < 1 || b.Height < 1) {
+				return nil, fmt.Errorf("%s: slot %s: png_box needs png or url, x/y >= 0 and width/height >= 1", path, name)
 			}
 			if g := sc.GBall; g != nil {
 				if g.Source == "" {
@@ -202,8 +234,8 @@ func loadConfig(path string) (*Config, error) {
 			if sc.Height < 0 || sc.Height > maxImageHeight || sc.Height%2 != 0 || (sc.Height != 0 && sc.Height < 2) {
 				return nil, fmt.Errorf("%s: slot %s: height must be an even number 2..%d (or left out)", path, name, maxImageHeight)
 			}
-		} else if sc.PNG != "" || sc.Fit != "" || sc.Width != 0 || sc.Height != 0 || sc.PNGBox != nil || sc.GBall != nil || sc.Track != nil {
-			return nil, fmt.Errorf("%s: slot %s: png/fit/width/height/png_box/gball/track are for the imagefile slots", path, name)
+		} else if sc.PNG != "" || sc.URL != "" || sc.IntervalMs != 0 || sc.TimeoutMs != 0 || sc.StaleMs != nil || sc.OnStale != "" || sc.Fit != "" || sc.Width != 0 || sc.Height != 0 || sc.PNGBox != nil || sc.GBall != nil || sc.Track != nil {
+			return nil, fmt.Errorf("%s: slot %s: png/url/fit/width/height/png_box/gball/track are for the imagefile slots", path, name)
 		}
 	}
 	for name, s := range c.Sources {
@@ -221,12 +253,24 @@ func loadConfig(path string) (*Config, error) {
 	return &c, nil
 }
 
+// checkPictureURL - an absolute http(s) URL with a host
+func checkPictureURL(raw string) error {
+	u, err := url.Parse(raw)
+	if err != nil {
+		return err
+	}
+	if (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
+		return fmt.Errorf("%q: must be an http:// or https:// URL", raw)
+	}
+	return nil
+}
+
 func validSlot(name string) bool {
 	return name == "textfile" || name == "textfile2" || name == "textfile3" || isImageSlot(name)
 }
 
-// isImageSlot - prudynt's three image overlays (e.g. a logo, a G-ball and a
-// track map, each placed on its own)
+// isImageSlot - prudynt's four image overlays (e.g. a logo, a G-ball, a
+// track map and a picture from a URL, each placed on its own)
 func isImageSlot(name string) bool {
-	return name == "imagefile" || name == "imagefile2" || name == "imagefile3"
+	return name == "imagefile" || name == "imagefile2" || name == "imagefile3" || name == "imagefile4"
 }

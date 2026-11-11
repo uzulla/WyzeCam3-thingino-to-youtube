@@ -111,6 +111,12 @@ func main() {
 			}
 		}
 	}
+	// Pictures fetched from a URL have their own fetchers (urlimage.go)
+	for _, img := range imgs {
+		if !*once {
+			img.start(ctx)
+		}
+	}
 	// Dry run before anything is started: a template that names a source the
 	// config does not have (a typo) fails here, once, instead of every tick
 	for _, s := range slots {
@@ -148,6 +154,11 @@ func main() {
 				}
 			}()
 		}
+		for _, img := range imgs {
+			if img.pic != nil {
+				img.pic.fetchOnce(ctx)
+			}
+		}
 		wg.Wait()
 		data := cache.snapshot(time.Now())
 		for _, s := range slots {
@@ -163,7 +174,9 @@ func main() {
 				log.Fatalf("slot %s: %v", img.Name, err)
 			}
 			what := img.PNG + " (fit " + img.Fit + ")"
-			if img.PNG == "" {
+			if img.pic != nil {
+				what = img.pic.describe()
+			} else if img.PNG == "" {
 				what = "no PNG"
 			}
 			if img.gcfg != nil {

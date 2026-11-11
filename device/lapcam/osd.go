@@ -17,28 +17,29 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
 )
 
 const (
-	osdFeedName   = "osd-feed.json"
-	osdFeedInit   = "/etc/init.d/S94osd-feed"
-	logoDefault   = "logo.png"
-	logoMaxBytes  = 4 << 20
-	logoMaxSide   = 1024    // osd-feed decodes the whole PNG in RAM (96 MB camera)
-	logoMaxPixels = 1 << 20 // 1 Mpx: the OSD cannot show more than the stream's width anyway
-	textCellW     = 8       // prudynt's 8x8 bitmap font: cell 8 x 9 px, padding 2 px, times scale
-	textCellH     = 9
-	textCellPad   = 2
-	textMaxCols   = 128
-	textMaxRows   = 32
-	osdMaxScale   = 10
-	osdMinImageWH = 16
+	osdFeedName        = "osd-feed.json"
+	osdFeedInitDefault = "/etc/init.d/S94osd-feed"
+	logoDefault        = "logo.png"
+	logoMaxBytes       = 4 << 20
+	logoMaxSide        = 1024    // osd-feed decodes the whole PNG in RAM (96 MB camera)
+	logoMaxPixels      = 1 << 20 // 1 Mpx: the OSD cannot show more than the stream's width anyway
+	textCellW          = 8       // prudynt's 8x8 bitmap font: cell 8 x 9 px, padding 2 px, times scale
+	textCellH          = 9
+	textCellPad        = 2
+	textMaxCols        = 128
+	textMaxRows        = 32
+	osdMaxScale        = 10
+	osdMinImageWH      = 16
 )
 
-var osdElements = []string{"burnin", "textfile", "textfile2", "textfile3", "imagefile", "imagefile2", "imagefile3"}
+var osdElements = []string{"burnin", "textfile", "textfile2", "textfile3", "imagefile", "imagefile2", "imagefile3", "imagefile4"}
 
 func isText(name string) bool  { return strings.HasPrefix(name, "textfile") }
 func isImage(name string) bool { return strings.HasPrefix(name, "imagefile") }
@@ -180,10 +181,50 @@ func (s *server) osdApply(name string, e osdElem) error {
 // --- osd-feed (what the slots show) ---
 
 type feedSlot struct {
-	Template *string `json:"template,omitempty"` // text slots
-	PNG      string  `json:"png,omitempty"`      // image slots: a PNG on the SD card
-	GBall    bool    `json:"gball"`              // image slots: the G-ball
-	Track    bool    `json:"track"`              // image slots: the track map
+	Template   *string `json:"template,omitempty"`    // text slots
+	PNG        string  `json:"png,omitempty"`         // image slots: a PNG on the SD card
+	URL        string  `json:"url,omitempty"`         // image slots: a picture fetched from a URL instead of the PNG
+	IntervalMs int     `json:"interval_ms,omitempty"` // image slots: how often the URL is fetched (osd-feed's default when 0)
+	GBall      bool    `json:"gball"`                 // image slots: the G-ball
+	Track      bool    `json:"track"`                 // image slots: the track map
+}
+
+// osdFeedInit - osd-feed's init script (a variable so that tests can point
+// it at a stub)
+var osdFeedInit = osdFeedInitDefault
+
+// feedPicture - what the OSD tab sets for an image slot's URL picture: the
+// URL ("" takes it away, nil leaves it) and the fetch interval (nil leaves it)
+type feedPicture struct {
+	URL        *string
+	IntervalMs *int
+}
+
+const (
+	feedURLMaxLen     = 512
+	feedIntervalMinMs = 100     // prudynt looks at the files every 100 ms (osd-feed clamps there too)
+	feedIntervalMaxMs = 3600000 // an hour
+)
+
+// checkFeedURL - what osd-feed accepts (an absolute http(s) URL), with the
+// limits a form needs
+func checkFeedURL(raw string) error {
+	if len(raw) > feedURLMaxLen {
+		return fmt.Errorf("the URL is too long (%d characters at most)", feedURLMaxLen)
+	}
+	for _, c := range raw {
+		if c < 0x20 || c == 0x7f {
+			return errors.New("the URL cannot contain control characters")
+		}
+	}
+	u, err := url.Parse(raw)
+	if err != nil {
+		return fmt.Errorf("not a URL: %v", err)
+	}
+	if (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
+		return errors.New("the URL must start with http:// or https:// and name a host")
+	}
+	return nil
 }
 
 func (s *server) feedPath() string { return filepath.Join(s.sd, osdFeedName) }
@@ -202,6 +243,10 @@ func (s *server) feedRead() (map[string]feedSlot, error) {
 			fs.Template = &t
 		}
 		fs.PNG, _ = m["png"].(string)
+		fs.URL, _ = m["url"].(string)
+		if v, ok := m["interval_ms"].(float64); ok {
+			fs.IntervalMs = int(v)
+		}
 		_, fs.GBall = m["gball"]
 		_, fs.Track = m["track"]
 		out[name] = fs
@@ -211,8 +256,10 @@ func (s *server) feedRead() (map[string]feedSlot, error) {
 
 // feedEdit - change one slot of osd-feed.json and restart osd-feed. The
 // shape osd-feed expects (docs/osd-feed.md): a text slot has "template", an
-// image slot has at least one of "png", "gball", "track".
-func (s *server) feedEdit(slot string, template *string, gball, track *bool) error {
+// image slot has at least one of "png", "url", "gball", "track" (png and
+// url never both: setting a URL takes the PNG away; the OSD tab only puts a
+// URL on imagefile4, the "picture" element, so the logo keeps its PNG).
+func (s *server) feedEdit(slot string, template *string, gball, track *bool, pic *feedPicture) error {
 	if !isText(slot) && !isImage(slot) {
 		return fmt.Errorf("unknown slot %q", slot)
 	}
@@ -263,11 +310,43 @@ func (s *server) feedEdit(slot string, template *string, gball, track *bool) err
 			delete(m, "track")
 		}
 	}
+	if pic != nil {
+		if !isImage(slot) {
+			return fmt.Errorf("%s: only an image slot can show a picture from a URL", slot)
+		}
+		if pic.URL != nil && *pic.URL == "" {
+			delete(m, "url")
+			delete(m, "interval_ms")
+			delete(m, "timeout_ms")
+			delete(m, "stale_ms")
+		} else if pic.URL != nil {
+			if err := checkFeedURL(*pic.URL); err != nil {
+				return err
+			}
+			m["url"] = *pic.URL
+			delete(m, "png")
+			if _, ok := m["fit"]; !ok {
+				m["fit"] = "contain"
+			}
+		}
+		if pic.IntervalMs != nil {
+			// the interval alone goes with whatever URL the file has now
+			// (read here, under the lock, not by the handler beforehand)
+			if _, hasURL := m["url"]; !hasURL {
+				return errors.New("the fetch interval goes with a URL")
+			}
+			if *pic.IntervalMs < feedIntervalMinMs || *pic.IntervalMs > feedIntervalMaxMs {
+				return fmt.Errorf("the fetch interval must be %d..%d ms", feedIntervalMinMs, feedIntervalMaxMs)
+			}
+			m["interval_ms"] = *pic.IntervalMs
+		}
+	}
 	if isImage(slot) {
 		_, hasPNG := m["png"]
+		_, hasURL := m["url"]
 		_, hasG := m["gball"]
 		_, hasT := m["track"]
-		if !hasPNG && !hasG && !hasT {
+		if !hasPNG && !hasURL && !hasG && !hasT {
 			delete(slots, slot) // an image slot with nothing to draw is not allowed
 		} else {
 			slots[slot] = m
@@ -349,20 +428,30 @@ func (s *server) handleOSDElement(w http.ResponseWriter, r *http.Request) {
 
 func (s *server) handleOSDFeed(w http.ResponseWriter, r *http.Request) {
 	var body struct {
-		Slot     string  `json:"slot"`
-		Template *string `json:"template"`
-		GBall    *bool   `json:"gball"`
-		Track    *bool   `json:"track"`
+		Slot       string  `json:"slot"`
+		Template   *string `json:"template"`
+		GBall      *bool   `json:"gball"`
+		Track      *bool   `json:"track"`
+		URL        *string `json:"url"`         // "" = no picture from a URL
+		IntervalMs *int    `json:"interval_ms"` // with url
 	}
 	if err := readJSON(r, &body, 16<<10); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]any{"error": err.Error()})
 		return
 	}
-	if body.Template == nil && body.GBall == nil && body.Track == nil {
+	if body.Template == nil && body.GBall == nil && body.Track == nil && body.URL == nil && body.IntervalMs == nil {
 		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "nothing to change"})
 		return
 	}
-	if err := s.feedEdit(body.Slot, body.Template, body.GBall, body.Track); err != nil {
+	var pic *feedPicture
+	if body.URL != nil || body.IntervalMs != nil {
+		pic = &feedPicture{IntervalMs: body.IntervalMs}
+		if body.URL != nil {
+			u := strings.TrimSpace(*body.URL)
+			pic.URL = &u
+		}
+	}
+	if err := s.feedEdit(body.Slot, body.Template, body.GBall, body.Track, pic); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]any{"error": err.Error()})
 		return
 	}
@@ -447,6 +536,11 @@ func (s *server) feedSetPNG(slot, path string) error {
 		m = map[string]any{}
 	}
 	m["png"] = path
+	// one picture per slot: a URL set earlier gives way to the PNG
+	delete(m, "url")
+	delete(m, "interval_ms")
+	delete(m, "timeout_ms")
+	delete(m, "stale_ms")
 	if _, ok := m["fit"]; !ok {
 		m["fit"] = "contain"
 	}

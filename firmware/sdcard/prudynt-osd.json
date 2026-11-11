@@ -32,6 +32,13 @@
       "pos_y": 8,
       "width": 264
     },
+    "imagefile4": {
+      "enabled": false,
+      "height": 240,
+      "pos_x": 8,
+      "pos_y": 80,
+      "width": 320
+    },
     "textfile": {
       "background_color": "#00000080",
       "cols": 27,

@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"image"
 	"image/color"
@@ -13,7 +14,7 @@ import (
 	"time"
 )
 
-// ImageSlot is one of prudynt's image overlays (osd.imagefile, imagefile2, imagefile3):
+// ImageSlot is one of prudynt's image overlays (osd.imagefile, imagefile2, imagefile3, imagefile4):
 // a raw BGRA file of exactly
 // Width x Height pixels (straight alpha, no header; docs/osd.md). The PNG
 // named in the config is decoded here, fitted into that size and converted;
@@ -24,9 +25,14 @@ type ImageSlot struct {
 	Path   string
 	Width  int
 	Height int
-	PNG    string // "" when the slot only has a G-ball or a track map
+	PNG    string // "" when the slot only has a G-ball or a track map (or a URL)
 	Fit    string // "contain" (default) or "none"
 	box    *Box   // where the PNG goes; nil = the whole slot
+
+	// instead of PNG: a picture fetched over HTTP (urlimage.go); its own
+	// goroutine fetches, render takes the latest
+	pic    *urlPicture
+	picSeq uint64
 
 	pending bool // the slot file does not match the picture yet (main's loop)
 
@@ -93,7 +99,31 @@ func newImageSlot(name string, cfg SlotConfig, geo SlotGeometry) *ImageSlot {
 	if cfg.Height > 0 {
 		s.Height = cfg.Height
 	}
+	if cfg.URL != "" {
+		_, _, bw, bh := s.pngBox()
+		s.pic = newURLPicture(cfg, bw, bh)
+	}
 	return s
+}
+
+// hasPicture - a PNG file or a URL to show (besides the widgets)
+func (s *ImageSlot) hasPicture() bool { return s.PNG != "" || s.pic != nil }
+
+// picture - the PNG's or the URL's pixels for the box, whether they changed
+// since the last call, and the current problem
+func (s *ImageSlot) picture() (pix []byte, changed bool, err error) {
+	if s.pic != nil {
+		return s.pic.latest(&s.picSeq)
+	}
+	return s.renderPNG()
+}
+
+// start - begin fetching a URL picture (nothing for a PNG)
+func (s *ImageSlot) start(ctx context.Context) {
+	if s.pic != nil {
+		logURLStart(s.Name, s.pic)
+		s.pic.start(ctx)
+	}
 }
 
 // follow - take over prudynt's current geometry unless pinned by the config
@@ -114,6 +144,10 @@ func (s *ImageSlot) follow(geo SlotGeometry, cfg SlotConfig) bool {
 		n.pngMod, n.pngData, n.pixels, n.lastErr = time.Time{}, nil, nil, nil
 		n.written = fileID{}
 		n.widgets, n.base, n.frame = nil, nil, nil
+		if n.pic != nil {
+			_, _, bw, bh := n.pngBox()
+			n.pic.resize(bw, bh)
+		}
 	}
 	*s = n
 	return changed
@@ -129,12 +163,12 @@ func (s *ImageSlot) follow(geo SlotGeometry, cfg SlotConfig) bool {
 // next call.
 func (s *ImageSlot) render(data map[string]any) (pix []byte, changed bool, err error) {
 	if s.gcfg == nil && s.tcfg == nil && s.box == nil {
-		return s.renderPNG()
+		return s.picture()
 	}
 	var png []byte
 	pngChanged := false
-	if s.PNG != "" {
-		png, pngChanged, err = s.renderPNG()
+	if s.hasPicture() {
+		png, pngChanged, err = s.picture()
 	}
 	if s.Width < 2 || s.Height < 2 {
 		return nil, s.frame != nil, err
@@ -311,33 +345,59 @@ const (
 )
 
 func convertPNGBytes(data []byte, path string, w, h int, fit string) ([]byte, error) {
-	hdr, _, err := image.DecodeConfig(bytes.NewReader(data))
-	if err != nil {
-		return nil, fmt.Errorf("%s: %w", path, err)
-	}
-	bpp := int64(4)
-	switch hdr.ColorModel {
-	case color.RGBA64Model, color.NRGBA64Model, color.Gray16Model:
-		bpp = 8
-	}
-	if hdr.Width <= 0 || hdr.Height <= 0 || hdr.Width > maxSourceSide || hdr.Height > maxSourceSide ||
-		int64(hdr.Width)*int64(hdr.Height)*bpp > maxSourceBytes {
-		return nil, fmt.Errorf("%s: %dx%d (%d bytes/pixel) is too large to decode here (at most %d pixels of 8-bit, %d per side): shrink it first",
-			path, hdr.Width, hdr.Height, bpp, maxSourcePixels, maxSourceSide)
-	}
-	src, _, err := image.Decode(bytes.NewReader(data))
-	if err != nil {
-		return nil, fmt.Errorf("%s: %w", path, err)
-	}
 	if w < 2 || h < 2 {
 		return nil, fmt.Errorf("slot size %dx%d", w, h)
 	}
-	// Premultiplied RGBA is what averaging must happen in (a fully
-	// transparent pixel's colour must not bleed into its neighbours)
-	b := src.Bounds()
-	rgba := image.NewRGBA(image.Rect(0, 0, b.Dx(), b.Dy()))
-	draw.Draw(rgba, rgba.Bounds(), src, b.Min, draw.Src)
+	// Headerless BGRA of exactly the box's size is the slot's own layout and
+	// goes through untouched; it is told apart from the others by that length
+	// only after their decoders refused the bytes (a BGRA frame may well
+	// start with bytes that look like a magic)
+	exact := len(data) == w*h*4
+	var rgba *image.RGBA
+	if isPNM(data) {
+		img, err := decodePNM(data)
+		if err != nil && exact {
+			return data, nil
+		}
+		if err != nil {
+			return nil, fmt.Errorf("%s: %w", path, err)
+		}
+		rgba = img
+	} else {
+		hdr, _, err := image.DecodeConfig(bytes.NewReader(data))
+		if err != nil && exact {
+			return data, nil
+		}
+		if err != nil {
+			return nil, fmt.Errorf("%s: not a PNG, JPEG, PGM or PPM (%v); headerless BGRA must be exactly %d bytes for the %dx%d box (got %d: ask for w=%d&h=%d)",
+				path, err, w*h*4, w, h, len(data), w, h)
+		}
+		bpp := int64(4)
+		switch hdr.ColorModel {
+		case color.RGBA64Model, color.NRGBA64Model, color.Gray16Model:
+			bpp = 8
+		}
+		if hdr.Width <= 0 || hdr.Height <= 0 || hdr.Width > maxSourceSide || hdr.Height > maxSourceSide ||
+			int64(hdr.Width)*int64(hdr.Height)*bpp > maxSourceBytes {
+			return nil, fmt.Errorf("%s: %dx%d (%d bytes/pixel) is too large to decode here (at most %d pixels of 8-bit, %d per side): shrink it first",
+				path, hdr.Width, hdr.Height, bpp, maxSourcePixels, maxSourceSide)
+		}
+		src, _, err := image.Decode(bytes.NewReader(data))
+		if err != nil {
+			return nil, fmt.Errorf("%s: %w", path, err)
+		}
+		// Premultiplied RGBA is what averaging must happen in (a fully
+		// transparent pixel's colour must not bleed into its neighbours)
+		b := src.Bounds()
+		rgba = image.NewRGBA(image.Rect(0, 0, b.Dx(), b.Dy()))
+		draw.Draw(rgba, rgba.Bounds(), src, b.Min, draw.Src)
+	}
+	return layoutRGBA(rgba, w, h, fit), nil
+}
 
+// layoutRGBA - a premultiplied RGBA picture fitted into w x h and laid out
+// as BGRA with straight alpha (see convertPNG)
+func layoutRGBA(rgba *image.RGBA, w, h int, fit string) []byte {
 	sw, sh := rgba.Rect.Dx(), rgba.Rect.Dy()
 	dw, dh := sw, sh
 	if fit == "contain" && (sw > w || sh > h) {
@@ -379,7 +439,7 @@ func convertPNGBytes(data []byte, path string, w, h int, fit string) ([]byte, er
 			out[o], out[o+1], out[o+2], out[o+3] = bb, g, r, a
 		}
 	}
-	return out, nil
+	return out
 }
 
 // boxScale - shrink a premultiplied RGBA image to dw x dh by averaging the

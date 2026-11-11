@@ -9,9 +9,9 @@
 
   const LABELS = {
     burnin: "Date & time", textfile: "Text 1", textfile2: "Text 2", textfile3: "Text 3",
-    imagefile: "Logo", imagefile2: "G-ball", imagefile3: "Track map",
+    imagefile: "Logo", imagefile2: "G-ball", imagefile3: "Track map", imagefile4: "Remote camera",
   };
-  const ORDER = ["burnin", "textfile", "textfile2", "textfile3", "imagefile", "imagefile2", "imagefile3"];
+  const ORDER = ["burnin", "textfile", "textfile2", "textfile3", "imagefile", "imagefile2", "imagefile3", "imagefile4"];
 
   let data = null; // from /api/osd
   let sel = null;
@@ -263,6 +263,44 @@
         const note = document.createElement("div"); note.className = "lbl";
         note.textContent = name === "imagefile2" ? "Drawn from the RaceBox G sensor. Shows a grid until data arrives." : "Drawn from the RaceBox GPS. Shows a dark box until data arrives.";
         panel.appendChild(note);
+      }
+      if (name === "imagefile4") {
+      // the "remote camera" element: a JPEG or PNG fetched from a URL (another
+      // camera in the car) every so often; osd-feed does the fetching
+      const lab2 = document.createElement("div"); lab2.className = "lbl";
+      lab2.textContent = "Remote camera URL (a JPEG or PNG this camera fetches; blank = nothing)";
+      panel.appendChild(lab2);
+      const urlInp = document.createElement("input"); urlInp.type = "url"; urlInp.placeholder = "http://192.168.0.2/jpg?w=320&h=240&q=60";
+      urlInp.value = feed.url || ""; urlInp.spellcheck = false; urlInp.setAttribute("aria-label", "Remote camera URL");
+      panel.appendChild(urlInp);
+      const RATES = [[5000, "every 5 s"], [2000, "every 2 s"], [1000, "1 / s"], [500, "2 / s"], [250, "4 / s"], [200, "5 / s"], [100, "10 / s"]];
+      // the value in the file stays as it is (it may be one the presets do
+      // not have, from a hand-edited osd-feed.json) until a step is taken
+      let ms = feed.interval_ms || 1000;
+      const rateLabel = () => { const r = RATES.find(r => r[0] === ms); return r ? r[1] : `every ${ms} ms`; };
+      const step = (dir) => {
+        let ri = RATES.findIndex(r => r[0] === ms);
+        if (ri < 0) { ri = RATES.findIndex(r => r[0] < ms); ri = dir > 0 ? (ri < 0 ? RATES.length - 1 : ri) : (ri < 0 ? 0 : Math.max(0, ri - 1)); }
+        else ri = Math.max(0, Math.min(RATES.length - 1, ri + dir));
+        ms = RATES[ri][0]; rateRow.querySelector(".val").textContent = rateLabel();
+      };
+      const rateRow = stepper("Fetches", rateLabel(), () => step(-1), () => step(1));
+      panel.appendChild(rateRow);
+      const hint = document.createElement("div"); hint.className = "lbl";
+      hint.textContent = "Size, rotation, format etc. are the source's own URL parameters. Each fetch costs this camera CPU: at 320×240 about 4% per fetch/s for a colour JPEG, 2–3% for uncompressed PGM / PPM / BGRA (fmt=pgm on an m5camera: no decoding, but more bytes to receive), 1.6% for a grey JPEG; at 160×120 about 1% whatever the format.";
+      panel.appendChild(hint);
+      const saveURL = document.createElement("button"); saveURL.className = "primary"; saveURL.textContent = "Save remote camera (restarts osd-feed)";
+      saveURL.addEventListener("click", async () => {
+        setMsg("Saving…");
+        const url = urlInp.value.trim();
+        try {
+          await api("/api/osd/feed", url ? { slot: name, url, interval_ms: ms } : { slot: name, url: "" });
+          data.feed[name] = Object.assign({}, data.feed[name], url ? { url, interval_ms: ms } : { url: "", interval_ms: 0 });
+          if (url && !e.enabled) setMsg("Saved. Turn on “Show on the video” above to see it.");
+          else setMsg(url ? "Saved. The remote camera shows within a few seconds." : "Saved. No remote camera.");
+        } catch (err) { setMsg(err.message, true); }
+      });
+      panel.appendChild(saveURL);
       }
     }
   }
