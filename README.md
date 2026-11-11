@@ -102,3 +102,7 @@ TLS で送るだけで、CPU の負荷は配信で数 % です。
 - [Thingino](https://github.com/themactep/thingino-firmware): オープンな IP カメラファームウェアと、そのビルド環境
 - [thingino-installers](https://github.com/wltechblog/thingino-installers): 純正の Wyze Cam v3 に SD カードから書き込む仕組み
 - [FFmpeg](https://ffmpeg.org/)
+
+---
+
+<p align="center"><sub>lapcam は <b>URS (uzulla racing support)</b> が開発しています。</sub></p>
