@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"image"
 	"image/color"
@@ -13,7 +14,7 @@ import (
 	"time"
 )
 
-// ImageSlot is one of prudynt's image overlays (osd.imagefile, imagefile2, imagefile3):
+// ImageSlot is one of prudynt's image overlays (osd.imagefile, imagefile2, imagefile3, imagefile4):
 // a raw BGRA file of exactly
 // Width x Height pixels (straight alpha, no header; docs/osd.md). The PNG
 // named in the config is decoded here, fitted into that size and converted;
@@ -24,9 +25,14 @@ type ImageSlot struct {
 	Path   string
 	Width  int
 	Height int
-	PNG    string // "" when the slot only has a G-ball or a track map
+	PNG    string // "" when the slot only has a G-ball or a track map (or a URL)
 	Fit    string // "contain" (default) or "none"
 	box    *Box   // where the PNG goes; nil = the whole slot
+
+	// instead of PNG: a picture fetched over HTTP (urlimage.go); its own
+	// goroutine fetches, render takes the latest
+	pic    *urlPicture
+	picSeq uint64
 
 	pending bool // the slot file does not match the picture yet (main's loop)
 
@@ -93,7 +99,31 @@ func newImageSlot(name string, cfg SlotConfig, geo SlotGeometry) *ImageSlot {
 	if cfg.Height > 0 {
 		s.Height = cfg.Height
 	}
+	if cfg.URL != "" {
+		_, _, bw, bh := s.pngBox()
+		s.pic = newURLPicture(cfg, bw, bh)
+	}
 	return s
+}
+
+// hasPicture - a PNG file or a URL to show (besides the widgets)
+func (s *ImageSlot) hasPicture() bool { return s.PNG != "" || s.pic != nil }
+
+// picture - the PNG's or the URL's pixels for the box, whether they changed
+// since the last call, and the current problem
+func (s *ImageSlot) picture() (pix []byte, changed bool, err error) {
+	if s.pic != nil {
+		return s.pic.latest(&s.picSeq)
+	}
+	return s.renderPNG()
+}
+
+// start - begin fetching a URL picture (nothing for a PNG)
+func (s *ImageSlot) start(ctx context.Context) {
+	if s.pic != nil {
+		logURLStart(s.Name, s.pic)
+		s.pic.start(ctx)
+	}
 }
 
 // follow - take over prudynt's current geometry unless pinned by the config
@@ -114,6 +144,10 @@ func (s *ImageSlot) follow(geo SlotGeometry, cfg SlotConfig) bool {
 		n.pngMod, n.pngData, n.pixels, n.lastErr = time.Time{}, nil, nil, nil
 		n.written = fileID{}
 		n.widgets, n.base, n.frame = nil, nil, nil
+		if n.pic != nil {
+			_, _, bw, bh := n.pngBox()
+			n.pic.resize(bw, bh)
+		}
 	}
 	*s = n
 	return changed
@@ -129,12 +163,12 @@ func (s *ImageSlot) follow(geo SlotGeometry, cfg SlotConfig) bool {
 // next call.
 func (s *ImageSlot) render(data map[string]any) (pix []byte, changed bool, err error) {
 	if s.gcfg == nil && s.tcfg == nil && s.box == nil {
-		return s.renderPNG()
+		return s.picture()
 	}
 	var png []byte
 	pngChanged := false
-	if s.PNG != "" {
-		png, pngChanged, err = s.renderPNG()
+	if s.hasPicture() {
+		png, pngChanged, err = s.picture()
 	}
 	if s.Width < 2 || s.Height < 2 {
 		return nil, s.frame != nil, err

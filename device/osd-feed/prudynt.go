@@ -26,6 +26,7 @@ var defaultGeometry = map[string]SlotGeometry{
 	"imagefile":  {Path: "/run/prudynt/osd-image", Width: 200, Height: 200},
 	"imagefile2": {Path: "/run/prudynt/osd-image2", Width: 160, Height: 160},
 	"imagefile3": {Path: "/run/prudynt/osd-image3", Width: 200, Height: 200},
+	"imagefile4": {Path: "/run/prudynt/osd-image4", Width: 320, Height: 240},
 }
 
 // askPrudynt - the geometry of the named slots from the running prudynt via

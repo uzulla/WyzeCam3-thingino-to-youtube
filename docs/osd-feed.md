@@ -82,7 +82,7 @@ device/install-osd-feed.sh root@<camera-ip>       # SD にバイナリと (無�
 | `interval_ms` | 描く間隔 (既定 250、下限 100)。prudynt 側がファイルを見るのは 100ms ごとなので、それより短くしても速くならない |
 | `clear_on_exit` | 終了時にスロットのファイルを消す (既定 true) |
 | `sources.<名前>` | データ源。`type` と `interval_ms` (取得間隔、既定 1000)、type ごとの項目 (下表)。名前はテンプレートから `.<名前>.<キー>` で参照する |
-| `slots.imagefile` / `slots.imagefile2` / `slots.imagefile3` | 画像スロット ([osd.md](osd.md#画像-ロゴなど-を重ねる-osdimagefile))。3 枚は別々に置ける (ロゴ、G ボール、走行図など)。`png` (SD カード上の透過 PNG)、`fit` (`contain` = 縮めて収める・拡大はしない・中央配置、`none` = そのまま中央に置き、はみ出た分は切る。既定 `contain`)、`png_box` (PNG を置く場所 `{"x","y","width","height"}`。既定はスロット全体)、`gball` ([G ボール](#racebox-の-g-ボールと速度))、`track` ([走行図](#racebox-の-gps-から走行図))。`png`、`gball`、`track` の少なくとも 1 つが要る。`width` / `height` / `path` は普通は書かない (prudynt から読む) |
+| `slots.imagefile` 〜 `slots.imagefile4` | 画像スロット ([osd.md](osd.md#画像-ロゴなど-を重ねる-osdimagefile))。4 枚は別々に置ける (ロゴ、G ボール、走行図、リモートカメラ)。`png` (SD カード上の透過 PNG) か `url` (JPEG / PNG を取ってくる URL。[下記](#リモートカメラ-url-から取る画像)。`interval_ms` で取得間隔)、`fit` (`contain` = 縮めて収める・拡大はしない・中央配置、`none` = そのまま中央に置き、はみ出た分は切る。既定 `contain`)、`png_box` (PNG を置く場所 `{"x","y","width","height"}`。既定はスロット全体)、`gball` ([G ボール](#racebox-の-g-ボールと速度))、`track` ([走行図](#racebox-の-gps-から走行図))。`png`、`gball`、`track` の少なくとも 1 つが要る。`width` / `height` / `path` は普通は書かない (prudynt から読む) |
 | `slots.<スロット>` | `textfile` / `textfile2` / `textfile3`。`template` は Go の text/template (lapcam の OSD タブのテキスト枠で編集するのがこれ)。`path` / `cols` / `rows` は普通は書かない: 起動時と以後 30 秒ごとに prudynt から読んで追従する (OSD タブで大きさを変えれば 30 秒以内に切る幅も変わる。prudynt が答えない時は docs/osd.md の既定値)。**ここに書いた値は prudynt の値より常に優先される**ので、OSD タブで変えたのに反映されない時はここに古い値が残っていないか見る |
 
 ### source の種類
@@ -143,6 +143,38 @@ text/template 標準の `printf` `if` `range` などに加えて:
 
   待機中は PNG とスロットのファイルを stat するだけなので大きさに依らず軽い。毎秒デコードするような使い方 (グラフ等)
   は 200×200 程度の大きさにするか、PNG を経由せず直接 BGRA を描く (将来の拡張) 方が向く
+
+### リモートカメラ: URL から取る画像
+
+画像スロットに `png` の代わりに `url` を書くと、osd-feed がその URL を `interval_ms` ごとに GET し、返ってきた JPEG か PNG を
+ロゴと同じ経路 (`fit`、`png_box`、G ボールや走行図との同居) で描く。車内の別カメラ (ESP32 のカメラ基板など) の映像を
+ワイプのように入れる用途で、prudynt の 4 枚目の画像スロット `imagefile4` がそのために空けてある。lapcam の OSD タブでは
+**Remote camera** という要素で、URL と取得回数をそこから設定する (ロゴ・G ボール・走行図とは別に置ける)。
+
+```json
+"imagefile4": { "url": "http://192.168.11.113/jpg?w=320&h=240&q=60&gray=1", "interval_ms": 500 }
+```
+
+| キー | 既定値 | 意味 |
+|---|---|---|
+| `url` | (必須) | `http://` か `https://` の URL。そのまま GET する。大きさ・画質・回転・グレーなどは送る側のパラメータなので URL に書く |
+| `interval_ms` | 1000 | 取得間隔 (100 以上。prudynt がファイルを見るのが 100 ms ごとなので、それより速くはならない) |
+| `timeout_ms` | 3000 | 1 回の GET の待ち時間 |
+| `stale_ms` | 10000 | この時間、取得に成功しなければ画像を消す (止まった映像を出し続けない。0 で消さない)。戻れば再び出る |
+
+- 取得とデコードは描画ループとは別の goroutine で行う。相手が遅くても他のスロットの描画は止まらない。同じ内容が返ってきた時はデコードしない
+- 失敗 (接続できない、HTTP エラー、画像でない、4 MB 超) はログに 1 回出し、`stale_ms` までは前の画像を残す
+- **デコードはカメラの CPU で行うので軽くない** (実測、720p 配信中、osd-feed の CPU):
+
+  | 取ってくる画像 | 5 回/秒 | 1 回/秒あたり |
+  |---|---|---|
+  | 320×240 カラー JPEG (q60、約 2.5 KB) | 22% | 約 4.4% |
+  | 320×240 グレー JPEG (`gray=1`) | 8% | 約 1.6% |
+  | 160×120 カラー JPEG | 8% | 約 1.6% |
+  | 640×480 カラー JPEG | 47% | 約 9% |
+
+  320×240 のカラーなら 1〜2 回/秒、それ以上の頻度ならグレーか 160×120 にする。JPEG の品質 (`q`) はほとんど効かない
+  (ハフマン復号より IDCT と色変換が重い)。送る側で選べるなら、圧縮していない形式 (PGM / PPM) の方がずっと軽い (未対応。要望があれば)
 
 ### RaceBox の G ボールと速度
 

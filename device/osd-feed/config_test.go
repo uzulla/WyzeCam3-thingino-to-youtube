@@ -116,8 +116,8 @@ func TestLoadConfigAcceptsThreeImageSlots(t *testing.T) {
 	if c.Slots["imagefile"].PNG != "/x.png" || c.Slots["imagefile2"].GBall == nil || tr == nil || tr.Points != 1200 || *tr.MinMoveM != 0 {
 		t.Errorf("got %+v", c.Slots)
 	}
-	if _, err := loadConfig(writeCfg(t, `{"slots":{"imagefile4":{"png":"/x.png"}}}`)); err == nil {
-		t.Error("imagefile4 must be rejected: prudynt has three image slots")
+	if _, err := loadConfig(writeCfg(t, `{"slots":{"imagefile5":{"png":"/x.png"}}}`)); err == nil {
+		t.Error("imagefile5 must be rejected: prudynt has four image slots")
 	}
 	if _, err := loadConfig(writeCfg(t, `{"slots":{"imagefile2":{}}}`)); err == nil || !strings.Contains(err.Error(), "slot imagefile2 needs") {
 		t.Errorf("an empty imagefile2 must be rejected by its name, got %v", err)
