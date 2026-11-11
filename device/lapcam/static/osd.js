@@ -273,6 +273,42 @@
       const urlInp = document.createElement("input"); urlInp.type = "url"; urlInp.placeholder = "http://192.168.0.2/jpg?w=320&h=240&q=60";
       urlInp.value = feed.url || ""; urlInp.spellcheck = false; urlInp.setAttribute("aria-label", "Remote camera URL");
       panel.appendChild(urlInp);
+      // what is on the network, by mDNS: tap one to put its .local name into
+      // the URL (the query stays yours: w=, h=, fmt= are the source's own).
+      // osd-feed resolves .local itself, so the URL survives a new address
+      const findRow = document.createElement("div"); findRow.className = "lbl";
+      const findBtn = document.createElement("button"); findBtn.className = "small"; findBtn.textContent = "Find cameras on the network";
+      const found = document.createElement("div"); found.className = "remotes";
+      findBtn.addEventListener("click", async () => {
+        findBtn.disabled = true; found.textContent = "Looking (2 s)…";
+        try {
+          const r = await api("/api/osd/remotes");
+          found.innerHTML = "";
+          if (!r.hosts.length) { found.textContent = "Nothing answered. Same Wi-Fi? (lapcam-xxxx.local names are this camera's own)"; return; }
+          for (const h of r.hosts) {
+            const b = document.createElement("button"); b.className = "small";
+            b.textContent = `${h.host} · ${h.ip}${h.port !== 80 ? ":" + h.port : ""}${h.path ? " · " + h.path : ""}`;
+            b.title = h.name;
+            b.addEventListener("click", () => {
+              // the server already checked host and path; the URL class keeps
+              // a path from turning into userinfo or a query all the same
+              const hostPort = h.host + (h.port !== 80 ? ":" + h.port : "");
+              let u = null;
+              try { u = new URL(urlInp.value); } catch (_) {}
+              // hostname and port set apart: assigning "host" without a port
+              // would keep the old URL's port
+              if (u && (u.protocol === "http:" || u.protocol === "https:")) { u.hostname = h.host; u.port = h.port === 80 ? "" : String(h.port); }
+              else { u = new URL(h.path || "/", "http://" + hostPort + "/"); }
+              if (u.host !== hostPort) { setMsg("Odd address from the network, not used: " + h.host, true); return; }
+              urlInp.value = u.toString();
+              urlInp.focus();
+            });
+            found.appendChild(b);
+          }
+        } catch (err) { found.textContent = err.message; }
+        finally { findBtn.disabled = false; }
+      });
+      findRow.appendChild(findBtn); panel.appendChild(findRow); panel.appendChild(found);
       const RATES = [[5000, "every 5 s"], [2000, "every 2 s"], [1000, "1 / s"], [500, "2 / s"], [250, "4 / s"], [200, "5 / s"], [100, "10 / s"]];
       // the value in the file stays as it is (it may be one the presets do
       // not have, from a hand-edited osd-feed.json) until a step is taken

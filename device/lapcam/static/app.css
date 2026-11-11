@@ -184,3 +184,7 @@ a { color: var(--accent); }
 .keyrow input { flex: 1; }
 
 .badges .modebtn { margin-left: auto; }
+
+/* the devices found by "Find cameras on the network" (OSD tab, remote camera) */
+.remotes { display: flex; flex-wrap: wrap; gap: 6px; margin: 4px 0 8px; font-size: 0.9em; color: var(--muted, #9aa); }
+.remotes button { font-family: ui-monospace, monospace; }
