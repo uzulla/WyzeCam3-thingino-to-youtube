@@ -290,11 +290,17 @@
             b.textContent = `${h.host} · ${h.ip}${h.port !== 80 ? ":" + h.port : ""}${h.path ? " · " + h.path : ""}`;
             b.title = h.name;
             b.addEventListener("click", () => {
+              // the server already checked host and path; the URL class keeps
+              // a path from turning into userinfo or a query all the same
               const hostPort = h.host + (h.port !== 80 ? ":" + h.port : "");
               let u = null;
               try { u = new URL(urlInp.value); } catch (_) {}
-              if (u && (u.protocol === "http:" || u.protocol === "https:")) { u.host = hostPort; urlInp.value = u.toString(); }
-              else urlInp.value = `http://${hostPort}${h.path || "/"}`;
+              // hostname and port set apart: assigning "host" without a port
+              // would keep the old URL's port
+              if (u && (u.protocol === "http:" || u.protocol === "https:")) { u.hostname = h.host; u.port = h.port === 80 ? "" : String(h.port); }
+              else { u = new URL(h.path || "/", "http://" + hostPort + "/"); }
+              if (u.host !== hostPort) { setMsg("Odd address from the network, not used: " + h.host, true); return; }
+              urlInp.value = u.toString();
               urlInp.focus();
             });
             found.appendChild(b);

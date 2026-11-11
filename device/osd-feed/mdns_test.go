@@ -16,7 +16,8 @@ import (
 // first, name-compressed like responders do)
 func aAnswer(name string, ip net.IP) []byte {
 	// response, 1 question, 2 answers; then the question (its name at offset 12)
-	msg := append([]byte{0, 0, 0x84, 0, 0, 1, 0, 2, 0, 0, 0, 0}, buildQuery(name, typeA)[12:]...)
+	q, _ := buildQuery(name, typeA)
+	msg := append([]byte{0, 0, 0x84, 0, 0, 1, 0, 2, 0, 0, 0, 0}, q[12:]...)
 	rr := func(nameRef []byte, typ uint16, data []byte) []byte {
 		b := append([]byte(nil), nameRef...)
 		b = binary.BigEndian.AppendUint16(b, typ)
@@ -39,8 +40,41 @@ func TestARecordFor(t *testing.T) {
 	if ip := aRecordFor(msg, "other.local"); ip != nil {
 		t.Errorf("another host's answer must not count: %v", ip)
 	}
-	if ip := aRecordFor(buildQuery("m5cam-06f808.local", typeA), "m5cam-06f808.local"); ip != nil {
+	q, _ := buildQuery("m5cam-06f808.local", typeA)
+	if ip := aRecordFor(q, "m5cam-06f808.local"); ip != nil {
 		t.Errorf("a query is not an answer: %v", ip)
+	}
+	// a lying responder: loopback, any, multicast are not addresses to connect to
+	for _, bad := range []net.IP{net.IPv4(127, 0, 0, 1), net.IPv4(0, 0, 0, 0), net.IPv4(224, 0, 0, 251), net.IPv4(255, 255, 255, 255)} {
+		if ip := aRecordFor(aAnswer("m5cam-06f808.local", bad), "m5cam-06f808.local"); ip != nil {
+			t.Errorf("%v must not be believed", bad)
+		}
+	}
+	// a forward pointer (a loop in disguise) and an over-long name are refused
+	loop := []byte{0, 0, 0x84, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0xC0, 12}
+	if ip := aRecordFor(loop, "x.local"); ip != nil {
+		t.Error("pointer loop")
+	}
+	if _, _, err := readName(loop, 12); err == nil {
+		t.Error("a pointer to itself must be an error")
+	}
+	long := []byte{0, 0, 0x84, 0, 0, 0, 0, 1, 0, 0, 0, 0}
+	for i := 0; i < 5; i++ {
+		long = append(long, 63)
+		long = append(long, strings.Repeat("a", 63)...)
+	}
+	long = append(long, 0)
+	if _, _, err := readName(long, 12); err == nil {
+		t.Error("a 320-byte name must be an error")
+	}
+	if _, err := buildQuery("", typeA); err == nil {
+		t.Error("an empty name cannot be queried")
+	}
+	if _, err := buildQuery(strings.Repeat("a", 64)+".local", typeA); err == nil {
+		t.Error("a 64-byte label cannot be queried")
+	}
+	if !isLocalName("cam.local.") {
+		t.Error("a trailing dot is still a .local name")
 	}
 	for n := 12; n < len(msg); n++ {
 		if ip := aRecordFor(msg[:n], "m5cam-06f808.local"); ip != nil {
@@ -89,6 +123,19 @@ func TestURLPictureResolvesLocalNames(t *testing.T) {
 	p.fetchOnce(context.Background())
 	if calls != 2 {
 		t.Errorf("after a failure the name must be looked up again: %d lookups", calls)
+	}
+	// a 404 (another device at the old address, say) also forgets the name
+	ps2 := newPictureServer(t, testJPEG(t, 4, 4, color.RGBA{R: 255, A: 255}))
+	u2, _ := url.Parse(ps2.URL)
+	_, port2, _ := net.SplitHostPort(u2.Host)
+	p = newURLPicture(SlotConfig{URL: "http://cam.local:" + port2 + "/image"}, 4, 4)
+	p.fetchOnce(context.Background())
+	before404 := calls
+	ps2.status.Store(404)
+	p.fetchOnce(context.Background())
+	p.fetchOnce(context.Background()) // the failed fetch dropped the kept connection too: this one dials, so it looks up
+	if calls != before404+1 {
+		t.Errorf("after a 404 the name must be looked up again: %d lookups (was %d)", calls, before404)
 	}
 	// an unknown name is an error that says so
 	p = newURLPicture(SlotConfig{URL: "http://nobody.local/image"}, 4, 4)

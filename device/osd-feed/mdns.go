@@ -2,11 +2,14 @@ package main
 
 // A ".local" name in a picture URL (m5cam-06f808.local, say) resolved by
 // mDNS here, because the camera's own resolver only knows DNS: an A query
-// to 224.0.0.251:5353 on every interface, the first matching A record
-// wins. Results are cached; a fetch that fails forgets its host, so the next
-// one asks again (the device may have a new address). Just enough of the
-// DNS message format (RFC 1035 / 6762) for one question and the A records
-// of the answers; the same code as tools/find-camera and lapcam.
+// to 224.0.0.251:5353 on every interface (sent twice, half a second apart,
+// as a multicast query is easily lost on Wi-Fi), the first usable A record
+// from a responder wins. Results are cached; a fetch that fails forgets its
+// host, so the next one asks again (the device may have a new address).
+// Just enough of the DNS message format (RFC 1035 / 6762) for one question
+// and the A records of the answers; the same code as tools/find-camera and
+// lapcam. Anyone on the LAN can answer, so a message is read within fixed
+// bounds and only a unicast address from port 5353 is believed.
 
 import (
 	"context"
@@ -23,15 +26,19 @@ const (
 	typeA   = 1
 	classIN = 1
 
-	mdnsWait  = 1500 * time.Millisecond // how long one lookup waits for an answer
-	mdnsCache = 5 * time.Minute         // how long a found address is trusted
+	mdnsWait   = 1500 * time.Millisecond // how long one lookup waits for an answer
+	mdnsResend = 500 * time.Millisecond  // the query again after this, in case the first was lost
+	mdnsCache  = 5 * time.Minute         // how long a found address is trusted
+	maxNameLen = 255                     // RFC 1035
+	maxRecords = 64                      // records read per message
 )
 
 var mdnsGroup = &net.UDPAddr{IP: net.IPv4(224, 0, 0, 251), Port: 5353}
 
 // isLocalName - a name mDNS is for (host.local), not an address
 func isLocalName(host string) bool {
-	return strings.HasSuffix(strings.ToLower(host), ".local") && net.ParseIP(host) == nil
+	host = strings.ToLower(strings.TrimSuffix(host, "."))
+	return strings.HasSuffix(host, ".local") && net.ParseIP(host) == nil
 }
 
 // localResolver - lookups with a cache; lookupFn is swapped in tests
@@ -89,30 +96,40 @@ func dialLocal(ctx context.Context, network, addr string) (net.Conn, error) {
 	return d.DialContext(ctx, network, addr)
 }
 
-// mdnsLookup - one A query on every usable interface, the first A record
-// for host in the answers (within mdnsWait, or ctx)
+// mdnsLookup - an A query on every usable interface, the first usable A
+// record for host in the answers (within mdnsWait, or ctx). Every socket
+// is closed before this returns.
 func mdnsLookup(ctx context.Context, host string) (net.IP, error) {
+	q, err := buildQuery(host, typeA)
+	if err != nil {
+		return nil, err
+	}
 	conns := mdnsConns()
 	if len(conns) == 0 {
 		return nil, errors.New("mDNS: no network interface")
 	}
-	deadline := time.Now().Add(mdnsWait)
-	if d, ok := ctx.Deadline(); ok && d.Before(deadline) {
-		deadline = d
+	ctx, cancel := context.WithTimeout(ctx, mdnsWait)
+	defer cancel()
+	closeAll := func() {
+		for _, c := range conns {
+			c.Close()
+		}
 	}
+	go func() { <-ctx.Done(); closeAll() }()
 	found := make(chan net.IP, len(conns))
 	var wg sync.WaitGroup
 	for _, c := range conns {
 		wg.Add(1)
 		go func(c *net.UDPConn) {
 			defer wg.Done()
-			defer c.Close()
-			c.SetReadDeadline(deadline)
 			buf := make([]byte, 9000)
 			for {
-				n, _, err := c.ReadFromUDP(buf)
+				n, from, err := c.ReadFromUDP(buf)
 				if err != nil {
 					return
+				}
+				if from.Port != 5353 {
+					continue // responders answer from 5353 (RFC 6762 6.7)
 				}
 				if ip := aRecordFor(buf[:n], host); ip != nil {
 					found <- ip
@@ -121,22 +138,31 @@ func mdnsLookup(ctx context.Context, host string) (net.IP, error) {
 			}
 		}(c)
 	}
-	q := buildQuery(host, typeA)
-	for _, c := range conns {
-		c.WriteToUDP(q, mdnsGroup)
-	}
 	done := make(chan struct{})
 	go func() { wg.Wait(); close(done) }()
-	select {
-	case ip := <-found:
-		return ip, nil
-	case <-done:
+	send := func() {
+		for _, c := range conns {
+			c.WriteToUDP(q, mdnsGroup)
+		}
+	}
+	send()
+	resend := time.After(mdnsResend)
+	for {
 		select {
 		case ip := <-found:
+			cancel() // closes the sockets, the other readers end
 			return ip, nil
-		default:
+		case <-resend:
+			send()
+			resend = nil
+		case <-done:
+			select {
+			case ip := <-found:
+				return ip, nil
+			default:
+			}
+			return nil, fmt.Errorf("mDNS: no answer for %s within %v (not on this network?)", host, mdnsWait)
 		}
-		return nil, fmt.Errorf("mDNS: no answer for %s within %v (not on this network?)", host, mdnsWait)
 	}
 }
 
@@ -156,23 +182,38 @@ func mdnsConns() []*net.UDPConn {
 	return out
 }
 
+// usableAddr - an IPv4 address worth connecting to: unicast, not loopback,
+// not "any", not multicast (a lying responder could name those)
+func usableAddr(ip net.IP) bool {
+	ip4 := ip.To4()
+	return ip4 != nil && !ip4.IsLoopback() && !ip4.IsUnspecified() && !ip4.IsMulticast() && !ip4.Equal(net.IPv4bcast)
+}
+
 // --- DNS message format ---
 
-// buildQuery - a query for one name and type (id 0, as mDNS queries have)
-func buildQuery(name string, typ uint16) []byte {
+// buildQuery - a query for one name and type (id 0, as mDNS queries have);
+// an error for a name DNS cannot carry (an empty label or one over 63 bytes)
+func buildQuery(name string, typ uint16) ([]byte, error) {
 	b := make([]byte, 12)
 	binary.BigEndian.PutUint16(b[4:], 1) // one question
-	for _, l := range strings.Split(strings.TrimSuffix(name, "."), ".") {
+	name = strings.TrimSuffix(name, ".")
+	if len(name) > maxNameLen-1 {
+		return nil, errors.New("DNS name too long: " + name)
+	}
+	for _, l := range strings.Split(name, ".") {
+		if l == "" || len(l) > 63 {
+			return nil, errors.New("bad DNS name: " + name)
+		}
 		b = append(b, byte(len(l)))
 		b = append(b, l...)
 	}
 	b = append(b, 0)
 	b = binary.BigEndian.AppendUint16(b, typ)
-	return binary.BigEndian.AppendUint16(b, classIN)
+	return binary.BigEndian.AppendUint16(b, classIN), nil
 }
 
-// aRecordFor - the IPv4 address in an A record for host (lower case) in a
-// response, or nil (a query, another host, a broken message)
+// aRecordFor - the usable IPv4 address in an A record for host (lower
+// case) in a response, or nil (a query, another host, a broken message)
 func aRecordFor(msg []byte, host string) net.IP {
 	if len(msg) < 12 || msg[2]&0x80 == 0 {
 		return nil
@@ -181,14 +222,14 @@ func aRecordFor(msg []byte, host string) net.IP {
 	questions := int(be.Uint16(msg[4:]))
 	rrs := int(be.Uint16(msg[6:])) + int(be.Uint16(msg[8:])) + int(be.Uint16(msg[10:]))
 	off := 12
-	for i := 0; i < questions; i++ {
+	for i := 0; i < questions && i < maxRecords; i++ {
 		_, end, err := readName(msg, off)
 		if err != nil {
 			return nil
 		}
 		off = end + 4
 	}
-	for i := 0; i < rrs; i++ {
+	for i := 0; i < rrs && i < maxRecords; i++ {
 		name, end, err := readName(msg, off)
 		if err != nil || end+10 > len(msg) {
 			return nil
@@ -199,19 +240,22 @@ func aRecordFor(msg []byte, host string) net.IP {
 			return nil
 		}
 		if typ == typeA && rdlen == 4 && strings.ToLower(name) == host {
-			return append(net.IP(nil), msg[rd:rd+4]...)
+			if ip := append(net.IP(nil), msg[rd:rd+4]...); usableAddr(ip) {
+				return ip
+			}
 		}
 		off = rd + rdlen
 	}
 	return nil
 }
 
-// readName - the name at off, following compression pointers, and the
+// readName - the name at off, following compression pointers (only
+// backwards, as RFC 1035 means them, so no loop and no blow-up), and the
 // offset just after it in the message
 func readName(msg []byte, off int) (string, int, error) {
 	var labels []string
-	end := -1
-	for jumps := 0; ; {
+	end, total := -1, 0
+	for {
 		if off >= len(msg) {
 			return "", 0, errors.New("truncated DNS message")
 		}
@@ -229,15 +273,19 @@ func readName(msg []byte, off int) (string, int, error) {
 			if end < 0 {
 				end = off + 2
 			}
-			if jumps++; jumps > 32 {
-				return "", 0, errors.New("DNS name compression loop")
+			ptr := int(binary.BigEndian.Uint16(msg[off:]) & 0x3FFF)
+			if ptr >= off {
+				return "", 0, errors.New("DNS name pointer forwards")
 			}
-			off = int(binary.BigEndian.Uint16(msg[off:]) & 0x3FFF)
+			off = ptr
 		case l&0xC0 != 0:
 			return "", 0, errors.New("bad DNS label")
 		default:
 			if off+1+l > len(msg) {
 				return "", 0, errors.New("truncated DNS message")
+			}
+			if total += l + 1; total > maxNameLen {
+				return "", 0, errors.New("DNS name too long")
 			}
 			labels = append(labels, string(msg[off+1:off+1+l]))
 			off += 1 + l
